@@ -34,3 +34,27 @@ fun TokenUsage?.merge(other: TokenUsage): TokenUsage {
         cachedTokens = cachedTokens
     )
 }
+
+/**
+ * 跨多次模型请求的 [TokenUsage] 求和，用于多步 Agent 任务（工具调用循环）的累计记账。
+ *
+ * 注意：跨步骤累计禁止使用 [merge]——merge 是「非零覆盖」语义，适配的是同一请求内
+ * 流式 chunk 的 usage 合并；跨步骤累计若用 merge，cached=0（缓存未命中）的步骤会被
+ * 前一步的旧值污染。
+ */
+fun Iterable<TokenUsage>.sumUsage(): TokenUsage {
+    var prompt = 0
+    var completion = 0
+    var cached = 0
+    for (usage in this) {
+        prompt += usage.promptTokens
+        completion += usage.completionTokens
+        cached += usage.cachedTokens
+    }
+    return TokenUsage(
+        promptTokens = prompt,
+        completionTokens = completion,
+        cachedTokens = cached,
+        totalTokens = prompt + completion
+    )
+}

@@ -40,7 +40,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.core.Tool
+import me.rerere.ai.core.sumUsage
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
@@ -84,6 +86,8 @@ import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.tools.buildMcpAgentTools
+import me.rerere.rikkahub.data.ai.tools.buildRadioAgentTools
+import me.rerere.rikkahub.data.radio.RadioService
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
 import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
@@ -118,6 +122,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
 import me.rerere.rikkahub.core.data.utils.VectorUtils
+import me.rerere.rikkahub.data.ai.TtsVoiceResolver
 import me.rerere.rikkahub.data.ai.transformers.AudioToTextTransformer
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
@@ -351,6 +356,7 @@ class ChatService(
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val embeddingService: EmbeddingService,
     private val ttsManager: TTSManager,
+    private val radioService: RadioService,
     ) {
     data class ContextRefreshResult(
         val success: Boolean,
@@ -365,6 +371,22 @@ class ChatService(
     private val temporaryConversations = ConcurrentHashMap.newKeySet<Uuid>()
     // 通话中的会话集合：标记后跳过主路径的 L1 自动摘要, 改由 VoiceCallManager 的 25 分钟定时器驱动
     private val callModeConversations = ConcurrentHashMap.newKeySet<Uuid>()
+    // 通话中会话 → 通话 callId 注册表：由 VoiceCallManager 接通时注册、挂断收尾时注销。
+    // 自动化任务（executeAgentTask）据此判断目标会话是否在通话中，
+    // 命中时回复打标 MessageSource.CALL + callId，作为通话转写的一部分存储。
+    private val activeCallInfo = ConcurrentHashMap<Uuid, String>()
+
+    /**
+     * 注册/注销会话的活跃通话信息（由 VoiceCallManager 在接通/挂断时调用）。
+     * callId 为 null 或 active=false 表示注销。
+     */
+    fun setActiveCallInfo(conversationId: Uuid, callId: String?, active: Boolean) {
+        if (active && callId != null) {
+            activeCallInfo[conversationId] = callId
+        } else {
+            activeCallInfo.remove(conversationId)
+        }
+    }
     private val _generationJobs = MutableStateFlow<Map<Uuid, Job?>>(emptyMap())
     private val generationJobs: StateFlow<Map<Uuid, Job?>> = _generationJobs.asStateFlow()
     private val _errorFlow = MutableSharedFlow<Throwable>()
@@ -617,7 +639,20 @@ class ChatService(
                     delay(200)
                 }
 
-                initializeConversation(conversationId, targetAssistantId = originalAssistantId)
+                // 通话感知：目标会话正在通话中时，回复打标为通话消息（CALL 源 + callId），
+                // 作为通话转写的一部分存储并由通话侧朗读；同时跳过 initializeConversation 的
+                // 内存重载（防止 DB 快照覆盖通话中未落库的流式节点、使朗读锚点失效）。
+                val activeCallIdForTask = activeCallInfo[conversationId]
+                val isCallConversation = activeCallIdForTask != null
+                if (isCallConversation) {
+                    Log.i(TAG, "自动化任务命中通话中会话 $conversationId (callId=$activeCallIdForTask)，回复将以 CALL 源入库")
+                }
+
+                initializeConversation(
+                    conversationId,
+                    targetAssistantId = originalAssistantId,
+                    skipMemoryReload = isCallConversation
+                )
                 updateConversation(conversationId, normalizeNodes = true) { old ->
                     val newNode = UIMessage(
                         role = MessageRole.USER,
@@ -639,8 +674,10 @@ class ChatService(
                         handleMessageComplete(
                             conversationId = conversationId,
                             assistantOverride = overrideAssistant,
-                            skipContextForResponse = false,
-                            includeSkipContextMessages = true
+                            skipContextForResponse = isCallConversation,
+                            includeSkipContextMessages = true,
+                            responseMessageSource = if (isCallConversation) MessageSource.CALL else MessageSource.NORMAL,
+                            callId = activeCallIdForTask
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "自动化任务生成失败", e)
@@ -691,6 +728,18 @@ class ChatService(
                 )
             )
         }
+    }
+
+    /**
+     * 只读快照：内存中该会话当前归属的 Assistant。
+     * 统一语音选择（TtsVoiceResolver）按此解析 Agent 专属音色；
+     * 会话不在内存（极少：语音调用路径必然活跃）时回退当前选中助手。
+     */
+    fun getConversationAssistant(conversationId: Uuid?): Assistant? {
+        val settings = settingsStore.settingsFlow.value
+        val assistantId = conversationId?.let { conversations[it]?.value?.assistantId }
+        val assistant = assistantId?.let { settings.getAssistantById(it) }
+        return assistant ?: settings.getCurrentAssistant()
     }
 
     /**
@@ -746,7 +795,8 @@ class ChatService(
     suspend fun initializeConversation(
         conversationId: Uuid,
         targetAssistantId: Uuid? = null,
-        skipAutoArchive: Boolean = false // ✨ 新增：支持跳过离场归档逻辑
+        skipAutoArchive: Boolean = false, // ✨ 新增：支持跳过离场归档逻辑
+        skipMemoryReload: Boolean = false // 通话中传 true：禁止用 DB 快照覆盖内存会话（会抹掉未落库的流式节点并使通话朗读锚点失效）
     ) {
         val currentConvInDb = conversationRepo.getConversationById(conversationId)
 
@@ -823,7 +873,9 @@ class ChatService(
         lastConversationId = conversationId
         if (currentConvInDb != null) {
             val currentInMem = conversations[conversationId]?.value
-            if (isGenerating && currentInMem != null && currentInMem.messageNodes.isNotEmpty()) {
+            if (skipMemoryReload) {
+                Log.v(TAG, "会话 $conversationId 处于通话中，跳过内存重置以保护通话流式状态")
+            } else if (isGenerating && currentInMem != null && currentInMem.messageNodes.isNotEmpty()) {
                 Log.v(TAG, "会话 $conversationId 正在后台生成中，跳过内存重置以保护当前生成状态")
             } else {
                 updateConversation(conversationId) { currentConvInDb }
@@ -1284,6 +1336,12 @@ class ChatService(
             var lastTotalFullText = ""
             var lastAiId: Uuid? = null
 
+            // Token 记账基线：生成开始前已存在的 assistant 消息 usage（历史轮次已入账）。
+            // onSuccess 时只统计「新增 id」的 assistant 消息 usage 并求和入账：
+            // 多步工具调用每步的 usage 各挂在当步 assistant 消息上；regenerate 与占位符复用
+            // 场景产生的消息为全新 id（占位符 id 已从基线排除），不会与旧消息已入账 usage 重复。
+            var priorAssistantUsages: Map<Uuid, TokenUsage> = emptyMap()
+
             // 微信模式分句状态：流式过程中累积文本，按标点切句，逐句存为独立节点
             val wechatSentenceBuffer = StringBuilder()
             var wechatProcessedTextLen = 0
@@ -1412,6 +1470,18 @@ class ChatService(
                     messages
                 } else messagesForModel
 
+                // 记账基线快照：必须排除占位符 id——AI 生成的首条消息会复用该 id
+                //（见 placeholderId 逻辑），若留在基线内会导致首条 assistant 消息漏计
+                val baselineExcludedIds = placeholderId?.let { setOf(it) } ?: emptySet()
+                priorAssistantUsages = currentConversation.currentMessages
+                    .filter { msg ->
+                        val isAssistant = msg.role == MessageRole.ASSISTANT
+                        val isBaseline = msg.id !in baselineExcludedIds
+                        isAssistant && isBaseline
+                    }
+                    .mapNotNull { msg -> msg.usage?.let { msg.id to it } }
+                    .toMap()
+
                 generationHandler.generateText(
                         settings = settings,
                         model = model,
@@ -1456,7 +1526,8 @@ class ChatService(
                                         LocalToolOption.WebPageReader,
                                         LocalToolOption.PeekUser,
                                         LocalToolOption.UpdateProfile,
-                                        LocalToolOption.TimeSense
+                                        LocalToolOption.TimeSense,
+                                        LocalToolOption.RadioStation
                                         // PrintContent 不强制注入：打印工具对所有智能体（含主助手）严格跟随工具开关
                                     )
                                     coreTools.forEach { tool ->
@@ -1498,6 +1569,12 @@ class ChatService(
                             // （查询 Schema + 执行工具），工具目录（名称+有效描述）由
                             // get_mcp_tool_schema 的 systemPrompt 注入系统提示
                             addAll(buildMcpAgentTools(mcpManager))
+
+                            // 小机电台工具按需加载（AGENTS.md 12.4）：同样只注册两个固定函数，
+                            // 需助手开启 LocalToolOption.RadioStation
+                            if (targetOptions.contains(LocalToolOption.RadioStation)) {
+                                addAll(buildRadioAgentTools(radioService, assistant))
+                            }
 
                         },
                         lastArchivedMessageTime = 0L,
@@ -1738,7 +1815,9 @@ class ChatService(
                             delay(delayTime)
 
                             // 语音合成服务关闭时跳过 TTS 合成，直接以文本存储
-                            val ttsSetting = settings.getSelectedTTSProvider()
+                            val ttsSetting = TtsVoiceResolver.resolveForAssistant(
+                                settings, getConversationAssistant(conversationId)
+                            ).providerSetting
                             val saved = if (wechatVoiceEnabled) {
                                 val response = ttsSetting?.let { synthesizeTextToResponse(fullReplyText, it) }
                                 response?.let { resp ->
@@ -2006,9 +2085,20 @@ class ChatService(
                 if (!currentJob.isActive) return@onSuccess
                 val finalConv = currentConversation
                 mutateConversationAndSave(conversationId) { current -> current }
-                val lastAssistantMsg = finalConv.currentMessages.lastOrNull() ?: return@onSuccess
-                lastAssistantMsg.usage?.let { usage ->
-                    appScope.launch { conversationRepo.recordTokenUsage(finalConv.assistantId.toString(), usage) }
+                // 本轮记账：多步工具调用循环中每步 usage 挂在当步 assistant 消息上，
+                // 对新增 id 的消息逐条求和（跨步骤累计必须用 sum，禁止 merge 的非零覆盖语义）
+                val roundUsage = finalConv.currentMessages
+                    .filter { msg ->
+                        val isNewMessage = msg.id !in priorAssistantUsages
+                        val isAssistant = msg.role == MessageRole.ASSISTANT
+                        isAssistant && isNewMessage
+                    }
+                    .mapNotNull { it.usage }
+                    .sumUsage()
+                if (roundUsage.promptTokens > 0 || roundUsage.completionTokens > 0) {
+                    appScope.launch {
+                        conversationRepo.recordTokenUsage(finalConv.assistantId.toString(), roundUsage)
+                    }
                 }
                 appScope.launch {
                     if (!temporaryConversations.contains(conversationId)) {
@@ -2160,7 +2250,9 @@ class ChatService(
         val prefixParts = if (isFirstSentence && nonTextParts != null) nonTextParts else emptyList()
 
         val parts: List<UIMessagePart> = if (isVoice) {
-            val ttsSetting = settingsStore.settingsFlow.value.getSelectedTTSProvider()
+            val ttsSetting = TtsVoiceResolver.resolveForAssistant(
+                settingsStore.settingsFlow.value, getConversationAssistant(conversationId)
+            ).providerSetting
             val response = ttsSetting?.let { synthesizeTextToResponse(text, it) }
             val saved = response?.let { resp ->
                 if (resp.audioData.isNotEmpty()) {
