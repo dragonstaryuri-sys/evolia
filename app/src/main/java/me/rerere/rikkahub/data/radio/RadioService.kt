@@ -706,7 +706,9 @@ class RadioService(
         return when (setting) {
             is me.rerere.tts.provider.TTSProviderSetting.OpenAI -> setting.voice
             is me.rerere.tts.provider.TTSProviderSetting.Custom -> setting.voice
-            is me.rerere.tts.provider.TTSProviderSetting.Mimo -> setting.voice
+            // Mimo voicedesign 没有音色 ID，记录实际生效的设计描述（voice 字段是标准模型残留值）
+            is me.rerere.tts.provider.TTSProviderSetting.Mimo ->
+                me.rerere.rikkahub.data.ai.mimoEffectiveVoiceId(setting)
             is me.rerere.tts.provider.TTSProviderSetting.Gemini -> setting.voiceName
             is me.rerere.tts.provider.TTSProviderSetting.Azure -> setting.voiceName
             is me.rerere.tts.provider.TTSProviderSetting.SystemTTS -> setting.voiceName ?: "system_default"

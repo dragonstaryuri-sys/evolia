@@ -54,6 +54,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.data.ai.TtsVoiceResolver
 import me.rerere.rikkahub.data.ai.mergeVoiceOverride
+import me.rerere.rikkahub.data.ai.mimoEffectiveVoiceId
 import me.rerere.rikkahub.data.ai.stripConnectionFields
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getAssistantById
@@ -74,7 +75,18 @@ import kotlin.uuid.Uuid
 fun voiceSummary(setting: TTSProviderSetting): String = when (setting) {
     is TTSProviderSetting.OpenAI -> setting.voice
     is TTSProviderSetting.Custom -> setting.voice.ifBlank { "未设置" }
-    is TTSProviderSetting.Mimo -> setting.voice
+    // Mimo 特殊：voicedesign 没有音色 ID（音色由设计描述定义），voice 字段只是标准模型残留值
+    is TTSProviderSetting.Mimo -> when {
+        setting.model.contains("voicedesign", ignoreCase = true) -> {
+            val desc = mimoEffectiveVoiceId(setting).replace(Regex("\\s+"), " ")
+            "音色设计 " + if (desc.length > 16) desc.take(16) + "…" else desc
+        }
+
+        setting.model.contains("voiceclone", ignoreCase = true) ->
+            "音色复刻 ${mimoEffectiveVoiceId(setting)}"
+
+        else -> setting.voice
+    }
     is TTSProviderSetting.Gemini -> setting.voiceName
     is TTSProviderSetting.SystemTTS -> setting.voiceName ?: "系统默认"
     is TTSProviderSetting.MiniMax -> when (setting.voiceType) {

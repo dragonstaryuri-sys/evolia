@@ -183,6 +183,23 @@ fun mergeVoiceOverride(global: TTSProviderSetting, override: TTSProviderSetting)
 }
 
 /**
+ * Mimo 当前模型实际生效的音色标识（纯函数，单测固化；UI 摘要与电台资产记录共用）：
+ * - voicedesign：没有音色 ID 概念（音色由「设计描述」定义，合成请求也不发送 voice 字段），
+ *   `voice` 字段此时只是标准模型的残留值，必须返回设计描述；
+ * - voiceclone：以参考音频文件名为标识；
+ * - 标准 TTS：返回预置音色名。
+ */
+fun mimoEffectiveVoiceId(setting: TTSProviderSetting.Mimo): String = when {
+    setting.model.contains("voicedesign", ignoreCase = true) ->
+        setting.voiceDesignPrompt.trim().ifBlank { "(未填写音色描述)" }
+
+    setting.model.contains("voiceclone", ignoreCase = true) ->
+        setting.referenceAudioFileName.ifBlank { "(未上传参考音频)" }
+
+    else -> setting.voice
+}
+
+/**
  * 生成 Agent 声音配置副本时清空连接类字段（apiKey/baseUrl/region/groupId 等）：
  * 副本仅用于持久化声音参数，连接信息始终运行时取全局最新值，不落副本存储。
  */

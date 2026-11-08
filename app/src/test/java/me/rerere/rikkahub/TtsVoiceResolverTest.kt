@@ -2,6 +2,7 @@ package me.rerere.rikkahub
 
 import me.rerere.rikkahub.data.ai.TtsVoiceResolver
 import me.rerere.rikkahub.data.ai.mergeVoiceOverride
+import me.rerere.rikkahub.data.ai.mimoEffectiveVoiceId
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.ensureMediaBackupItems
@@ -149,6 +150,56 @@ class TtsVoiceResolverTest {
     @Test
     fun `merge rejects cross type`() {
         assertNull(mergeVoiceOverride(openAi, mimo))
+    }
+
+    // ==================== Mimo voicedesign / voiceclone 音色标识 ====================
+
+    @Test
+    fun `agent mimo voicedesign override keeps model and design prompt`() {
+        // 用户核心疑问的回归验证：切换到 voicedesign 后，副本确实存上了 model + 设计描述，
+        // 播放链路用的是设计描述；voice 字段残留标准模型值属预期（便于切回时恢复选择）
+        val copy = mimo.copy(
+            model = "mimo-v2.5-tts-voicedesign",
+            voice = "Dean",
+            voiceDesignPrompt = "年迈的老先生，北方口音，语速缓慢"
+        )
+        val result = TtsVoiceResolver.resolve(settingsOf(), mimoId, mapOf(mimoId.toString() to encode(copy)))
+        assertNull(result.fallbackNotice)
+        val merged = result.providerSetting as TTSProviderSetting.Mimo
+        assertEquals("mimo-v2.5-tts-voicedesign", merged.model)
+        assertEquals("年迈的老先生，北方口音，语速缓慢", merged.voiceDesignPrompt)
+    }
+
+    @Test
+    fun `mimo voicedesign effective voice id is design prompt not stale voice`() {
+        val setting = mimo.copy(
+            model = "mimo-v2.5-tts-voicedesign",
+            voice = "Dean",
+            voiceDesignPrompt = "年轻女声 ASMR"
+        )
+        assertEquals("年轻女声 ASMR", mimoEffectiveVoiceId(setting))
+    }
+
+    @Test
+    fun `mimo voicedesign without prompt returns placeholder`() {
+        val setting = mimo.copy(model = "mimo-v2.5-tts-voicedesign", voice = "Dean", voiceDesignPrompt = "  ")
+        assertEquals("(未填写音色描述)", mimoEffectiveVoiceId(setting))
+    }
+
+    @Test
+    fun `mimo voiceclone effective voice id is reference audio file name`() {
+        val setting = mimo.copy(
+            model = "mimo-v2.5-tts-voiceclone",
+            voice = "Dean",
+            referenceAudioFileName = "sample.wav"
+        )
+        assertEquals("sample.wav", mimoEffectiveVoiceId(setting))
+    }
+
+    @Test
+    fun `mimo standard model effective voice id is voice field`() {
+        val setting = mimo.copy(model = "mimo-v2.5-tts", voice = "Dean", voiceDesignPrompt = "unused")
+        assertEquals("Dean", mimoEffectiveVoiceId(setting))
     }
 
     // ==================== 备份项迁移（保持回归覆盖）====================
