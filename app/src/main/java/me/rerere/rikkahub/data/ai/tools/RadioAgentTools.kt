@@ -713,6 +713,39 @@ private fun defShareEpisode(service: RadioService): RadioToolDef = RadioToolDef(
     }
 )
 
+/**
+ * 从工具调用中提取 share_episode 的 episode_id（纯函数，单测固化；供消息流渲染电台分享卡片）。
+ * Radio 工具经 call_radio_tool 二段式执行，消息里的 ToolCall 存的是外层包装，
+ * 需同时识别两种挂载形式：
+ * - 直接调用：toolName == "share_episode"，episode_id 在顶层参数；
+ * - 二段式调用：toolName == call_radio_tool 且内层 tool_name == "share_episode"，
+ *   episode_id 在内层 arguments（支持 object 或字符串化 JSON 两种传参形态）。
+ * 其余情况（schema 查询、其他工具、解析失败）一律返回 null，不渲染卡片。
+ */
+internal fun extractRadioShareEpisodeId(toolName: String, argumentsJson: String): String? {
+    val argsObj = runCatching {
+        me.rerere.rikkahub.common.JsonInstant.parseToJsonElement(argumentsJson).jsonObject
+    }.getOrNull() ?: return null
+    return when (toolName) {
+        "share_episode" -> argsObj.readString("episode_id")
+        TOOL_CALL_RADIO_TOOL -> {
+            val innerTool = argsObj.readString("tool_name")
+            if (innerTool != "share_episode") return null
+            when (val raw = argsObj["arguments"]) {
+                is JsonObject -> raw.readString("episode_id")
+                is JsonPrimitive -> runCatching {
+                    me.rerere.rikkahub.common.JsonInstant.parseToJsonElement(raw.content).jsonObject
+                        .readString("episode_id")
+                }.getOrNull()
+
+                else -> null
+            }
+        }
+
+        else -> null
+    }
+}
+
 // ====================================================================
 // JSON / Schema 小工具
 // ====================================================================

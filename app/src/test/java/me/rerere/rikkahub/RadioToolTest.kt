@@ -5,6 +5,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.rikkahub.data.ai.tools.RadioCatalogEntry
 import me.rerere.rikkahub.data.ai.tools.buildRadioCatalogPrompt
+import me.rerere.rikkahub.data.ai.tools.extractRadioShareEpisodeId
 import me.rerere.rikkahub.data.ai.tools.parseRadioCallArguments
 import me.rerere.rikkahub.data.ai.tools.validateAgainstSchema
 import kotlinx.serialization.json.JsonPrimitive
@@ -108,5 +109,53 @@ class RadioToolTest {
             put("extra_field", "whatever")
         }
         assertTrue(validateAgainstSchema(args, schema).isEmpty())
+    }
+
+    // ==================== share_episode 分享卡片 episode_id 提取 ====================
+
+    @Test
+    fun `extract episode id from direct share_episode call`() {
+        val args = """{"episode_id":"ep1","autoplay":1}"""
+        assertEquals("ep1", extractRadioShareEpisodeId("share_episode", args))
+    }
+
+    @Test
+    fun `extract episode id from call_radio_tool wrapper`() {
+        val args = """{"tool_name":"share_episode","arguments":{"episode_id":"ep2","autoplay":0}}"""
+        assertEquals("ep2", extractRadioShareEpisodeId("call_radio_tool", args))
+    }
+
+    @Test
+    fun `extract episode id from stringified inner arguments`() {
+        val args = """{"tool_name":"share_episode","arguments":"{\"episode_id\":\"ep3\"}"}"""
+        assertEquals("ep3", extractRadioShareEpisodeId("call_radio_tool", args))
+    }
+
+    @Test
+    fun `extract returns null for schema query and other radio tools`() {
+        // get_radio_tool_schema 查询 share_episode 的定义，不是真实分享，不能渲染卡片
+        assertEquals(
+            null,
+            extractRadioShareEpisodeId("get_radio_tool_schema", """{"tool_name":"share_episode"}""")
+        )
+        // 二段式调用其他工具
+        assertEquals(
+            null,
+            extractRadioShareEpisodeId("call_radio_tool", """{"tool_name":"get_channels"}""")
+        )
+    }
+
+    @Test
+    fun `extract returns null for malformed or missing episode_id`() {
+        assertEquals(null, extractRadioShareEpisodeId("call_radio_tool", "not json"))
+        assertEquals(
+            null,
+            extractRadioShareEpisodeId("call_radio_tool", """{"tool_name":"share_episode","arguments":{"autoplay":1}}""")
+        )
+        assertEquals(
+            null,
+            extractRadioShareEpisodeId("call_radio_tool", """{"tool_name":"share_episode","arguments":"broken"}""")
+        )
+        assertEquals(null, extractRadioShareEpisodeId("share_episode", ""))
     }
 }

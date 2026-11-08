@@ -25,7 +25,6 @@ import androidx.compose.material.icons.rounded.Forward30
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.IosShare
 import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Publish
 import androidx.compose.material.icons.rounded.QueueMusic
@@ -133,9 +132,6 @@ fun RadioEpisodePage(episodeId: String) {
                 scrollBehavior = scrollBehavior,
                 navigationIcon = { BackButton() },
                 actions = {
-                    IconButton(onClick = { vm.addToQueue() }) {
-                        Icon(Icons.Rounded.PlaylistAdd, contentDescription = stringResource(R.string.radio_add_to_queue))
-                    }
                     IconButton(onClick = { showPlaylistSheet = true }) {
                         Icon(Icons.Rounded.QueueMusic, contentDescription = stringResource(R.string.radio_playlist_title))
                     }
@@ -172,7 +168,6 @@ fun RadioEpisodePage(episodeId: String) {
                     onSeekForward = { player.seekBy(MediaPlaybackController.SEEK_FORWARD_MS) },
                     onGenerate = { vm.generateAudio() },
                     onCancelGeneration = { vm.cancelAudioGeneration() },
-                    onAddToQueue = { vm.addToQueue() },
                     onRestoreBackup = { vm.restoreBackup() },
                     onPublish = { vm.publish() },
                     onOpenSettings = { showSettingsSheet = true },
@@ -317,7 +312,6 @@ private fun PlayerCard(
     onSeekForward: () -> Unit,
     onGenerate: () -> Unit,
     onCancelGeneration: () -> Unit,
-    onAddToQueue: () -> Unit,
     onRestoreBackup: () -> Unit,
     onPublish: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -357,12 +351,6 @@ private fun PlayerCard(
                                 Text(stringResource(R.string.radio_regenerate))
                             }
                             Spacer(modifier = Modifier.weight(1f))
-                            IconButton(onClick = onAddToQueue) {
-                                Icon(
-                                    Icons.Rounded.PlaylistAdd,
-                                    contentDescription = stringResource(R.string.radio_add_to_queue)
-                                )
-                            }
                         }
                     }
 

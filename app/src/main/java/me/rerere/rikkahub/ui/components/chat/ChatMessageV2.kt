@@ -93,6 +93,7 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
+import me.rerere.rikkahub.data.ai.tools.extractRadioShareEpisodeId
 import me.rerere.rikkahub.data.ai.transformers.AudioToTextTransformer
 import me.rerere.rikkahub.service.removeVoiceMessageMarkerForDisplay
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
@@ -1275,20 +1276,15 @@ private fun AssistantMessageTurn(
                     }
                     is UIMessagePart.ToolCall -> {
                         // share_episode 工具：电台分享卡片挂在 AI 消息的 ToolCall 上（assistant 消息必然渲染，
-                        // 不依赖 TOOL 结果消息的可见性）；卡片自行校验节目与音频可用性
-                        if (part.toolName == "share_episode") {
-                            val argsObj = runCatching {
-                                me.rerere.rikkahub.common.JsonInstant.parseToJsonElement(part.arguments).jsonObject
-                            }.getOrNull()
-                            val shareEpisodeId =
-                                argsObj?.get("episode_id")?.jsonPrimitiveOrNull?.contentOrNull
-                            if (!shareEpisodeId.isNullOrBlank()) {
-                                flat += AssistantRenderItem.RadioShareItem(
-                                    node = node,
-                                    episodeId = shareEpisodeId,
-                                    isFirstInTurn = false, isLastInTurn = false, totalInTurn = 0
-                                )
-                            }
+                        // 不依赖 TOOL 结果消息的可见性）；卡片自行校验节目与音频可用性。
+                        // Radio 工具经 call_radio_tool 二段式执行（见 RadioAgentTools.kt），需同时识别两种挂载形式
+                        val shareEpisodeId = extractRadioShareEpisodeId(part.toolName, part.arguments)
+                        if (!shareEpisodeId.isNullOrBlank()) {
+                            flat += AssistantRenderItem.RadioShareItem(
+                                node = node,
+                                episodeId = shareEpisodeId,
+                                isFirstInTurn = false, isLastInTurn = false, totalInTurn = 0
+                            )
                         }
                     }
                     is UIMessagePart.ToolResult -> {

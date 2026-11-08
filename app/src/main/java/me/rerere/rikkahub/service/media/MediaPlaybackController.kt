@@ -119,7 +119,7 @@ class MediaPlaybackController(
     fun playEpisodes(items: List<PlaybackItem>, startIndex: Int = 0) {
         if (items.isEmpty()) return
         scope.launch {
-            val controller = ensureController() ?: return@launch
+            val controller = awaitController() ?: return@launch
             itemRegistry.clear()
             items.forEach { itemRegistry[it.id] = it }
             controller.setMediaItems(items.map { it.toMediaItem() }, startIndex.coerceIn(0, items.lastIndex), 0L)
@@ -141,7 +141,7 @@ class MediaPlaybackController(
      */
     fun playNext(item: PlaybackItem) {
         scope.launch {
-            val controller = ensureController() ?: return@launch
+            val controller = awaitController() ?: return@launch
             if (controller.mediaItemCount == 0) {
                 itemRegistry.clear()
                 itemRegistry[item.id] = item
@@ -165,7 +165,7 @@ class MediaPlaybackController(
      */
     fun removeItem(sourceType: PlaybackSourceType, id: String) {
         scope.launch {
-            val controller = ensureController() ?: return@launch
+            val controller = awaitController() ?: return@launch
             val wasPlaying = controller.isPlaying
             val currentItem = _state.value.currentItem
             val isRemovingCurrent = currentItem?.sourceType == sourceType && currentItem.id == id
@@ -189,29 +189,29 @@ class MediaPlaybackController(
 
     fun togglePlayPause() {
         scope.launch {
-            val controller = ensureController() ?: return@launch
+            val controller = awaitController() ?: return@launch
             if (controller.isPlaying) controller.pause() else controller.play()
         }
     }
 
     fun pause() {
-        scope.launch { ensureController()?.pause() }
+        scope.launch { awaitController()?.pause() }
     }
 
     fun stop() {
-        scope.launch { ensureController()?.stop() }
+        scope.launch { awaitController()?.stop() }
     }
 
     fun seekTo(positionMs: Long) {
         scope.launch {
-            ensureController()?.seekTo(positionMs.coerceAtLeast(0L))
+            awaitController()?.seekTo(positionMs.coerceAtLeast(0L))
         }
     }
 
     /** 回退/快进指定毫秒（负值回退，正值前进）。 */
     fun seekBy(offsetMs: Long) {
         scope.launch {
-            val controller = ensureController() ?: return@launch
+            val controller = awaitController() ?: return@launch
             val duration = controller.duration.takeIf { it > 0 }
             val target = controller.currentPosition + offsetMs
             val clamped = if (duration != null) target.coerceIn(0L, duration) else target.coerceAtLeast(0L)
@@ -221,7 +221,7 @@ class MediaPlaybackController(
 
     fun setSpeed(speed: Float) {
         scope.launch {
-            val controller = ensureController() ?: return@launch
+            val controller = awaitController() ?: return@launch
             val clamped = speed.coerceIn(MIN_SPEED, MAX_SPEED)
             controller.setPlaybackSpeed(clamped)
             _state.update { it.copy(speed = clamped) }
@@ -235,7 +235,7 @@ class MediaPlaybackController(
 
     fun setPlayMode(mode: PlaybackMode) {
         scope.launch {
-            val controller = ensureController() ?: return@launch
+            val controller = awaitController() ?: return@launch
             when (mode) {
                 PlaybackMode.SEQUENTIAL -> {
                     controller.repeatMode = Player.REPEAT_MODE_OFF
@@ -263,17 +263,17 @@ class MediaPlaybackController(
 
     /** 跳到队列中的上一条/下一条。 */
     fun seekToPrevious() {
-        scope.launch { ensureController()?.seekToPreviousMediaItem() }
+        scope.launch { awaitController()?.seekToPreviousMediaItem() }
     }
 
     fun seekToNext() {
-        scope.launch { ensureController()?.seekToNextMediaItem() }
+        scope.launch { awaitController()?.seekToNextMediaItem() }
     }
 
     /** 跳到队列中指定位置的条目并播放（播放列表抽屉点击）。 */
     fun seekToQueueItem(index: Int) {
         scope.launch {
-            val controller = ensureController() ?: return@launch
+            val controller = awaitController() ?: return@launch
             if (index in 0 until controller.mediaItemCount) {
                 controller.seekTo(index, 0L)
                 controller.play()
@@ -308,7 +308,7 @@ class MediaPlaybackController(
                     _sleepTimer.update { it.copy(remainingSeconds = totalSeconds - elapsed) }
                 }
                 if (isActive) {
-                    ensureController()?.pause()
+                    awaitController()?.pause()
                     _sleepTimer.update { it.copy(triggered = true, minutes = 0, remainingSeconds = 0) }
                 }
             }
@@ -343,7 +343,7 @@ class MediaPlaybackController(
      */
     fun playNextNow(item: PlaybackItem) {
         scope.launch {
-            val controller = ensureController() ?: return@launch
+            val controller = awaitController() ?: return@launch
             itemRegistry[item.id] = item
             if (controller.mediaItemCount == 0) {
                 controller.setMediaItems(listOf(item.toMediaItem()))
@@ -382,7 +382,7 @@ class MediaPlaybackController(
     /** 拖拽排序：移动队列内条目位置（播放列表抽屉）。 */
     fun moveQueueItem(from: Int, to: Int) {
         scope.launch {
-            val controller = ensureController() ?: return@launch
+            val controller = awaitController() ?: return@launch
             if (from in 0 until controller.mediaItemCount &&
                 to in 0 until controller.mediaItemCount &&
                 from != to
@@ -407,7 +407,7 @@ class MediaPlaybackController(
 
     override fun onEpisodeAudioReplaced(episodeId: String, newAsset: me.rerere.rikkahub.core.data.db.entity.RadioAudioAssetEntity?) {
         scope.launch {
-            val controller = ensureController() ?: return@launch
+            val controller = awaitController() ?: return@launch
             val currentItem = _state.value.currentItem
             val isPlayingThis = currentItem?.sourceType == PlaybackSourceType.RADIO_EPISODE &&
                 currentItem.id == episodeId
@@ -470,7 +470,7 @@ class MediaPlaybackController(
             val existing = itemRegistry[id] ?: return@launch
             val updated = existing.copy(title = newTitle)
             itemRegistry[id] = updated
-            val controller = ensureController() ?: return@launch
+            val controller = awaitController() ?: return@launch
             val index = findMediaItemIndex(controller, id)
             if (index >= 0) {
                 controller.replaceMediaItem(index, updated.toMediaItem())
@@ -508,7 +508,7 @@ class MediaPlaybackController(
             // 列表循环/单集循环下 STATE_ENDED 永不触发，必须用切集事件；
             // 用户手动 seek/切集（SEEK）不算播完。
             if (_sleepTimer.value.endOfEpisode && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                ensureController()?.pause()
+                controller?.pause()
                 _sleepTimer.value = SleepTimerState(triggered = true)
             }
             // 「只应用到当前节目」：切节目（非单曲循环重播）时倍速恢复 1.0x 并自动关闭开关；
@@ -573,6 +573,22 @@ class MediaPlaybackController(
     private fun ensureController(): MediaController? {
         if (controller == null) connect()
         return controller
+    }
+
+    /**
+     * 等待 MediaController 完成异步连接（首次点击时连接可能尚未建立，
+     * ensureController 返回 null 会让操作静默失败——表现为「点了没反应」）。
+     * 超时返回 null。
+     */
+    private suspend fun awaitController(timeoutMs: Long = 3_000L): MediaController? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            ensureController()
+            controller?.let { return it }
+            delay(100)
+        }
+        Log.w(TAG, "awaitController timeout, playback request dropped")
+        return null
     }
 
     private fun findMediaItemIndex(controller: MediaController, mediaId: String): Int {

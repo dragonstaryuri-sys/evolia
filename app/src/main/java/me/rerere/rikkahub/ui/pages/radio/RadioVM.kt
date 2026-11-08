@@ -100,7 +100,8 @@ class RadioHomeVM(
     /** 是否还有更多（用于滚动加载触发）。 */
     val allEpisodesExhausted = MutableStateFlow(false)
 
-    private val allAscending = MutableStateFlow(false)
+    /** 全部节目排序方向（false = 新→旧，true = 旧→新）。 */
+    val allAscending = MutableStateFlow(false)
 
     /** 全部节目（含排序方向）。 */
     val allEpisodesSorted: StateFlow<List<RadioEpisodeEntity>> =
@@ -111,6 +112,9 @@ class RadioHomeVM(
     fun toggleAllOrder() {
         allAscending.value = !allAscending.value
     }
+
+    /** 按 id 响应式查询单个节目（「更多」抽屉用，喜欢状态即时刷新）。 */
+    fun observeEpisodeById(id: String) = radioService.observeEpisode(id)
 
     /** 「下一集播放」：插入队列当前节目之后（不跳播）。 */
     fun playEpisodeNext(episode: RadioEpisodeEntity) {
@@ -499,28 +503,6 @@ class RadioEpisodeVM(
                 )
             )
         }
-    }
-
-    /** 把当前节目加入播放队列（插在当前节目之后，不改变正在播放的内容）。 */
-    fun addToQueue() {
-        val asset = currentAsset.value ?: run {
-            _message.value = RadioMessage(context.getString(R.string.radio_toast_no_audio_export), isError = true)
-            return
-        }
-        val ep = episode.value ?: return
-        val file = RadioAudioGenerator.resolveAudioFile(context, asset.filePath)
-        if (!file.exists()) {
-            _message.value = RadioMessage(context.getString(R.string.radio_toast_audio_missing_regen), isError = true)
-            return
-        }
-        mediaPlaybackController.playNext(
-            MediaPlaybackController.radioEpisode(
-                id = ep.id,
-                filePath = file.absolutePath,
-                title = ep.title,
-                channelName = ""
-            )
-        )
     }
 
     fun seekTo(positionMs: Long) {

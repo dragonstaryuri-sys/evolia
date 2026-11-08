@@ -98,7 +98,8 @@ fun RadioHomePage() {
     val likedEpisodes by vm.likedEpisodes.collectAsStateWithLifecycle()
     val likedAscending by vm.likedAscending.collectAsStateWithLifecycle()
     val draftEpisodes by vm.draftEpisodes.collectAsStateWithLifecycle()
-    val allEpisodes by vm.allEpisodes.collectAsStateWithLifecycle()
+    val allEpisodes by vm.allEpisodesSorted.collectAsStateWithLifecycle()
+    val allAscending by vm.allAscending.collectAsStateWithLifecycle()
 
     var showChannelSheet by remember { mutableStateOf(false) }
     var editingChannel by remember { mutableStateOf<RadioChannelEntity?>(null) }
@@ -215,12 +216,12 @@ fun RadioHomePage() {
                             )
                         }
 
-                        // ===== 全部节目（分页）=====
+                        // ===== 全部节目（分页 + 右上角排序，与我的喜欢 tab 同款组件）=====
                         item(key = "all_episodes_header") {
-                            Text(
-                                text = stringResource(R.string.radio_all_episodes),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
+                            EpisodeSortHeader(
+                                title = stringResource(R.string.radio_all_episodes),
+                                ascending = allAscending,
+                                onToggle = { vm.toggleAllOrder() },
                                 modifier = Modifier.padding(top = 8.dp)
                             )
                         }
@@ -254,20 +255,11 @@ fun RadioHomePage() {
 
                     RadioHomeVM.RadioHomeTab.LIKED -> {
                         item(key = "liked_header") {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = stringResource(if (likedAscending) R.string.radio_sort_oldest else R.string.radio_sort_newest),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(onClick = { vm.toggleLikedOrder() }) {
-                                    Icon(
-                                        imageVector = if (likedAscending) Icons.Rounded.ArrowUpward else Icons.Rounded.ArrowDownward,
-                                        contentDescription = stringResource(R.string.radio_toggle_sort)
-                                    )
-                                }
-                            }
+                            EpisodeSortHeader(
+                                title = null,
+                                ascending = likedAscending,
+                                onToggle = { vm.toggleLikedOrder() }
+                            )
                         }
                         val filteredLiked = likedEpisodes.filter { it.title.contains(searchQuery, ignoreCase = true) }
                         if (filteredLiked.isEmpty()) {
@@ -283,7 +275,10 @@ fun RadioHomePage() {
                             EpisodeCard(
                                 episode = episode,
                                 assistant = assistantMap[episode.creatorAgentId],
-                                onClick = { navController.navigate(Screen.RadioEpisode(episodeId = episode.id)) }
+                                onClick = { navController.navigate(Screen.RadioEpisode(episodeId = episode.id)) },
+                                onOpenActions = { actionEpisodeId = episode.id },
+                                onPlayNow = { vm.playEpisodeNow(episode) },
+                                liked = episode.liked == 1
                             )
                         }
                     }
@@ -383,9 +378,13 @@ fun RadioHomePage() {
         PlaylistSheet(controller = player, onDismiss = { showPlaylistSheet = false })
     }
 
-    actionEpisodeId?.let { id ->
-        val episode = allEpisodes.find { it.id == id }
-        if (episode != null) {
+    // 「更多」抽屉：episode 走响应式查询（喜欢状态即时刷新，与栏目详情页行为一致）
+    val actionEpisodeFlow = remember(actionEpisodeId) {
+        actionEpisodeId?.let { id -> vm.observeEpisodeById(id) }
+    }
+    actionEpisodeFlow?.let { flow ->
+        val actionEpisode by flow.collectAsStateWithLifecycle(initialValue = null)
+        actionEpisode?.let { episode ->
             EpisodeActionsSheet(
                 episode = episode,
                 onDismiss = { actionEpisodeId = null },
@@ -398,6 +397,40 @@ fun RadioHomePage() {
                     actionEpisodeId = null
                     vm.exportEpisodeAudio(episode)
                 }
+            )
+        }
+    }
+}
+
+/**
+ * 列表头部排序控件（我的喜欢 / 全部节目共用）：
+ * 左侧可选标题，右侧「从旧→新 / 从新→旧」文字 + 升降序箭头按钮。
+ */
+@Composable
+private fun EpisodeSortHeader(
+    title: String?,
+    ascending: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier.fillMaxWidth()) {
+        if (title != null) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = stringResource(if (ascending) R.string.radio_sort_oldest else R.string.radio_sort_newest),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        IconButton(onClick = onToggle) {
+            Icon(
+                imageVector = if (ascending) Icons.Rounded.ArrowUpward else Icons.Rounded.ArrowDownward,
+                contentDescription = stringResource(R.string.radio_toggle_sort)
             )
         }
     }

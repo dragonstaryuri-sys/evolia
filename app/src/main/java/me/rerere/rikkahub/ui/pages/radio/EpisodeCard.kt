@@ -109,8 +109,19 @@ fun EpisodeCard(
                     }
                 }
                 if (onOpenActions != null) {
-                    IconButton(onClick = { onPlayNow?.invoke() }) {
-                        Icon(Icons.Rounded.PlayArrow, contentDescription = "立即播放")
+                    // 播放/暂停（与详情页播放器一致）：在播显示暂停，暂停/未播显示播放；
+                    // 非当前节目点击 = 立即跳播，当前节目点击 = 播放/暂停切换
+                    IconButton(onClick = {
+                        if (isCurrent) {
+                            player.togglePlayPause()
+                        } else {
+                            onPlayNow?.invoke()
+                        }
+                    }) {
+                        Icon(
+                            imageVector = if (isPlayingThis) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (isPlayingThis) "暂停" else "立即播放"
+                        )
                     }
                     IconButton(onClick = onOpenActions) {
                         Icon(Icons.Rounded.MoreVert, contentDescription = "节目操作")
