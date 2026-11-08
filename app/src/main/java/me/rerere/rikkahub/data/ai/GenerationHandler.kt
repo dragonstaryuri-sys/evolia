@@ -236,12 +236,13 @@ internal fun buildLastUserMessageParts(
     val newTextPart = if (dynamicContext.isNotBlank()) {
         UIMessagePart.Text(
             text = buildString {
+                //尝试给system消息放后面看影不影响回复
+                append(builtText)
                 appendLine("System:")
                 append("[")
                 append(dynamicContext)
                 append("]")
-                appendLine("User:")
-                append(builtText)
+
             }
         )
     } else {
