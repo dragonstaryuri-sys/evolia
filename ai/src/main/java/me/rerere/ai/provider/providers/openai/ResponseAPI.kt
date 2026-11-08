@@ -297,6 +297,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             .filter {
                 it.isValidToUpload() && it.role != MessageRole.SYSTEM
             }
+            .cleanResponseApiInput()
             .forEachIndexed { index, message ->
                 if (message.role == MessageRole.TOOL) {
                     message.getToolResults().forEach { result ->
@@ -308,9 +309,13 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                     }
                     return@forEachIndexed
                 }
-                add(buildJsonObject {
-                    // role
-                    put("role", JsonPrimitive(message.role.name.lowercase()))
+                // 仅含 ToolCall/Reasoning 的消息没有可见内容（文本/图片）：
+                // Responses API 不接受空 content 数组，跳过 message item，只输出 function_call item
+                val hasVisibleContent = message.parts.any { it is UIMessagePart.Text || it is UIMessagePart.Image }
+                if (hasVisibleContent) {
+                    add(buildJsonObject {
+                        // role
+                        put("role", JsonPrimitive(message.role.name.lowercase()))
 
                     // content
                     if (message.parts.isOnlyTextPart()) {
@@ -367,6 +372,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                         }
                     }
                 })
+                }
                 // tool_calls
                 message.getToolCalls()
                     .takeIf { it.isNotEmpty() }
@@ -630,6 +636,56 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
 
 private fun isModelAllowTemperature(model: Model): Boolean {
     return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
+}
+
+/**
+ * Responses API 输入清洗（纯函数，可单测）。
+ *
+ * Responses API 对 function_call / function_call_output 有严格配对要求：
+ * - function_call_output 的 call_id 必须能在同一 input 中找到对应的 function_call；
+ * - function_call 必须有对应的 function_call_output，否则模型请求会被拒绝或挂起。
+ *
+ * 历史消息可能因截断/损坏出现孤立的 TOOL 消息或无结果的 ToolCall。
+ * 与 ChatCompletionsAPI 的配对清洗策略保持一致：
+ * - 丢弃没有对应 ToolCall 的孤立 TOOL 消息（整条，或剔除无配对的 ToolResult part）；
+ * - 从 Assistant 消息中剥离没有对应结果的 ToolCall part（保留文本内容）。
+ */
+internal fun List<UIMessage>.cleanResponseApiInput(): List<UIMessage> {
+    val toolCallIds = flatMap { msg -> msg.getToolCalls().map { it.toolCallId } }.filter { it.isNotBlank() }.toSet()
+    val toolResultIds = flatMap { msg -> msg.getToolResults().map { it.toolCallId } }.filter { it.isNotBlank() }.toSet()
+
+    return mapNotNull { message ->
+        when {
+            message.role == MessageRole.TOOL -> {
+                val pairedResults = message.getToolResults().filter { it.toolCallId in toolCallIds }
+                when {
+                    pairedResults.size == message.getToolResults().size -> message
+                    pairedResults.isNotEmpty() -> message.copy(
+                        parts = message.parts.filter { part ->
+                            part !is UIMessagePart.ToolResult || part.toolCallId in toolCallIds
+                        }
+                    )
+                    // 整条消息都没有可配对的结果 → 丢弃
+                    else -> null
+                }
+            }
+
+            message.role == MessageRole.ASSISTANT && message.getToolCalls().isNotEmpty() -> {
+                val unpairedCalls = message.getToolCalls().filter { it.toolCallId !in toolResultIds }
+                if (unpairedCalls.isEmpty()) {
+                    message
+                } else {
+                    message.copy(
+                        parts = message.parts.filter { part ->
+                            part !is UIMessagePart.ToolCall || part.toolCallId in toolResultIds
+                        }
+                    )
+                }
+            }
+
+            else -> message
+        }
+    }
 }
 
 private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {

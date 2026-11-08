@@ -1311,12 +1311,11 @@ class ChatService(
         requirement: String? = null,
         targetMessageId: Uuid? = null
     ) {
-        val mutex = conversationMutexes.computeIfAbsent(conversationId) { Mutex() }
-        mutex.withLock {
-            checkInvalidMessages(conversationId)
-            val currentJob = currentCoroutineContext().job
-            var currentSearchCount = 0
-            val settings = settingsStore.settingsFlow.first()
+            val mutex = conversationMutexes.computeIfAbsent(conversationId) { Mutex() }
+            mutex.withLock {
+                checkInvalidMessages(conversationId)
+                val currentJob = currentCoroutineContext().job
+                val settings = settingsStore.settingsFlow.first()
             var currentConversation = conversations[conversationId]?.value
                 ?: conversationRepo.getConversationById(conversationId)
                 ?: return@withLock
@@ -1507,8 +1506,6 @@ class ChatService(
                                         settings,
                                         assistant,
                                         searchMode.index,
-                                        searchCounter = { currentSearchCount },
-                                        onSearchCalled = { currentSearchCount++ }
                                     ))
                             }
 
@@ -2377,8 +2374,6 @@ class ChatService(
         settings: Settings,
         assistant: Assistant,
         providerIndex: Int? = null,
-        searchCounter: () -> Int,
-        onSearchCalled: () -> Unit
     ): Set<Tool> {
         val idx = providerIndex ?: settings.searchServiceSelected
         return buildSet {
@@ -2386,12 +2381,10 @@ class ChatService(
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
                 SearchService.getService(opt).parameters
             }, execute = { jsonElement ->
-                if (searchCounter() >= 1) {
-                    return@Tool buildJsonObject {
-                        put("error", "你本轮已调用过一次搜索工具，请整合现有信息回答用户，或询问用户是否要继续查询。")
-                    }
-                }
-                onSearchCalled()
+                // 注意：这里不再硬性限制"每请求仅搜索一次"。
+                // 异常重复调用由 GenerationHandler.ToolLoopGuard 统一保护
+                // （工具调用轮次上限 + 相同工具/相同参数连续重复检测），
+                // 换用不同关键词的连续搜索是合理行为，不应被拦截。
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
                 val resultSize = 6
                 val commonOptions = settings.searchCommonOptions.copy(resultSize = resultSize)
@@ -2429,8 +2422,9 @@ class ChatService(
                 }
             }, systemPrompt = { _, _ ->
                 "## tool: search_web\n" +
-                    "严重提示：每条用户消息仅允许调用该工具一次。" +
-                    "如果搜索结果不够理想，就基于现有信息尽力作答，无需重新搜索。"
+                    "优先整合已有搜索结果作答；如果搜索结果已足够回答用户，无需再次搜索。" +
+                    "确有必要时（如首次结果与目标明显不符、或需要不同角度的信息）可以换用不同关键词再次检索，" +
+                    "但避免以完全相同的参数重复调用。"
             }))
         }
     }

@@ -157,12 +157,20 @@ data class UIMessage(
                                 lastToolCall == null -> {
                                     acc + deltaPart.copy()
                                 }
-                                // Both have blank id, merge if tool names match or last call already has a name
+                                // Both have blank id：仅当「名称匹配/为空」且「不是两个都已是完整参数」时才合并。
+                                // Gemini 等 provider 的 functionCall 无 id，并行调用靠名称区分：
+                                // - 新调用携带不同名称 → 必须作为独立 part 追加（旧逻辑恒真条件会把并行调用错并成一个，
+                                //   拼出 "search_webread_url" 这类坏名，导致模型认为工具结果从未返回而反复重调）。
+                                // - 两个 part 的 arguments 均已是完整 JSON 对象 → 各自是独立完整的调用（如同名并行调用），
+                                //   不能按"参数续传"合并，否则参数被错误拼接。
                                 lastToolCall.toolCallId.isBlank() -> {
                                     val nameMatches = deltaPart.toolName.isBlank() ||
-                                        deltaPart.toolName == lastToolCall.toolName ||
-                                        lastToolCall.toolName.isNotBlank()
-                                    if (nameMatches) {
+                                        deltaPart.toolName == lastToolCall.toolName
+                                    val bothCompleteArgs =
+                                        lastToolCall.arguments.isNotBlank() && deltaPart.arguments.isNotBlank() &&
+                                            isCompleteJsonObject(lastToolCall.arguments) &&
+                                            isCompleteJsonObject(deltaPart.arguments)
+                                    if (nameMatches && !bothCompleteArgs) {
                                         acc.map { part ->
                                             if (part == lastToolCall && part is UIMessagePart.ToolCall) {
                                                 part.merge(deltaPart)
@@ -465,6 +473,14 @@ fun List<UIMessage>.truncate(index: Int): List<UIMessage> {
     return this.subList(index, this.size)
 }
 
+/**
+ * 判断字符串是否已是一个完整可解析的 JSON 对象。
+ * 用于流式 ToolCall 合并：若两段 arguments 各自都是完整 JSON，
+ * 说明它们是两次独立调用而非同一次调用的参数续传片段。
+ */
+private fun isCompleteJsonObject(raw: String): Boolean =
+    runCatching { json.parseToJsonElement(raw).jsonObject }.isSuccess
+
 fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
     if (size <= 0 || this.size <= size) return this
 
@@ -618,9 +634,17 @@ sealed class UIMessagePart {
     ) : UIMessagePart() {
         fun merge(other: ToolCall): ToolCall {
             val mergedArguments = mergeArguments(arguments, other.arguments)
+            // 名称合并防重复：部分 provider 流式续传时会重复下发同名（甚至整段重复对象），
+            // 直接拼接会产出 "search_websearch_web" 这类坏名导致工具查找失败。
+            val mergedName = when {
+                other.toolName.isBlank() -> toolName
+                toolName.isBlank() -> other.toolName
+                toolName == other.toolName -> toolName
+                else -> toolName + other.toolName
+            }
             return ToolCall(
                 toolCallId = toolCallId,
-                toolName = toolName + other.toolName,
+                toolName = mergedName,
                 arguments = mergedArguments,
                 metadata = if(other.metadata != null) other.metadata else metadata,
             )

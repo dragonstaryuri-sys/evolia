@@ -650,10 +650,14 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                                     }
 
                                     is UIMessagePart.ToolCall -> {
+                                        // 历史消息的 arguments 可能因流式中断/损坏而非法，
+                                        // 解析失败时兜底为空对象，避免整个请求构建失败
+                                        val argsElement = runCatching { json.parseToJsonElement(part.arguments) }
+                                            .getOrElse { buildJsonObject { } }
                                         add(buildJsonObject {
                                             put("functionCall", buildJsonObject {
                                                 put("name", part.toolName)
-                                                put("args", json.parseToJsonElement(part.arguments))
+                                                put("args", argsElement)
                                             })
                                             part.metadata?.get("thoughtSignature")?.let {
                                                 put("thoughtSignature", it)

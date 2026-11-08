@@ -235,6 +235,32 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **扫描时机**：① 常规同步（30s 轮询/广播/窗口事件）按需扫描，同一前台应用 5 秒内复用上次结果（`regularScan*` 缓存）；② 无障碍 `TYPE_VIEW_CLICKED` 只记录 recentActions，**绝不触发全量屏幕扫描**；③ 触发前强制重扫（见 8.5.3）。`AccessibilityNodeInfo` 全节点 recycle、遍历深度 60、文本截断 30 条等资源保护全部保留。
 - `scanScreenContext()` 返回可空 `String?`：null = 扫描失败（无活动窗口），空串 = 扫描成功但无文本，两者语义不得混淆。
 
+### 8.6 工具调用循环治理与上下文快照复用（2026-11）
+
+> 核心文件：`data/ai/GenerationHandler.kt`（快照与工具循环）、`data/ai/ToolLoopGuard.kt`（纯决策，有单测 `ToolLoopGuardTest`）、`ai/ui/Message.kt`（流式 ToolCall 合并）、`ai/provider/providers/openai/ResponseAPI.kt`（Responses API 清洗）。
+
+#### 8.6.1 上下文快照复用（禁止回退的硬约束）
+- **一次独立用户请求只构建一次动态上下文快照**：`generateText` 在工具循环开始前调用 `computeContextSnapshot`（构建 `GenerationContextSnapshot`），循环内所有模型请求经 `generateInternal → buildMessages(snapshot=…)` 复用。**禁止**把世界书激活（含 RAG 嵌入查询）、L1/L2 记忆查询、日程/日记/里程碑读取、TimeSense 等重新放回每轮执行的 `buildMessages` 中（历史 bug：每轮工具调用重复执行全部动态上下文构建 + TimeSense 随轮次漂移破坏 Prefix Caching）。
+- **快照固定 vs 每轮重建的分界**：快照固定 = 系统提示、世界书激活结果、L1 片段、L2 当日跨会话记忆、RAG 记忆注入、参考变量、TimeSense、正在进行的日程、工具提示词（`Tool.systemPrompt` 以首轮消息计算）、模式/世界书附件。每轮基于最新 `currentMessages` 重建 = `prepareHistoryCandidates`（skipContext 白名单过滤 → `limitContext` 裁剪保持工具配对 → 旧搜索结果修剪）→ Token 预算选取 → 输入 Transformers → 动态上下文注入。
+- **锚点消息**：动态上下文只注入快照记录的 `anchorUserMessageId`（本轮原始用户请求，即首轮最后一条 USER 消息），**不随工具执行期间追加的额外 USER 消息（如拍照注入）漂移**；锚点被预算裁掉时该轮不注入并记 warning，禁止回退为「每轮重新找最后一条 USER 消息」。
+- 记忆预算分配以**首轮**历史为准冻结进快照 dynamicContext；每轮 `buildMessages` 只做消息预算（等价 CHAT_HISTORY 优先）。
+
+#### 8.6.2 工具循环保护（ToolLoopGuard）
+- **轮次上限** 16 轮（`DEFAULT_MAX_TOOL_ROUNDS`，一轮 = 一次含工具调用的模型响应）：超限后不再执行工具，以引导性错误 ToolResult（保持调用/结果配对）让模型直接作答，循环自然结束；**禁止**静默 break 丢弃结果。
+- **相同指纹连续重复检测**：指纹 = 工具名 + 规范化参数；基于**上一轮快照状态**计数（同轮内重复调用不得相互累积），连续相同超过 2 次拦截。不同参数/不同工具/非连续重复不受影响。
+- **已删除「每请求仅一次 search_web」硬限制**（GenerationHandler 的 searchCount 与 createSearchTool 的 searchCounter 双重拦截均已移除）：换关键词的再次搜索是合理行为；`search_web` 的 systemPrompt 引导语已同步放宽。不要以「搜索次数限制」替代循环保护。
+- 工具执行失败 → 明确错误 ToolResult（异常类名+消息+截断堆栈）；结果为空串/JsonNull → 规范化为「执行成功但没有返回任何内容」note；工具不存在 → 结构化错误（不抛堆栈）。空 results 时中止循环（不产生无内容 TOOL 消息）。
+
+#### 8.6.3 链路日志与排查入口
+- 每次生成有请求级 `requestTag`（`req-xxxxxxxx`）；逐工具执行日志：`[req-x] ToolCall round=N tool=… id=… duration=… resultLength=… empty=…`；每轮请求发出前 `logToolCallChainSummary`（仅 DEBUG）输出 `[ToolCallDebug] … matchedToolCallIds=… toolResultContentLength=…`，`matchedToolCallIds=false` 即为「工具结果未进请求」的直接证据。
+- 排查「模型反复调用同一工具」时按 requestTag 聚合日志，先确认 Tool 消息是否进入下一轮请求（配对清洗日志在 ChatCompletionsAPI/ResponseAPI 中，检索「孤立」「不完整」关键字）。
+
+#### 8.6.4 Provider 工具调用协议事实（有单测固化）
+- **Gemini**：`functionCall` 无 `toolCallId`（空串），并行调用靠名称区分。`handleMessageChunk` 的空 id 合并规则：仅「名称匹配/为空」且「非双方均为完整 JSON 参数」时合并，否则追加为新 part（修复并行调用被错并成 `search_webread_url` 坏名 → functionResponse 名称失配 → Gemini 视调用未回答而反复重调）；`ToolCall.merge` 同名不重复拼接。
+- **Responses API**（useResponseApi）：`cleanResponseApiInput` 清洗孤立 `function_call_output`/无结果 `function_call`（与 ChatCompletionsAPI 配对清洗策略一致）；仅含 ToolCall/Reasoning 的 assistant 消息**不产出 message item**（空 `content: []` 会被拒绝）。
+- **ChatCompletionsAPI**：`buildMessages` 内置配对校验（assistant 的全部 toolCallId 必须有 Tool 结果，否则剥离 tool_calls 保文本防 DeepSeek 400）；TOOL 消息按 toolCallId 逐条序列化为 `role=tool`。
+- 历史裁剪必须走 `limitContext`（保持 TOOL→assistant(toolcall) 配对并丢弃开头孤立 TOOL），禁止裸 subList。
+
 ## 9. 会话加载与 UI 同步逻辑 (Chat Loading & UI Sync)
 
 ### 9.1 混合消息流 (Hybrid Message Flow)

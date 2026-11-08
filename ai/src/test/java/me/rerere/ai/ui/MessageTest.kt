@@ -379,4 +379,119 @@ class MessageTest {
         )
         assertFalse(msg.isCallDecisionRequest())
     }
+
+    // ------------------------------------------------------------------
+    // 流式 ToolCall 合并（handleMessageChunk）
+    // Gemini 等协议的 functionCall 无 toolCallId，并行调用与参数续传必须正确区分，
+    // 否则会把并行调用错并成一个（拼出坏工具名），模型看不到工具结果而反复重调。
+    // ------------------------------------------------------------------
+
+    private fun toolCallChunk(vararg parts: UIMessagePart): MessageChunk = MessageChunk(
+        id = "chunk",
+        model = "test",
+        choices = listOf(
+            UIMessageChoice(
+                index = 0,
+                delta = UIMessage(role = MessageRole.ASSISTANT, parts = parts.toList()),
+                message = null,
+                finishReason = null
+            )
+        )
+    )
+
+    private fun mergeToolCallChunks(chunks: List<MessageChunk>): List<UIMessagePart> {
+        var messages = listOf(UIMessage(role = MessageRole.USER, parts = listOf(UIMessagePart.Text("hi"))))
+        chunks.forEach { chunk ->
+            messages = messages.handleMessageChunk(chunk)
+        }
+        return messages.last().parts
+    }
+
+    @Test
+    fun `gemini parallel tool calls with different names should stay separate`() {
+        val parts = mergeToolCallChunks(
+            listOf(
+                toolCallChunk(UIMessagePart.ToolCall("", "search_web", """{"query":"a"}""")),
+                toolCallChunk(UIMessagePart.ToolCall("", "read_url", """{"url":"b"}""")),
+            )
+        )
+        val calls = parts.filterIsInstance<UIMessagePart.ToolCall>()
+        assertEquals(2, calls.size)
+        assertEquals("search_web", calls[0].toolName)
+        assertEquals("read_url", calls[1].toolName)
+    }
+
+    @Test
+    fun `gemini parallel same-name tool calls with complete args should stay separate`() {
+        val parts = mergeToolCallChunks(
+            listOf(
+                toolCallChunk(UIMessagePart.ToolCall("", "search_web", """{"query":"a"}""")),
+                toolCallChunk(UIMessagePart.ToolCall("", "search_web", """{"query":"b"}""")),
+            )
+        )
+        val calls = parts.filterIsInstance<UIMessagePart.ToolCall>()
+        assertEquals(2, calls.size)
+        assertEquals("""{"query":"a"}""", calls[0].arguments)
+        assertEquals("""{"query":"b"}""", calls[1].arguments)
+    }
+
+    @Test
+    fun `blank-id argument fragments should merge into one call`() {
+        val parts = mergeToolCallChunks(
+            listOf(
+                toolCallChunk(UIMessagePart.ToolCall("", "", """{"query":""")),
+                toolCallChunk(UIMessagePart.ToolCall("", "", """"weather"}""")),
+            )
+        )
+        val calls = parts.filterIsInstance<UIMessagePart.ToolCall>()
+        assertEquals(1, calls.size)
+        assertEquals("""{"query":"weather"}""", calls[0].arguments)
+    }
+
+    @Test
+    fun `blank-name fragment after complete first fragment should merge`() {
+        // 首个分片已是完整 JSON，后续分片为续传片段：应按参数续传合并而非拆成两个调用
+        val parts = mergeToolCallChunks(
+            listOf(
+                toolCallChunk(UIMessagePart.ToolCall("", "search_web", "{}")),
+                toolCallChunk(UIMessagePart.ToolCall("", "", """"query":"a"}""")),
+            )
+        )
+        val calls = parts.filterIsInstance<UIMessagePart.ToolCall>()
+        assertEquals(1, calls.size)
+        assertEquals("""{"query":"a"}""", calls[0].arguments)
+    }
+
+    @Test
+    fun `same-id repeated full object should not duplicate tool name`() {
+        // 部分供应商流式续传时按相同 id 重复下发完整对象，名称不能被拼接成 "search_websearch_web"
+        val parts = mergeToolCallChunks(
+            listOf(
+                toolCallChunk(UIMessagePart.ToolCall("call_1", "search_web", "")),
+                toolCallChunk(UIMessagePart.ToolCall("call_1", "search_web", """{"query":"a"}""")),
+            )
+        )
+        val calls = parts.filterIsInstance<UIMessagePart.ToolCall>()
+        assertEquals(1, calls.size)
+        assertEquals("search_web", calls[0].toolName)
+        assertEquals("""{"query":"a"}""", calls[0].arguments)
+    }
+
+    @Test
+    fun `openai-style id-carrying parallel calls merge by id`() {
+        val parts = mergeToolCallChunks(
+            listOf(
+                toolCallChunk(UIMessagePart.ToolCall("call_1", "search_web", """{"query":""")),
+                toolCallChunk(UIMessagePart.ToolCall("call_2", "read_url", "")),
+                toolCallChunk(UIMessagePart.ToolCall("call_1", "", """"weather"}""")),
+                toolCallChunk(UIMessagePart.ToolCall("call_2", "", """{"url":"b"}""")),
+            )
+        )
+        val calls = parts.filterIsInstance<UIMessagePart.ToolCall>()
+        assertEquals(2, calls.size)
+        assertEquals("call_1", calls[0].toolCallId)
+        assertEquals("""{"query":"weather"}""", calls[0].arguments)
+        assertEquals("call_2", calls[1].toolCallId)
+        assertEquals("""{"url":"b"}""", calls[1].arguments)
+    }
 }

@@ -11,6 +11,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -95,6 +96,32 @@ data class BuildMessagesResult(
     val activatedLorebookEntries: List<UsedLorebookEntry>,
     val usedModes: List<UsedMode> = emptyList(),
     val usedMemories: List<UsedMemory> = emptyList()
+)
+
+/**
+ * 一次独立用户请求的动态上下文快照（上下文快照复用）。
+ *
+ * 在 [GenerationHandler.generateText] 的工具调用循环开始前构建一次，循环内所有模型请求复用：
+ * - **固定**：系统提示（助手档案/用户档案/里程碑/日程/日记/世界书激活结果/工具提示词）、
+ *   L1 近期片段、L2 当日跨会话记忆、RAG 记忆注入、TimeSense（当前时间/间隔）、正在进行的日程。
+ * - **不固定**：消息历史（每轮基于最新 currentMessages 重新选取）、工具执行结果。
+ *
+ * 收益：工具循环内不再重复执行世界书 RAG 嵌入、记忆/日程/日记 DB 查询；同一轮请求内
+ * 动态上下文完全一致（TimeSense 不随工具轮次漂移），system prompt 前缀稳定可命中 Prefix Caching。
+ * 快照绑定本轮原始用户请求：dynamicContext 只注入 [anchorUserMessageId] 对应的消息，
+ * 不随工具执行期间追加的额外 USER 消息（如拍照注入）漂移。
+ */
+data class GenerationContextSnapshot(
+    val staticSystemPrompt: String,
+    val summarySystemPrompt: String,
+    val allContextAttachments: List<UIMessagePart>,
+    /** 注入到锚点 USER 消息中的动态上下文全文（梗概/记忆/变量/时间/日程） */
+    val dynamicContext: String,
+    /** 动态上下文锚点：本轮原始用户请求消息 id */
+    val anchorUserMessageId: Uuid?,
+    val activatedLorebookEntries: List<UsedLorebookEntry>,
+    val usedModes: List<UsedMode>,
+    val usedMemories: List<UsedMemory>,
 )
 
 /**
@@ -294,12 +321,39 @@ class GenerationHandler(
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
 
-        var currentMessages: List<UIMessage> = messages
-        var searchCount = 0
-        for (stepIndex in 0 until maxSteps) {
-            Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
+        // 请求级标识：关联同一次用户请求内的多个工具调用轮次（日志用，不含用户内容）
+        val requestTag = "req-" + Uuid.random().toString().take(8)
 
-            val toolsInternal = buildList {
+        // ===== 上下文快照（Part 1）：一次独立用户请求只构建一次动态上下文 =====
+        // 世界书激活（含 RAG 嵌入）、L1/L2 记忆、日程、日记、TimeSense 等全部在此计算一次，
+        // 工具调用循环内所有模型请求复用该快照；消息历史与工具结果每轮仍基于最新数据组装。
+        val contextSnapshot = computeContextSnapshot(
+            assistant = assistant,
+            settings = settings,
+            messages = messages,
+            model = model,
+            tools = tools,
+            memories = memories ?: emptyList(),
+            lastArchivedMessageTime = lastArchivedMessageTime,
+            enabledModeIds = enabledModeIds,
+            contextSummary = contextSummary,
+            temporarySummaries = temporarySummaries,
+            includeSkipContextMessages = includeSkipContextMessages,
+            conversationId = conversationId,
+            isCallMode = isCallMode(),
+        )
+        Log.i(
+            TAG,
+            "[$requestTag] context snapshot built: dynamicContext=${contextSnapshot.dynamicContext.length} chars, " +
+                "staticPrompt=${contextSnapshot.staticSystemPrompt.length} chars, anchorUser=${contextSnapshot.anchorUserMessageId}"
+        )
+
+        var currentMessages: List<UIMessage> = messages
+
+        // ===== 工具定义本轮固定（Part 2.6）=====
+        // 工具列表/Schema/描述在整轮请求内不变；执行闭包内部仍按需读取最新业务状态
+        // （DB/Settings 查询发生在 execute 时，不在构建时）。
+        val toolsInternal = buildList {
                 Log.d(TAG, "generateInternal: build tools($assistant)")
                 if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) {
                     buildMemoryTools(
@@ -603,7 +657,16 @@ class GenerationHandler(
                     )
                 }
                 addAll(tools)
-            }
+        }
+
+        // ===== 工具调用循环保护（Part 3.4）=====
+        // 轮次上限 + 相同指纹连续重复检测；拦截时以引导性错误 ToolResult 反馈模型，
+        // 保持 Assistant 工具调用与 Tool 消息配对，循环自然结束。
+        val toolLoopGuard = ToolLoopGuard()
+        var toolRound = 0
+
+        for (stepIndex in 0 until maxSteps) {
+            Log.i(TAG, "[$requestTag] streamText: start step #$stepIndex (${model.id})")
 
             generateInternal(
                 assistant = assistant,
@@ -642,17 +705,16 @@ class GenerationHandler(
                 providerImpl = providerImpl,
                 provider = provider,
                 tools = toolsInternal,
-                memories = memories ?: emptyList(),
                 lastArchivedMessageTime = lastArchivedMessageTime,
                 stream = assistant.streamOutput,
-                enabledModeIds = enabledModeIds,
-                contextSummary = contextSummary,
-                temporarySummaries = temporarySummaries,
                 includeSkipContextMessages = includeSkipContextMessages,
                 responseMessageSource = responseMessageSource,
                 conversationId = conversationId,
                 isCallMode = isCallMode,
-                callId = callId
+                callId = callId,
+                contextSnapshot = contextSnapshot,
+                requestTag = requestTag,
+                round = stepIndex
             )
 
 
@@ -673,22 +735,82 @@ class GenerationHandler(
             if (toolCalls.isEmpty()) {
                 break
             }
-            if (toolCalls.any { it.toolName == "search_web" }) {
-                searchCount++
-                Log.d(TAG, "generateText: current search count: $searchCount")
+
+            toolRound++
+            // ===== 循环保护决策（Part 3.4）：轮次上限 + 相同指纹连续重复检测 =====
+            // 不同参数的连续调用（如换关键词的再次搜索）不受影响；仅拦截轮次超限与
+            // 「相同工具+相同参数」的连续异常重复。
+            val callFingerprints = toolCalls.map { toolCall ->
+                val normalizedArgs = runCatching {
+                    sanitizeToolCallArguments(toolCall.arguments.ifBlank { "{}" })
+                }.getOrDefault("{}").trim()
+                ToolLoopGuard.ToolCallFingerprint(
+                    toolName = toolCall.toolName,
+                    normalizedArguments = normalizedArgs
+                )
             }
+            val callDecisions = toolLoopGuard.evaluateRound(callFingerprints)
 
             val results = arrayListOf<UIMessagePart.ToolResult>()
-            toolCalls.forEach { toolCall ->
+            toolCalls.forEachIndexed { callIndex, toolCall ->
+                val decision = callDecisions[callIndex]
+                if (decision is ToolLoopGuard.CallDecision.Block) {
+                    Log.w(
+                        TAG,
+                        "[$requestTag] ToolCall round=$toolRound tool=${toolCall.toolName} " +
+                            "id=${toolCall.toolCallId} blocked by loop guard"
+                    )
+                    results += UIMessagePart.ToolResult(
+                        toolName = toolCall.toolName,
+                        toolCallId = toolCall.toolCallId,
+                        content = buildJsonObject {
+                            put("error", JsonPrimitive(decision.reason))
+                        },
+                        arguments = runCatching {
+                            json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
+                        }.getOrElse { buildJsonObject {} },
+                        metadata = toolCall.metadata
+                    )
+                    return@forEachIndexed
+                }
+
+                // 通话中拦截重计算/产媒体类工具：产物无法在通话中呈现，
+                // 直接返回错误结果让 AI 改为口头告知用户，避免执行后输出无处消费。
+                if (isCallMode() && toolCall.toolName in CALL_BLOCKED_TOOLS) {
+                    Log.i(TAG, "[$requestTag] ToolCall round=$toolRound blocked tool '${toolCall.toolName}' during call")
+                    results += UIMessagePart.ToolResult(
+                        toolName = toolCall.toolName,
+                        toolCallId = toolCall.toolCallId,
+                        content = buildJsonObject {
+                            put(
+                                "error",
+                                JsonPrimitive("通话过程中不能调用此工具，请结束通话后再使用。请用语音简要告知用户。")
+                            )
+                        },
+                        arguments = runCatching {
+                            json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
+                        }.getOrElse { buildJsonObject {} },
+                        metadata = toolCall.metadata
+                    )
+                    return@forEachIndexed
+                }
+
                 runCatching {
-                    if (toolCall.toolName == "search_web" && searchCount > 1) {
+                    val tool = toolsInternal.find { t -> t.name == toolCall.toolName }
+                    if (tool == null) {
+                        // 工具不存在：以明确的结构化错误反馈，让模型可自行纠正（而非异常堆栈）
+                        Log.w(
+                            TAG,
+                            "[$requestTag] ToolCall round=$toolRound tool not found: " +
+                                "${toolCall.toolName} id=${toolCall.toolCallId}"
+                        )
                         results += UIMessagePart.ToolResult(
                             toolName = toolCall.toolName,
                             toolCallId = toolCall.toolCallId,
                             content = buildJsonObject {
                                 put(
                                     "error",
-                                    JsonPrimitive("已达到搜索次数上限（1次）。获得结果后请直接总结并回复用户，不要再次搜索。")
+                                    JsonPrimitive("工具 ${toolCall.toolName} 不存在或当前不可用。请检查工具名称是否正确，或改用其他方式完成任务。")
                                 )
                             },
                             arguments = runCatching {
@@ -696,35 +818,9 @@ class GenerationHandler(
                             }.getOrElse { buildJsonObject {} },
                             metadata = toolCall.metadata
                         )
-                        return@forEach
+                        return@runCatching
                     }
 
-                    // 通话中拦截重计算/产媒体类工具：产物无法在通话中呈现，
-                    // 直接返回错误结果让 AI 改为口头告知用户，避免执行后输出无处消费。
-                    if (isCallMode() && toolCall.toolName in CALL_BLOCKED_TOOLS) {
-                        Log.i(TAG, "generateText: blocked tool '${toolCall.toolName}' during call")
-                        results += UIMessagePart.ToolResult(
-                            toolName = toolCall.toolName,
-                            toolCallId = toolCall.toolCallId,
-                            content = buildJsonObject {
-                                put(
-                                    "error",
-                                    JsonPrimitive("通话过程中不能调用此工具，请结束通话后再使用。请用语音简要告知用户。")
-                                )
-                            },
-                            arguments = runCatching {
-                                json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
-                            }.getOrElse { buildJsonObject {} },
-                            metadata = toolCall.metadata
-                        )
-                        return@forEach
-                    }
-
-                    val tool = toolsInternal.find { tool -> tool.name == toolCall.toolName }
-                        ?: error("Tool ${toolCall.toolName} not found")
-
-                    Log.d(TAG, "DEBUG: Tool Name = ${toolCall.toolName}")
-                    Log.d(TAG, "DEBUG: Raw Arguments String = '${toolCall.arguments}'")
                     val sanitizedArgs = runCatching {
                         json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
                         toolCall.arguments // 如果解析成功，直接使用原字符串
@@ -747,17 +843,41 @@ class GenerationHandler(
                         } else msg
                     }
 
-                    Log.i(TAG, "generateText: executing tool ${tool.name} with args: $args")
+                    val toolStartAt = System.currentTimeMillis()
                     val result = tool.execute(args)
+                    val toolCostMs = System.currentTimeMillis() - toolStartAt
+                    val resultText = result.toString()
+                    // 空结果判定：null/空白字符串视为"执行成功但无内容"，规范化为明确说明；
+                    // 结构化空对象/空数组原样保留（可能表达"无结果"的业务语义），由模型自行解读
+                    val isEmptyResult = result is JsonNull ||
+                        (result is JsonPrimitive && result.isString && result.content.isBlank())
+
+                    Log.i(
+                        TAG,
+                        "[$requestTag] ToolCall round=$toolRound tool=${tool.name} id=${toolCall.toolCallId} " +
+                            "duration=${toolCostMs}ms resultLength=${resultText.length} empty=$isEmptyResult"
+                    )
+
                     results += UIMessagePart.ToolResult(
                         toolName = toolCall.toolName,
                         toolCallId = toolCall.toolCallId,
-                        content = result,
+                        content = if (isEmptyResult) {
+                            buildJsonObject {
+                                put("note", JsonPrimitive("工具执行成功，但没有返回任何内容。"))
+                            }
+                        } else {
+                            result
+                        },
                         arguments = args,
                         metadata = toolCall.metadata
                     )
                 }.onFailure {
                     it.printStackTrace()
+                    Log.e(
+                        TAG,
+                        "[$requestTag] ToolCall round=$toolRound tool=${toolCall.toolName} " +
+                            "id=${toolCall.toolCallId} failed: ${it.message}"
+                    )
                     results += UIMessagePart.ToolResult(
                         toolName = toolCall.toolName,
                         toolCallId = toolCall.toolCallId,
@@ -767,18 +887,38 @@ class GenerationHandler(
                                 "error",
                                 JsonPrimitive(buildString {
                                     append("[${it.javaClass.name}] ${it.message}")
-                                    append("\n${it.stackTraceToString()}")
+                                    append("\n${it.stackTraceToString().take(1200)}")
                                 })
                             )
                         },
                         arguments = runCatching {
-                            json.parseToJsonElement(toolCall.arguments)
+                            json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
                         }.getOrElse { buildJsonObject {} }
                     )
                 }
             }
-            results.forEach {
-                Log.d(TAG, "DEBUG: Adding Tool Result: id=${it.toolCallId}, name=${it.toolName}, content=${it.content}")
+
+            // ===== 工具结果追加核验日志（Part 3.3）：确认所有调用都拿到了结果 =====
+            Log.i(
+                TAG,
+                "[$requestTag] round=$toolRound appended ${results.size}/${toolCalls.size} tool results " +
+                    "ids=[${results.joinToString(",") { it.toolCallId }}]"
+            )
+            if (results.isEmpty()) {
+                // 防御：每条工具调用都应有对应结果（执行/拦截/失败路径均会追加）。
+                // 空结果消息会造成 role=tool 无内容的协议违规，此处直接结束循环并提示。
+                Log.e(TAG, "[$requestTag] round=$toolRound no tool results produced, aborting tool loop")
+                emit(
+                    GenerationChunk.Messages(
+                        currentMessages.transforms(
+                            transformers = outputTransformers,
+                            context = context,
+                            model = model,
+                            assistant = assistant
+                        )
+                    )
+                )
+                break
             }
             currentMessages = currentMessages + UIMessage(
                 role = CoreMessageRole.TOOL,
@@ -837,7 +977,251 @@ class GenerationHandler(
 
     }.flowOn(Dispatchers.IO)
 
+    /**
+     * 组装单次模型请求的 messages（工具调用循环内每轮调用）。
+     *
+     * 动态上下文（系统提示/记忆/世界书/TimeSense 等）来自 [snapshot]，本轮内固定复用；
+     * 本函数每轮仍基于**最新**消息历史重新执行：
+     * - skipContext 过滤、maxHistoryMessages 裁剪（limitContext 保持工具配对）、旧搜索结果修剪；
+     * - Token 预算分配（仅消息；记忆已冻结进快照的动态上下文）；
+     * - 冻结的动态上下文注入到本轮锚点 USER 消息（[GenerationContextSnapshot.anchorUserMessageId]，
+     *   即本轮原始用户请求，不随工具执行期间追加的额外 USER 消息漂移）。
+     */
     suspend fun buildMessages(
+        assistant: Assistant,
+        settings: Settings,
+        messages: List<UIMessage>,
+        model: Model,
+        lastArchivedMessageTime: Long,
+        includeSkipContextMessages: Boolean = false,
+        isCallMode: Boolean = false,
+        snapshot: GenerationContextSnapshot,
+    ): BuildMessagesResult {
+        fun estimateTokens(text: String) = text.length / 4
+        fun estimateTokens(message: UIMessage) = estimateTokens(message.toText())
+
+        val maxTokens = assistant.maxTokenUsage
+        val currentTokens = estimateTokens(snapshot.staticSystemPrompt) + estimateTokens(snapshot.summarySystemPrompt)
+
+        // ===== 历史消息选取（每轮基于最新 messages 重新执行）=====
+        val searchPrunedMessages = prepareHistoryCandidates(
+            assistant = assistant,
+            messages = messages,
+            lastArchivedMessageTime = lastArchivedMessageTime,
+            includeSkipContextMessages = includeSkipContextMessages,
+            isCallMode = isCallMode,
+        )
+
+        // ===== Token 预算分配（仅消息；记忆已冻结进快照动态上下文，不再参与每轮分配）=====
+        val selectedMessages = mutableListOf<UIMessage>()
+        val remainingTokens = maxTokens - currentTokens
+        if (remainingTokens <= 0) {
+            Log.w(TAG, "buildMessages: System prompt exceeds max tokens!")
+        }
+
+        val minChatHistory = 4.coerceAtMost(searchPrunedMessages.size)
+        var usedTokens = 0
+        searchPrunedMessages.take(minChatHistory).forEach {
+            selectedMessages.add(it)
+            usedTokens += estimateTokens(it)
+        }
+
+        var availableTokens = remainingTokens - usedTokens
+        if (availableTokens > 0) {
+            // 记忆不参与每轮预算，消息按时间序尽量多带（等价于原 CHAT_HISTORY 优先策略）
+            for (msg in searchPrunedMessages.drop(minChatHistory)) {
+                val cost = estimateTokens(msg)
+                if (availableTokens >= cost) {
+                    selectedMessages.add(msg)
+                    availableTokens -= cost
+                } else break
+            }
+        }
+
+        // ===== 组装 =====
+        val builtMessages = buildList {
+            // 1. Stable & Semi-stable System Prompt（快照）
+            if (snapshot.staticSystemPrompt.isNotBlank()) {
+                add(UIMessage.system(snapshot.staticSystemPrompt))
+            }
+
+            // 2. Attachments（快照：模式附件 + 世界书附件）
+            if (snapshot.allContextAttachments.isNotEmpty()) {
+                add(
+                    UIMessage(
+                        role = CoreMessageRole.USER,
+                        parts = snapshot.allContextAttachments
+                    )
+                )
+            }
+
+            // 3. Chat History (L0)：动态上下文注入锚点消息（本轮原始用户请求）
+            val sortedSelectedMessages = selectedMessages.sortedBy { messages.indexOf(it) }
+            if (snapshot.anchorUserMessageId == null) {
+                Log.w(TAG, "buildMessages: no anchor user message in snapshot, dynamic context skipped")
+            }
+            var anchorInjected = false
+            sortedSelectedMessages.forEach { msg ->
+                if (msg.id == snapshot.anchorUserMessageId) {
+                    anchorInjected = true
+                    // 按模型音频输入能力重组锚点消息 parts，并注入冻结的动态上下文
+                    val supportsAudioInput = model.inputModalities.contains(Modality.AUDIO)
+                    val newParts = buildLastUserMessageParts(
+                        parts = msg.parts,
+                        supportsAudioInput = supportsAudioInput,
+                        dynamicContext = snapshot.dynamicContext,
+                    )
+                    add(msg.copy(parts = newParts))
+                } else {
+                    add(msg)
+                }
+            }
+            if (snapshot.anchorUserMessageId != null && !anchorInjected) {
+                Log.w(
+                    TAG,
+                    "buildMessages: anchor user message ${snapshot.anchorUserMessageId} not selected by budget, " +
+                        "dynamic context not injected this round"
+                )
+            }
+        }
+
+        Log.d(
+            TAG,
+            "buildMessages: snapshot reused - selectedMessages=${selectedMessages.size}/${searchPrunedMessages.size}, " +
+                "dynamicContext=${snapshot.dynamicContext.length} chars"
+        )
+
+        return BuildMessagesResult(
+            messages = builtMessages,
+            activatedLorebookEntries = snapshot.activatedLorebookEntries,
+            usedModes = snapshot.usedModes,
+            usedMemories = snapshot.usedMemories
+        )
+    }
+
+    /**
+     * 历史消息候选管线（每次模型请求都要基于最新消息重新执行，不进快照）：
+     * skipContext 过滤（来源白名单）→ maxHistoryMessages 裁剪（limitContext 保持
+     * Assistant 工具调用与 Tool 结果配对）→ 旧搜索结果修剪，最后反转为"最新在前"。
+     */
+    private fun prepareHistoryCandidates(
+        assistant: Assistant,
+        messages: List<UIMessage>,
+        lastArchivedMessageTime: Long,
+        includeSkipContextMessages: Boolean,
+        isCallMode: Boolean,
+    ): List<UIMessage> {
+        // ===== skipContext 过滤（按消息来源白名单决定截断/剔除策略）=====
+        val contextCandidates = if (includeSkipContextMessages) {
+            // 包含 skipContext 消息，根据消息来源决定截断策略：
+            // - AGENT_TASK: 完整带入，不截断
+            // - DIARY_COMMENT: 完整带入，不截断（用户评论+日记内容是后续对话的重要上下文）
+            // - CALL / CALL_STATE: 完整带入，不截断（通话真实转写与通话状态标记必须进入后续上下文）
+            // - NORMAL: 历史消息截断到前 100 字，保留最后一条 user 消息完整
+            // - CALL_REQUEST: 通话决策指令仅在发起当轮（最后一条 user 消息）可见，
+            //   后续对话轮次完全剔除，防止 AI 读到旧指令误回 0/1
+            //   （isCallDecisionRequest 同时覆盖旧版本遗留的无 callId 决策消息）
+            val lastUserMsgId = messages.lastOrNull { it.role == CoreMessageRole.USER }?.id
+            messages
+                .filterIndexed { _, msg ->
+                    !msg.isCallDecisionRequest() || msg.id == lastUserMsgId
+                }
+                .map { msg ->
+                    val isContextWhitelistedSource = msg.messageSource == MessageSource.AGENT_TASK
+                        || msg.messageSource == MessageSource.DIARY_COMMENT
+                        || msg.messageSource == MessageSource.CALL
+                        || msg.messageSource == MessageSource.CALL_STATE
+                    val shouldTruncate = msg.skipContext
+                        && !isContextWhitelistedSource
+                        && msg.id != lastUserMsgId
+                    if (shouldTruncate) {
+                        msg.copy(parts = msg.parts.map { part ->
+                            if (part is UIMessagePart.Text) {
+                                val truncated = part.text.take(100)
+                                UIMessagePart.Text(if (part.text.length > 100) "$truncated..." else truncated)
+                            } else part
+                        })
+                    } else msg
+                }
+        } else {
+            // 不包含（大多数）skipContext 消息，但 CALL 真实转写与 CALL_STATE 状态标记
+            // 必须按来源白名单保留，纳入后续上下文；普通 skipContext 指令维持原有语义。
+            val isCallVisibleSource: (UIMessage) -> Boolean = { msg ->
+                msg.messageSource == MessageSource.CALL || msg.messageSource == MessageSource.CALL_STATE
+            }
+            val filtered = messages.filter { !it.skipContext || isCallVisibleSource(it) }
+            // 诊断日志：通话中工具结果若 messageSource!=CALL 会被过滤，导致 AI 看不到结果而反复调用工具
+            if (isCallMode) {
+                val droppedToolResults = messages.count {
+                    it.role == CoreMessageRole.TOOL && it.skipContext && !isCallVisibleSource(it)
+                }
+                if (droppedToolResults > 0) {
+                    Log.w(TAG, "ContextDebug: $droppedToolResults 条 TOOL 结果因 skipContext+非CALL来源被过滤，AI 将看不到这些工具结果！")
+                }
+                Log.i(TAG, "ContextDebug: isCallMode=$isCallMode, 输入${messages.size}条 → 过滤后${filtered.size}条, dropToolResults=$droppedToolResults")
+            }
+            filtered
+        }
+        Log.d("ContextDebug", "--- Context Build Start ---")
+        Log.d("ContextDebug", "Incoming lastArchivedMessageTime: $lastArchivedMessageTime")
+        Log.d("ContextDebug", "Original candidates size: ${contextCandidates.size}")
+        Log.d("ContextDebug", "first messages: ${messages.firstOrNull()?.id}.take(50)")
+
+        // selectMessagesForGeneration 已在 ChatService 层按 lastArchivedMessageTime 过滤，
+        // 这里保留二次过滤防御位但实际 no-op，避免破坏既有链路。
+        val chatHistoryCandidates = contextCandidates
+            .let { list -> if (lastArchivedMessageTime == 0L) list else list }
+            .let { truncated ->
+                assistant.maxHistoryMessages?.let { limit ->
+                    if (limit > 0) truncated.limitContext(limit) else truncated
+                } ?: truncated
+            }
+            .reversed()
+
+        Log.d("ContextDebug", "After truncate, candidates size: ${chatHistoryCandidates.size}")
+        if (chatHistoryCandidates.isNotEmpty()) {
+            Log.d("ContextDebug", "First message in context: ${chatHistoryCandidates.last().toContentText().take(50)}")
+        }
+        Log.d("ContextDebug", "--- Context Build End ---")
+
+        val searchPrunedMessages = assistant.maxSearchResultsRetained?.let { maxSearches ->
+            if (maxSearches > 0) {
+                val searchResultIndices = chatHistoryCandidates.mapIndexedNotNull { index, msg ->
+                    val hasSearchResult = msg.parts.any { part ->
+                        part is UIMessagePart.ToolResult && part.toolName == "search_web"
+                    }
+                    if (hasSearchResult) index else null
+                }
+
+                val indicesToPrune = searchResultIndices.dropLast(maxSearches).toSet()
+                if (indicesToPrune.isNotEmpty()) {
+                    chatHistoryCandidates.mapIndexed { index, msg ->
+                        if (index in indicesToPrune) {
+                            msg.copy(parts = msg.parts.map { part ->
+                                if (part is UIMessagePart.ToolResult && part.toolName == "search_web") {
+                                    part.copy(content = buildJsonObject {
+                                        put("note", JsonPrimitive("Earlier search results pruned to save context"))
+                                    })
+                                } else part
+                            })
+                        } else msg
+                    }
+                } else chatHistoryCandidates
+            } else chatHistoryCandidates
+        } ?: chatHistoryCandidates
+
+        return searchPrunedMessages
+    }
+
+    /**
+     * 构建一次独立用户请求的动态上下文快照（上下文快照复用，工具调用循环开始前调用一次）。
+     *
+     * 包含所有「本轮固定」的上下文计算：世界书激活（含 RAG 嵌入查询）、系统提示
+     * （助手档案/用户档案/里程碑/关系档案/日程/日记/工具提示词）、L1 近期片段、
+     * L2 当日跨会话记忆、RAG 记忆注入、TimeSense、正在进行的日程、模式与世界书附件。
+     * 消息历史只用于确定本轮记忆预算分配（以首轮历史为准），不随工具轮次重新计算。
+     */
+    private suspend fun computeContextSnapshot(
         assistant: Assistant,
         settings: Settings,
         messages: List<UIMessage>,
@@ -851,7 +1235,7 @@ class GenerationHandler(
         includeSkipContextMessages: Boolean = false,
         conversationId: Uuid? = null,
         isCallMode: Boolean = false,
-    ): BuildMessagesResult {
+    ): GenerationContextSnapshot {
         fun estimateTokens(text: String) = text.length / 4
         fun estimateTokens(message: UIMessage) = estimateTokens(message.toText())
 
@@ -1236,103 +1620,14 @@ class GenerationHandler(
         currentTokens += estimateTokens(staticSystemPrompt)
         currentTokens += estimateTokens(summarySystemPrompt)
 
-        val contextCandidates = if (includeSkipContextMessages) {
-            // 包含 skipContext 消息，根据消息来源决定截断策略：
-            // - AGENT_TASK: 完整带入，不截断
-            // - DIARY_COMMENT: 完整带入，不截断（用户评论+日记内容是后续对话的重要上下文）
-            // - CALL / CALL_STATE: 完整带入，不截断（通话真实转写与通话状态标记必须进入后续上下文）
-            // - NORMAL: 历史消息截断到前 100 字，保留最后一条 user 消息完整
-            // - CALL_REQUEST: 通话决策指令仅在发起当轮（最后一条 user 消息）可见，
-            //   后续对话轮次完全剔除，防止 AI 读到旧指令误回 0/1
-            //   （isCallDecisionRequest 同时覆盖旧版本遗留的无 callId 决策消息）
-            val lastUserMsgId = messages.lastOrNull { it.role == CoreMessageRole.USER }?.id
-            messages
-                .filterIndexed { _, msg ->
-                    !msg.isCallDecisionRequest() || msg.id == lastUserMsgId
-                }
-                .map { msg ->
-                    val isContextWhitelistedSource = msg.messageSource == MessageSource.AGENT_TASK
-                        || msg.messageSource == MessageSource.DIARY_COMMENT
-                        || msg.messageSource == MessageSource.CALL
-                        || msg.messageSource == MessageSource.CALL_STATE
-                    val shouldTruncate = msg.skipContext
-                        && !isContextWhitelistedSource
-                        && msg.id != lastUserMsgId
-                    if (shouldTruncate) {
-                        msg.copy(parts = msg.parts.map { part ->
-                            if (part is UIMessagePart.Text) {
-                                val truncated = part.text.take(100)
-                                UIMessagePart.Text(if (part.text.length > 100) "$truncated..." else truncated)
-                            } else part
-                        })
-                    } else msg
-                }
-        } else {
-            // 不包含（大多数）skipContext 消息，但 CALL 真实转写与 CALL_STATE 状态标记
-            // 必须按来源白名单保留，纳入后续上下文；普通 skipContext 指令维持原有语义。
-            val isCallVisibleSource: (UIMessage) -> Boolean = { msg ->
-                msg.messageSource == MessageSource.CALL || msg.messageSource == MessageSource.CALL_STATE
-            }
-            val filtered = messages.filter { !it.skipContext || isCallVisibleSource(it) }
-            // 诊断日志：通话中工具结果若 messageSource!=CALL 会被过滤，导致 AI 看不到结果而反复调用工具
-            if (isCallMode) {
-                val droppedToolResults = messages.count {
-                    it.role == CoreMessageRole.TOOL && it.skipContext && !isCallVisibleSource(it)
-                }
-                if (droppedToolResults > 0) {
-                    Log.w(TAG, "ContextDebug: $droppedToolResults 条 TOOL 结果因 skipContext+非CALL来源被过滤，AI 将看不到这些工具结果！")
-                }
-                Log.i(TAG, "ContextDebug: isCallMode=$isCallMode, 输入${messages.size}条 → 过滤后${filtered.size}条, dropToolResults=$droppedToolResults")
-            }
-            filtered
-        }
-        Log.d("ContextDebug", "--- Context Build Start ---")
-        Log.d("ContextDebug", "Incoming lastArchivedMessageTime: $lastArchivedMessageTime")
-        Log.d("ContextDebug", "Original candidates size: ${contextCandidates.size}")
-        Log.d("ContextDebug", "first messages: ${messages.firstOrNull()?.id}.take(50)")
-
-        // selectMessagesForGeneration 已在 ChatService 层按 lastArchivedMessageTime 过滤，
-        // 这里保留二次过滤防御位但实际 no-op，避免破坏既有链路。
-        val chatHistoryCandidates = contextCandidates
-            .let { list -> if (lastArchivedMessageTime == 0L) list else list }
-            .let { truncated ->
-                assistant.maxHistoryMessages?.let { limit ->
-                    if (limit > 0) truncated.limitContext(limit) else truncated
-                } ?: truncated
-            }
-            .reversed()
-
-        Log.d("ContextDebug", "After truncate, candidates size: ${chatHistoryCandidates.size}")
-        if (chatHistoryCandidates.isNotEmpty()) {
-            Log.d("ContextDebug", "First message in context: ${chatHistoryCandidates.last().toContentText().take(50)}")
-        }
-        Log.d("ContextDebug", "--- Context Build End ---")
-
-        val searchPrunedMessages = assistant.maxSearchResultsRetained?.let { maxSearches ->
-            if (maxSearches > 0) {
-                val searchResultIndices = chatHistoryCandidates.mapIndexedNotNull { index, msg ->
-                    val hasSearchResult = msg.parts.any { part ->
-                        part is UIMessagePart.ToolResult && part.toolName == "search_web"
-                    }
-                    if (hasSearchResult) index else null
-                }
-
-                val indicesToPrune = searchResultIndices.dropLast(maxSearches).toSet()
-                if (indicesToPrune.isNotEmpty()) {
-                    chatHistoryCandidates.mapIndexed { index, msg ->
-                        if (index in indicesToPrune) {
-                            msg.copy(parts = msg.parts.map { part ->
-                                if (part is UIMessagePart.ToolResult && part.toolName == "search_web") {
-                                    part.copy(content = buildJsonObject {
-                                        put("note", JsonPrimitive("Earlier search results pruned to save context"))
-                                    })
-                                } else part
-                            })
-                        } else msg
-                    }
-                } else chatHistoryCandidates
-            } else chatHistoryCandidates
-        } ?: chatHistoryCandidates
+        // 历史候选管线（与 buildMessages 每轮执行的管线一致，此处用于确定本轮记忆预算分配）
+        val searchPrunedMessages = prepareHistoryCandidates(
+            assistant = assistant,
+            messages = messages,
+            lastArchivedMessageTime = lastArchivedMessageTime,
+            includeSkipContextMessages = includeSkipContextMessages,
+            isCallMode = isCallMode,
+        )
 
 
         val effectiveMemoriesCandidates =
@@ -1492,161 +1787,31 @@ class GenerationHandler(
 
         val allContextAttachments = modeAttachmentParts + lorebookAttachmentParts
 
-        val builtMessages = buildList {
-            // 1. Stable & Semi-stable System Prompt
-            // Includes personality, tools, Master Memory (L3), and Global Summary (L1).
-            if (staticSystemPrompt.isNotBlank()) {
-                add(UIMessage.system(staticSystemPrompt))
-            }
-
-            // 2. Attachments
-            if (allContextAttachments.isNotEmpty()) {
-                add(
-                    UIMessage(
-                        role = CoreMessageRole.USER,
-                        parts = allContextAttachments
-                    )
-                )
-            }
-
-            // 3. Chat History (L0)
-            val sortedSelectedMessages = selectedMessages.sortedBy { messages.indexOf(it) }
-            // 正在进行的日程：时间观念 + 日程管理同时开启时，注入当前时段日程（每请求只查一次）
-            val ongoingScheduleText = if (
-                assistant.localTools.any { it is LocalToolOption.TimeSense } &&
-                assistant.localTools.any { it is LocalToolOption.ScheduleManagement }
-            ) {
-                runCatching { plannerFacade.currentOngoingEvents() }
-                    .getOrDefault(emptyList())
-                    .takeIf { it.isNotEmpty() }
-                    ?.joinToString("\n") { "- 「${it.taskTitle}」${it.date} ${it.timeLabel()}" }
-            } else {
-                null
-            }
-            val lastUserMessageIndex = sortedSelectedMessages.indexOfLast { it.role == CoreMessageRole.USER }
-            sortedSelectedMessages.forEachIndexed { index, msg ->
-                if (index == lastUserMessageIndex) {
-                    // 构造动态系统信息 (L2 记忆, 变量, 时间)
-                    val dynamicContext = buildString {
-                        if (summarySystemPrompt.isNotBlank()) {
-                            appendLine("## 对话梗概和动态信息")
-                            appendLine(summarySystemPrompt)
-                            appendLine()
-                        }
-                        // Memories (RAG retrieved facts)
-                        if (selectedMemories.isNotEmpty()) {
-                            appendLine("## 相关记忆片段")
-                            appendLine(buildMemoryPrompt(selectedMemories))
-                            appendLine()
-                        }
-                        // Reference Variables
-                        if (assistant.referenceVariables.isNotBlank()) {
-                            appendLine("## 其他信息")
-                            appendLine(
-                                assistant.referenceVariables.applyPlaceholders(
-                                    "char" to assistant.name,
-                                    "locale" to Locale.getDefault().displayName
-                                )
-                            )
-                            appendLine()
-                        }
-
-                        // C. Time Information
-                        if (assistant.localTools.any { it is LocalToolOption.TimeSense }) {
-                            val now = LocalDateTime.now()
-                            val month = now.monthValue
-                            val day = now.dayOfMonth
-                            val holiday = when {
-                                month == 1 && day == 1 -> "元旦"
-                                month == 2 && day == 14 -> "情人节"
-                                month == 3 && day == 8 -> "妇女节"
-                                month == 3 && day == 12 -> "植树节"
-                                month == 3 && day == 14 -> "白色情人节"
-                                month == 4 && (day in 4..6) -> "清明节"
-                                month == 5 && (day == 1 || day == 2 || day == 3 || day == 5) -> "劳动节法定节假日期间"
-                                month == 5 && day == 4 -> "劳动节法定节假日期间+青年节"
-                                month == 6 && day == 1 -> "儿童节"
-                                month == 7 && day == 1 -> "建党节"
-                                month == 8 && day == 1 -> "建军节"
-                                month == 9 && day == 10 -> "教师节"
-                                month == 10 && (day == 1 || day == 2 || day == 3 || day == 5 || day == 6 || day == 7) -> "国庆节"
-                                month == 11 && day == 8 -> "记者节"
-                                month == 12 && day == 24 -> "平安夜"
-                                month == 12 && day == 25 -> "圣诞节"
-                                else -> null
-                            }
-                            val dayOfWeek = now.dayOfWeek
-                            val dayName = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
-                            val dayType = holiday
-                                ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "法定双休日" else "工作工作日"
-                            val formattedTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-                            val timeStr = "$dayName.($dayType), $formattedTime"
-
-                            val lastAiMessage = messages.lastOrNull { it.role == CoreMessageRole.ASSISTANT }
-                            val intervalInfo = lastAiMessage?.let {
-                                runCatching {
-                                    @Suppress("DEPRECATION")
-                                    val prevJavaDateTime = LocalDateTime.of(
-                                        it.createdAt.year,
-                                        it.createdAt.monthNumber,
-                                        it.createdAt.dayOfMonth,
-                                        it.createdAt.hour,
-                                        it.createdAt.minute,
-                                        it.createdAt.second,
-                                        it.createdAt.nanosecond
-                                    )
-                                    val prevInstant = prevJavaDateTime.atZone(ZoneId.systemDefault()).toInstant()
-                                    val currentInstant = Instant.now()
-                                    val duration = Duration.between(prevInstant, currentInstant)
-                                    val seconds = duration.seconds
-                                    val absSeconds = kotlin.math.abs(seconds)
-                                    val sign = if (seconds >= 0) "+" else "-"
-                                    val formatted = when {
-                                        absSeconds < 60 -> "${sign}${absSeconds}s"
-                                        absSeconds < 3600 -> "${sign}${absSeconds / 60}m"
-                                        absSeconds < 86400 -> "${sign}${absSeconds / 3600}h"
-                                        else -> "${sign}${absSeconds / 86400}d"
-                                    }
-                                    ", 距离上条消息的时间间隔: $formatted"
-                                }.getOrNull()
-                            } ?: ""
-                            appendLine("- 当前时间: $timeStr$intervalInfo")
-                            appendLine("编造时间将会受到系统处罚。")
-                            appendLine()
-                        }
-                        // 正在进行的日程：仅当存在符合条件（今天 && 开始<=当前<结束）的日程时注入
-                        if (ongoingScheduleText != null) {
-                            appendLine("## 正在进行的日程")
-                            appendLine(ongoingScheduleText)
-                            appendLine()
-                        }
-                        if (assistant.languageStyleExamples.isNotEmpty()) {
-                            appendLine("## 语言风格示例")
-                            assistant.languageStyleExamples.forEach { example ->
-                                append("- ").appendLine(example)
-                            }
-                        }
-
-                    }
-                    // 按模型音频输入能力重组最后一条 USER 消息 parts：
-                    // 支持 AUDIO → 保留原始音频；不支持 → 有转写用转写文本，无转写走降级
-                    val supportsAudioInput = model.inputModalities.contains(Modality.AUDIO)
-                    val newParts = buildLastUserMessageParts(
-                        parts = msg.parts,
-                        supportsAudioInput = supportsAudioInput,
-                        dynamicContext = dynamicContext,
-                    )
-                    add(msg.copy(parts = newParts))
-                } else {
-                    add(msg)
-                }
-            }
+        // ===== 正在进行的日程（快照内只查询一次）=====
+        val ongoingScheduleText = if (
+            assistant.localTools.any { it is LocalToolOption.TimeSense } &&
+            assistant.localTools.any { it is LocalToolOption.ScheduleManagement }
+        ) {
+            runCatching { plannerFacade.currentOngoingEvents() }
+                .getOrDefault(emptyList())
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString("\n") { "- 「${it.taskTitle}」${it.date} ${it.timeLabel()}" }
+        } else {
+            null
         }
 
-        Log.d(
-            TAG,
-            "buildMessages: summaries info - hasContextSummary=${!contextSummary.isNullOrBlank()}, rawMessagesCount=${selectedMessages.size}"
+        // ===== 冻结的动态上下文（梗概/记忆/变量/时间/日程，整轮请求复用）=====
+        val dynamicContext = buildDynamicContext(
+            assistant = assistant,
+            summarySystemPrompt = summarySystemPrompt,
+            selectedMemories = selectedMemories,
+            ongoingScheduleText = ongoingScheduleText,
+            lastAiMessage = messages.lastOrNull { it.role == CoreMessageRole.ASSISTANT },
         )
+
+        // 动态上下文锚点：本轮原始用户请求（最后一条 USER 消息）。
+        // 工具执行期间追加的额外 USER 消息（如拍照注入）不会改变锚点。
+        val anchorUserMessageId = messages.lastOrNull { it.role == CoreMessageRole.USER }?.id
 
         val usedMemoriesList = selectedMemories.mapIndexedNotNull { index, memory ->
             val isBoost = memory.type == 2
@@ -1677,12 +1842,127 @@ class GenerationHandler(
             )
         }
 
-        return BuildMessagesResult(
-            messages = builtMessages,
+        return GenerationContextSnapshot(
+            staticSystemPrompt = staticSystemPrompt,
+            summarySystemPrompt = summarySystemPrompt,
+            allContextAttachments = allContextAttachments,
+            dynamicContext = dynamicContext,
+            anchorUserMessageId = anchorUserMessageId,
             activatedLorebookEntries = usedLorebookEntriesList,
             usedModes = usedModesList,
-            usedMemories = usedMemoriesList
+            usedMemories = usedMemoriesList,
         )
+    }
+
+    /**
+     * 构建注入锚点 USER 消息的动态上下文文本（梗概/记忆/参考变量/时间/日程/语言风格）。
+     * 仅在快照构建时调用一次：TimeSense 与"距上条消息间隔"固定为请求开始时刻的值，
+     * 工具循环内所有轮次复用同一份文本（不再随轮次漂移，稳定命中 Prefix Caching）。
+     */
+    private fun buildDynamicContext(
+        assistant: Assistant,
+        summarySystemPrompt: String,
+        selectedMemories: List<AssistantMemory>,
+        ongoingScheduleText: String?,
+        lastAiMessage: UIMessage?,
+    ): String = buildString {
+        if (summarySystemPrompt.isNotBlank()) {
+            appendLine("## 对话梗概和动态信息")
+            appendLine(summarySystemPrompt)
+            appendLine()
+        }
+        // Memories (RAG retrieved facts)
+        if (selectedMemories.isNotEmpty()) {
+            appendLine("## 相关记忆片段")
+            appendLine(buildMemoryPrompt(selectedMemories))
+            appendLine()
+        }
+        // Reference Variables
+        if (assistant.referenceVariables.isNotBlank()) {
+            appendLine("## 其他信息")
+            appendLine(
+                assistant.referenceVariables.applyPlaceholders(
+                    "char" to assistant.name,
+                    "locale" to Locale.getDefault().displayName
+                )
+            )
+            appendLine()
+        }
+
+        // C. Time Information
+        if (assistant.localTools.any { it is LocalToolOption.TimeSense }) {
+            val now = LocalDateTime.now()
+            val month = now.monthValue
+            val day = now.dayOfMonth
+            val holiday = when {
+                month == 1 && day == 1 -> "元旦"
+                month == 2 && day == 14 -> "情人节"
+                month == 3 && day == 8 -> "妇女节"
+                month == 3 && day == 12 -> "植树节"
+                month == 3 && day == 14 -> "白色情人节"
+                month == 4 && (day in 4..6) -> "清明节"
+                month == 5 && (day == 1 || day == 2 || day == 3 || day == 5) -> "劳动节法定节假日期间"
+                month == 5 && day == 4 -> "劳动节法定节假日期间+青年节"
+                month == 6 && day == 1 -> "儿童节"
+                month == 7 && day == 1 -> "建党节"
+                month == 8 && day == 1 -> "建军节"
+                month == 9 && day == 10 -> "教师节"
+                month == 10 && (day == 1 || day == 2 || day == 3 || day == 5 || day == 6 || day == 7) -> "国庆节"
+                month == 11 && day == 8 -> "记者节"
+                month == 12 && day == 24 -> "平安夜"
+                month == 12 && day == 25 -> "圣诞节"
+                else -> null
+            }
+            val dayOfWeek = now.dayOfWeek
+            val dayName = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
+            val dayType = holiday
+                ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "法定双休日" else "工作工作日"
+            val formattedTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            val timeStr = "$dayName.($dayType), $formattedTime"
+
+            val intervalInfo = lastAiMessage?.let {
+                runCatching {
+                    @Suppress("DEPRECATION")
+                    val prevJavaDateTime = LocalDateTime.of(
+                        it.createdAt.year,
+                        it.createdAt.monthNumber,
+                        it.createdAt.dayOfMonth,
+                        it.createdAt.hour,
+                        it.createdAt.minute,
+                        it.createdAt.second,
+                        it.createdAt.nanosecond
+                    )
+                    val prevInstant = prevJavaDateTime.atZone(ZoneId.systemDefault()).toInstant()
+                    val currentInstant = Instant.now()
+                    val duration = Duration.between(prevInstant, currentInstant)
+                    val seconds = duration.seconds
+                    val absSeconds = kotlin.math.abs(seconds)
+                    val sign = if (seconds >= 0) "+" else "-"
+                    val formatted = when {
+                        absSeconds < 60 -> "${sign}${absSeconds}s"
+                        absSeconds < 3600 -> "${sign}${absSeconds / 60}m"
+                        absSeconds < 86400 -> "${sign}${absSeconds / 3600}h"
+                        else -> "${sign}${absSeconds / 86400}d"
+                    }
+                    ", 距离上条消息的时间间隔: $formatted"
+                }.getOrNull()
+            } ?: ""
+            appendLine("- 当前时间: $timeStr$intervalInfo")
+            appendLine("编造时间将会受到系统处罚。")
+            appendLine()
+        }
+        // 正在进行的日程：仅当存在符合条件（今天 && 开始<=当前<结束）的日程时注入
+        if (ongoingScheduleText != null) {
+            appendLine("## 正在进行的日程")
+            appendLine(ongoingScheduleText)
+            appendLine()
+        }
+        if (assistant.languageStyleExamples.isNotEmpty()) {
+            appendLine("## 语言风格示例")
+            assistant.languageStyleExamples.forEach { example ->
+                append("- ").appendLine(example)
+            }
+        }
     }
 
     private fun buildMemoryTools(
@@ -1899,34 +2179,31 @@ class GenerationHandler(
         providerImpl: Provider<ProviderSetting>,
         provider: ProviderSetting,
         tools: List<Tool>,
-        memories: List<AssistantMemory>,
         lastArchivedMessageTime: Long,
         stream: Boolean,
-        enabledModeIds: Set<Uuid> = emptySet(),
-        contextSummary: String? = null,
-        temporarySummaries: List<String> = emptyList(),
         includeSkipContextMessages: Boolean = false,
         responseMessageSource: MessageSource = MessageSource.NORMAL,
         conversationId: Uuid? = null,
         isCallMode: () -> Boolean = { false },
         callId: String? = null,
+        contextSnapshot: GenerationContextSnapshot,
+        requestTag: String,
+        round: Int,
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
             settings = settings,
             messages = messages,
             model = model,
-            tools = tools,
-            memories = memories,
             lastArchivedMessageTime = lastArchivedMessageTime,
-            enabledModeIds = enabledModeIds,
-            contextSummary = contextSummary,
-            temporarySummaries = temporarySummaries,
             includeSkipContextMessages = includeSkipContextMessages,
-            conversationId = conversationId,
-            isCallMode = isCallMode()
+            isCallMode = isCallMode(),
+            snapshot = contextSnapshot
         )
         val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
+
+        // ===== 工具调用链路核验日志（Part 3.3）：每次模型请求发出前检查调用/结果配对 =====
+        logToolCallChainSummary(requestTag, round, internalMessages)
 
         // ==================== 核心 Payload 日志开始 ====================
         if (me.rerere.rikkahub.BuildConfig.DEBUG) {
@@ -2080,6 +2357,34 @@ class GenerationHandler(
                 }
             }
             onUpdateMessages(currentMessages)
+        }
+    }
+
+    /**
+     * 工具调用链路核验日志（每次模型请求发出前）。
+     * 只输出状态/数量/ID/内容长度，不输出工具结果内容本身（避免泄漏用户隐私数据）。
+     * 用于定位"模型反复调用同一工具"类问题：若 unmatchedCallIds > 0，说明该请求中
+     * 某些 Assistant 工具调用没有对应的 Tool 结果，模型将大概率重复发起调用。
+     */
+    private fun logToolCallChainSummary(requestTag: String, round: Int, internalMessages: List<UIMessage>) {
+        if (!me.rerere.rikkahub.BuildConfig.DEBUG) return
+        val assistantToolCallIds = internalMessages.flatMap { it.getToolCalls() }.map { it.toolCallId }
+        val toolResults = internalMessages.flatMap { it.getToolResults() }
+        val resultIds = toolResults.map { it.toolCallId }.toSet()
+        val unmatchedCallIds = assistantToolCallIds.filter { it !in resultIds }
+        val toolResultContentLength = toolResults.sumOf { it.content.toString().length }
+        Log.i(
+            TAG,
+            "[ToolCallDebug] $requestTag round=$round messages=${internalMessages.size} " +
+                "assistantToolCalls=${assistantToolCallIds.size} toolResults=${toolResults.size} " +
+                "matchedToolCallIds=${unmatchedCallIds.isEmpty()} " +
+                "toolResultContentLength=$toolResultContentLength"
+        )
+        if (unmatchedCallIds.isNotEmpty()) {
+            Log.w(
+                TAG,
+                "[ToolCallDebug] $requestTag round=$round 以下工具调用缺少对应 Tool 结果，模型可能重复调用: $unmatchedCallIds"
+            )
         }
     }
 
