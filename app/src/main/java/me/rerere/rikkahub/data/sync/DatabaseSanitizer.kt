@@ -85,7 +85,8 @@ object DatabaseSanitizer {
                 "MilestoneEntity", "user_device_state", "agent_monitor_tasks",
                 "assistant_extended_state", "favorites", "profile_history",
                 "chat_messages", "chat_message_nodes", "app_locks",
-                "schedule_events", "call_records"
+                "schedule_events", "call_records",
+                "radio_channels", "radio_episodes", "radio_audio_assets", "radio_episode_deletion_logs"
             )
 
             for (sourceTableName in sourceTables) {

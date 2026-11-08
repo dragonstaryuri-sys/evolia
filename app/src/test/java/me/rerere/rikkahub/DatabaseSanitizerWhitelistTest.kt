@@ -22,7 +22,8 @@ class DatabaseSanitizerWhitelistTest {
         "MilestoneEntity", "user_device_state", "agent_monitor_tasks",
         "assistant_extended_state", "favorites", "profile_history",
         "chat_messages", "chat_message_nodes", "app_locks",
-        "schedule_events", "call_records"
+        "schedule_events", "call_records",
+        "radio_channels", "radio_episodes", "radio_audio_assets", "radio_episode_deletion_logs"
     )
 
     @Test
@@ -52,6 +53,15 @@ class DatabaseSanitizerWhitelistTest {
         // 注意 "callrecord"（类名去 entity 后缀）反而能匹配，那是 entity 后缀规则的设计行为
         assertFalse(isWhitelistedTable(listOf("CallRecordEntity"), "call_records"))
         assertTrue(isWhitelistedTable(listOf("CallRecordEntity"), "callrecord"))
+    }
+
+    @Test
+    fun `radio tables are whitelisted (DB v44)`() {
+        // 小机电台 4 张新表必须全部登记，否则备份恢复时被静默丢弃
+        assertTrue(isWhitelistedTable(whiteList, "radio_channels"))
+        assertTrue(isWhitelistedTable(whiteList, "radio_episodes"))
+        assertTrue(isWhitelistedTable(whiteList, "radio_audio_assets"))
+        assertTrue(isWhitelistedTable(whiteList, "radio_episode_deletion_logs"))
     }
 
     @Test

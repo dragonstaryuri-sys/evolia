@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,6 +33,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,6 +49,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -62,6 +65,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -69,6 +73,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FileUpload
@@ -310,33 +318,120 @@ private fun WebDavPage(
                         Text(stringResource(R.string.backup_page_backup_items))
                     }
                 ) {
-                    MultiChoiceSegmentedButtonRow(
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        WebDavConfig.BackupItem.entries.forEachIndexed { index, item ->
-                            SegmentedButton(
-                                shape = SegmentedButtonDefaults.itemShape(
-                                    index = index,
-                                    count = WebDavConfig.BackupItem.entries.size
-                                ),
-                                onCheckedChange = {
-                                    val newItems = if (it) {
-                                        webDavConfig.items + item
+                    // 两分组卡片布局（AGENTS.md 12.7）：基础数据 / 媒体资产；
+                    // 媒体资产依赖 DATABASE，未勾选 DATABASE 时禁用
+                    val databaseEnabled = DATABASE in webDavConfig.items
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "基础数据",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            BackupItemCard(
+                                item = DATABASE,
+                                title = stringResource(R.string.backup_page_chat_records),
+                                description = "数据库与设置",
+                                icon = null,
+                                checked = DATABASE in webDavConfig.items,
+                                enabled = true,
+                                onCheckedChange = { checked ->
+                                    val newItems = if (checked) {
+                                        webDavConfig.items + DATABASE
                                     } else {
-                                        webDavConfig.items - item
+                                        webDavConfig.items - DATABASE
                                     }
                                     updateWebDavConfig(webDavConfig.copy(items = newItems))
                                 },
-                                checked = item in webDavConfig.items
-                            ) {
-                                Text(
-                                    when (item) {
-                                        DATABASE -> stringResource(R.string.backup_page_chat_records)
-                                        FILES -> stringResource(R.string.backup_page_files)
-                                        TTS_CACHE -> stringResource(R.string.backup_page_tts_cache)
+                                modifier = Modifier.weight(1f)
+                            )
+                            BackupItemCard(
+                                item = FILES,
+                                title = stringResource(R.string.backup_page_files),
+                                description = "附件与头像",
+                                icon = null,
+                                checked = FILES in webDavConfig.items,
+                                enabled = true,
+                                onCheckedChange = { checked ->
+                                    val newItems = if (checked) {
+                                        webDavConfig.items + FILES
+                                    } else {
+                                        webDavConfig.items - FILES
                                     }
-                                )
-                            }
+                                    updateWebDavConfig(webDavConfig.copy(items = newItems))
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Text(
+                            text = "媒体资产",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            BackupItemCard(
+                                item = CALL_RECORDINGS,
+                                title = "通话录音",
+                                description = "私有目录录音文件",
+                                icon = null,
+                                checked = CALL_RECORDINGS in webDavConfig.items,
+                                enabled = databaseEnabled,
+                                onCheckedChange = { checked ->
+                                    val newItems = if (checked) {
+                                        webDavConfig.items + CALL_RECORDINGS
+                                    } else {
+                                        webDavConfig.items - CALL_RECORDINGS
+                                    }
+                                    updateWebDavConfig(webDavConfig.copy(items = newItems))
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                            BackupItemCard(
+                                item = RADIO_AUDIO,
+                                title = "电台音频",
+                                description = "小机电台节目音频",
+                                icon = null,
+                                checked = RADIO_AUDIO in webDavConfig.items,
+                                enabled = databaseEnabled,
+                                onCheckedChange = { checked ->
+                                    val newItems = if (checked) {
+                                        webDavConfig.items + RADIO_AUDIO
+                                    } else {
+                                        webDavConfig.items - RADIO_AUDIO
+                                    }
+                                    updateWebDavConfig(webDavConfig.copy(items = newItems))
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            BackupItemCard(
+                                item = TTS_CACHE,
+                                title = stringResource(R.string.backup_page_tts_cache),
+                                description = "语音缓存",
+                                icon = null,
+                                checked = TTS_CACHE in webDavConfig.items,
+                                enabled = true,
+                                onCheckedChange = { checked ->
+                                    val newItems = if (checked) {
+                                        webDavConfig.items + TTS_CACHE
+                                    } else {
+                                        webDavConfig.items - TTS_CACHE
+                                    }
+                                    updateWebDavConfig(webDavConfig.copy(items = newItems))
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -996,4 +1091,62 @@ private fun BackupDialog(
             }
         },
     )
+}
+
+/**
+ * 备份项卡片（两分组布局）：图标 + 名称 + 说明 + Checkbox。
+ * 媒体资产项依赖 DATABASE，未勾选 DATABASE 时禁用（AGENTS.md 12.7）。
+ */
+@Composable
+private fun BackupItemCard(
+    item: WebDavConfig.BackupItem,
+    title: String,
+    description: String,
+    icon: ImageVector?,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val containerColor = if (enabled) {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.5f)
+    }
+    Surface(
+        onClick = { if (enabled) onCheckedChange(!checked) },
+        enabled = enabled,
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+        color = containerColor,
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (enabled) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                Checkbox(
+                    checked = checked,
+                    onCheckedChange = { if (enabled) onCheckedChange(it) },
+                    enabled = enabled
+                )
+            }
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2
+            )
+        }
+    }
 }

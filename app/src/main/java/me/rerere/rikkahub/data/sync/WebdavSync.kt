@@ -21,6 +21,10 @@ import me.rerere.rikkahub.data.datastore.SecureStore
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.sanitize
+import me.rerere.rikkahub.core.data.repository.CallRecordRepository
+import me.rerere.rikkahub.data.radio.RadioAudioGenerator
+import me.rerere.rikkahub.data.radio.RadioRepository
+import me.rerere.rikkahub.service.voice.CallRecorder
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -50,6 +54,8 @@ class WebdavSync(
     private val secureStore: SecureStore,
     private val secretKeyManager: SecretKeyManager,
     private val conversationRepo: ConversationRepository,
+    private val callRecordRepository: CallRecordRepository,
+    private val radioRepository: RadioRepository,
 ) {
     suspend fun testWebdav(webDavConfig: WebDavConfig) {
         val davCollection = webDavConfig.requireCollection()
@@ -368,6 +374,41 @@ class WebdavSync(
                     }
                 }
             }
+
+            // ===== 媒体资产：通话录音（含公共目录导出件，统一以 callId 命名入 zip）=====
+            if (webDavConfig.items.contains(WebDavConfig.BackupItem.CALL_RECORDINGS)) {
+                val records = callRecordRepository.getAllRecords()
+                var count = 0
+                records.forEach { record ->
+                    val entryName = MediaBackup.callRecordingZipEntryName(record.id, record.audio)
+                        ?: return@forEach
+                    val sourceFile = CallRecorder.resolveAudioFile(context, record.audio!!)
+                    if (sourceFile != null && sourceFile.exists() && sourceFile.isFile) {
+                        addFileToZip(zipOut, sourceFile, entryName)
+                        count++
+                    } else {
+                        LogUtil.w(TAG, "call recording file missing, skip: ${record.audio}")
+                    }
+                }
+                LogUtil.i(TAG, "Added $count call recordings to backup")
+            }
+
+            // ===== 媒体资产：电台音频（zip 条目 = 资产相对路径）=====
+            if (webDavConfig.items.contains(WebDavConfig.BackupItem.RADIO_AUDIO)) {
+                val assets = radioRepository.getAllAssets()
+                var count = 0
+                assets.forEach { asset ->
+                    val entryName = MediaBackup.radioAudioZipEntryName(asset)
+                    val sourceFile = RadioAudioGenerator.resolveAudioFile(context, asset.filePath)
+                    if (sourceFile.exists() && sourceFile.isFile) {
+                        addFileToZip(zipOut, sourceFile, entryName)
+                        count++
+                    } else {
+                        LogUtil.w(TAG, "radio audio file missing, skip: ${asset.filePath}")
+                    }
+                }
+                LogUtil.i(TAG, "Added $count radio audio files to backup")
+            }
         }
         backupFile
     }
@@ -379,6 +420,7 @@ class WebdavSync(
             var settingsCleanup = BackupCleanupResult()
             val tempDir = File(context.cacheDir, "restore_${System.currentTimeMillis()}").apply { mkdirs() }
             var sanitization = DatabaseSanitizer.SanitizationResult()
+            val restoredCallAudio = mutableSetOf<String>()
 
             try {
                 var restoredSettings: Settings? = null
@@ -410,6 +452,25 @@ class WebdavSync(
                                     if (webDavConfig.items.contains(WebDavConfig.BackupItem.TTS_CACHE)) {
                                         val fileName = ze.name.substringAfter("/")
                                         val targetFolder = File(context.cacheDir, "tts_cache").apply { mkdirs() }
+                                        val targetFile = File(targetFolder, fileName)
+                                        FileOutputStream(targetFile).use { zipIn.copyTo(it) }
+                                    }
+                                }
+                                ze.name.startsWith("call_recordings/") -> {
+                                    // 媒体资产：通话录音（含公共导出件，恢复为私有相对路径副本）
+                                    if (webDavConfig.items.contains(WebDavConfig.BackupItem.CALL_RECORDINGS)) {
+                                        val fileName = ze.name.substringAfter("/")
+                                        val targetFolder = File(context.filesDir, "call_recordings").apply { mkdirs() }
+                                        val targetFile = File(targetFolder, fileName)
+                                        FileOutputStream(targetFile).use { zipIn.copyTo(it) }
+                                        restoredCallAudio.add("call_recordings/$fileName")
+                                    }
+                                }
+                                ze.name.startsWith("radio_audio/") -> {
+                                    // 媒体资产：电台音频
+                                    if (webDavConfig.items.contains(WebDavConfig.BackupItem.RADIO_AUDIO)) {
+                                        val fileName = ze.name.substringAfter("/")
+                                        val targetFolder = File(context.filesDir, "radio_audio").apply { mkdirs() }
                                         val targetFile = File(targetFolder, fileName)
                                         FileOutputStream(targetFile).use { zipIn.copyTo(it) }
                                     }
@@ -465,6 +526,8 @@ class WebdavSync(
                 }
 
                 triggerDataMigration()
+                // 媒体资产对账：改写绝对路径 / 清理缺失文件引用（AGENTS.md 12.7）
+                repairRestoredMedia(restoredCallAudio)
                 RestoreResult(sanitization, settingsCleanup.copy(unsupportedZipEntriesBytes = unsupportedBytes))
             } catch (e: Exception) {
                 LogUtil.e(TAG, "Error during restore process", e)
@@ -473,6 +536,56 @@ class WebdavSync(
                 tempDir.deleteRecursively()
             }
         }
+
+    /**
+     * 恢复后的媒体资产对账（AGENTS.md 12.7）：
+     * - 通话录音：原路径可用 → 保留；不可用但 zip 恢复了私有副本 → DB 改写为相对路径
+     *   （公共导出件回私有目录，forever 语义不变）；两者皆无 → audio=null（按无音频降级）。
+     *   forever / audioExpiresAt 原值保留，不重置。
+     * - 电台音频：文件存在 → 保留；缺失 → 删除对应资产记录（节目保持 PUBLISHED，按无音频降级）。
+     */
+    private suspend fun repairRestoredMedia(restoredCallAudio: Set<String>) {
+        runCatching {
+            val records = callRecordRepository.getAllRecords()
+            records.forEach { record ->
+                val repair = MediaBackup.decideCallAudioRepair(
+                    storedAudio = record.audio,
+                    storedFileExists = record.audio != null &&
+                        CallRecorder.resolveAudioFile(context, record.audio)?.exists() == true,
+                    restoredRelativePath = restoredCallAudio.firstOrNull {
+                        it.startsWith("call_recordings/${record.id}.")
+                    }
+                )
+                when (repair) {
+                    is MediaBackup.CallAudioRepair.Keep -> {}
+                    is MediaBackup.CallAudioRepair.RewriteToRelative -> {
+                        runCatching {
+                            // audio_expires_at 传原值，禁止重置七天过期时间
+                            callRecordRepository.updateAudio(record.id, repair.relativePath, record.audioExpiresAt)
+                        }.onFailure { LogUtil.w(TAG, "rewrite call audio path failed: ${record.id}") }
+                    }
+
+                    is MediaBackup.CallAudioRepair.ClearAudio -> {
+                        runCatching {
+                            // audio=null 但保留 forever / audioExpiresAt 原值
+                            callRecordRepository.updateAudio(record.id, null, record.audioExpiresAt)
+                        }.onFailure { LogUtil.w(TAG, "clear call audio failed: ${record.id}") }
+                    }
+                }
+            }
+        }.onFailure { LogUtil.e(TAG, "call audio repair failed", it) }
+
+        runCatching {
+            val assets = radioRepository.getAllAssets()
+            assets.forEach { asset ->
+                val exists = RadioAudioGenerator.resolveAudioFile(context, asset.filePath).exists()
+                if (!MediaBackup.decideRadioAssetRepair(exists)) {
+                    runCatching { radioRepository.deleteAsset(asset.id) }
+                        .onFailure { LogUtil.w(TAG, "drop missing radio asset failed: ${asset.id}") }
+                }
+            }
+        }.onFailure { LogUtil.e(TAG, "radio audio repair failed", it) }
+    }
 
     data class RestoreResult(
         val sanitization: DatabaseSanitizer.SanitizationResult,

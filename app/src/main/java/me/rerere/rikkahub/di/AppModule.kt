@@ -10,6 +10,7 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.AILoggingManager
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.RadioAudioCleanupWorker
 import me.rerere.rikkahub.service.BackupWorker
 import me.rerere.rikkahub.utils.EmojiData
 import me.rerere.rikkahub.utils.EmojiUtils
@@ -137,7 +138,7 @@ val appModule = module {
     }
 
     single {
-        me.rerere.rikkahub.service.voice.VoiceMessagePlayer(get())
+        me.rerere.rikkahub.service.voice.VoiceMessagePlayer(get(), get())
     }
 
     single {
@@ -158,9 +159,40 @@ val appModule = module {
 
     singleOf(::ChatService)
 
+    // ===== 小机电台（Radio）=====
+    single {
+        me.rerere.rikkahub.data.radio.RadioAudioGenerator(
+            context = get(),
+            ttsManager = get()
+        )
+    }
+    single {
+        me.rerere.rikkahub.data.radio.RadioRepository(
+            channelDao = get(),
+            episodeDao = get(),
+            assetDao = get(),
+            deletionLogDao = get()
+        )
+    }
+    // 统一媒体播放控制器（电台 + 通话录音共用；实现 RadioPlaybackHook 联动播放队列）
+    single {
+        me.rerere.rikkahub.service.media.MediaPlaybackController(context = get())
+    }
+    single {
+        me.rerere.rikkahub.data.radio.RadioService(
+            context = get(),
+            repository = get(),
+            settingsStore = get(),
+            audioGenerator = get(),
+            playbackHook = get<me.rerere.rikkahub.service.media.MediaPlaybackController>(),
+            appScope = get()
+        )
+    }
+
     workerOf(::BackupWorker)
     workerOf(::DiaryWorker)
     workerOf(::DiarySchedulerWorker)
     workerOf(::AgentTaskWorker)
     workerOf(::MemoryConsolidationWorker)
+    workerOf(::RadioAudioCleanupWorker)
 }

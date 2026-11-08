@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.service.media.MediaPlaybackController
 
 /**
  * 单条语音消息的播放状态。
@@ -41,7 +42,10 @@ data class VoiceMessagePlayback(
  *
  * 线程模型：所有 ExoPlayer 操作切到主线程（ExoPlayer 要求）。
  */
-class VoiceMessagePlayer(context: Context) {
+class VoiceMessagePlayer(
+    context: Context,
+    private val mediaPlaybackController: MediaPlaybackController
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val player = ExoPlayer.Builder(context).build()
@@ -70,6 +74,8 @@ class VoiceMessagePlayer(context: Context) {
      */
     fun playOrToggle(key: String, uri: Uri) {
         scope.launch {
+            // 与统一媒体播放器互斥（AGENTS.md 12.6）：语音条开播前先暂停电台/录音播放
+            mediaPlaybackController.pause()
             if (_currentKey.value == key) {
                 // 同一条：toggle
                 if (player.isPlaying) {

@@ -41,9 +41,13 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ProfileHistoryEntity::class,
         AppLockEntity::class,
         CallRecordEntity::class,
-        ScheduleEventEntity::class
+        ScheduleEventEntity::class,
+        RadioChannelEntity::class,
+        RadioEpisodeEntity::class,
+        RadioAudioAssetEntity::class,
+        RadioEpisodeDeletionLogEntity::class
     ],
-    version = 43,
+    version = 45,
     exportSchema = true
 )
 @TypeConverters(
@@ -73,6 +77,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appLockDao(): AppLockDAO
     abstract fun callRecordDao(): CallRecordDao
     abstract fun scheduleEventDao(): ScheduleEventDAO
+    abstract fun radioChannelDao(): RadioChannelDao
+    abstract fun radioEpisodeDao(): RadioEpisodeDao
+    abstract fun radioAudioAssetDao(): RadioAudioAssetDao
+    abstract fun radioEpisodeDeletionLogDao(): RadioEpisodeDeletionLogDao
 
     companion object {
         const val TAG = "AppDatabase"
@@ -529,6 +537,131 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.v(TAG, "开始 42->43 迁移：AgentDiaryEntity 新增生成状态 generation_status")
                 db.execSQL(
                     "ALTER TABLE `AgentDiaryEntity` ADD COLUMN `generation_status` TEXT NOT NULL DEFAULT 'COMPLETED'"
+                )
+            }
+        }
+
+        /**
+         * 43 → 44：新建小机电台 4 张表（radio_channels / radio_episodes /
+         * radio_audio_assets / radio_episode_deletion_logs）。
+         *
+         * 不使用 Room 外键：关联完整性由 RadioService 业务校验（删栏目前必须处理关联节目，
+         * 删节目时同步清理音频资产）；删除审计表刻意独立于节目记录存在（节目删除后审计保留）。
+         * 仅新增表，不改动任何既有表，历史数据完整保留。
+         */
+        /**
+         * 44 → 45：radio_episodes 表新增点赞标记列 liked。
+         * 播放器点赞按钮使用；0 = 未点赞，1 = 已点赞。仅加列 + 非空默认值，
+         * 历史节目全部视为未点赞，不改动任何既有字段。
+         */
+        val MIGRATION_44_45 = object : Migration(44, 45) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 44->45 迁移：radio_episodes 新增点赞标记 liked")
+                db.execSQL(
+                    "ALTER TABLE `radio_episodes` ADD COLUMN `liked` INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        val MIGRATION_43_44 = object : Migration(43, 44) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 43->44 迁移：新建小机电台 4 张表")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `radio_channels` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `cover` TEXT,
+                        `icon` TEXT,
+                        `system_prompt` TEXT NOT NULL,
+                        `creator_id` TEXT NOT NULL,
+                        `sort_order` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_radio_channels_sort_order` " +
+                        "ON `radio_channels` (`sort_order`)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `radio_episodes` (
+                        `id` TEXT NOT NULL,
+                        `channel_id` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `content` TEXT NOT NULL,
+                        `creator_agent_id` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        `published_at` INTEGER,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_radio_episodes_channel_id` " +
+                        "ON `radio_episodes` (`channel_id`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_radio_episodes_creator_agent_id` " +
+                        "ON `radio_episodes` (`creator_agent_id`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_radio_episodes_channel_id_status` " +
+                        "ON `radio_episodes` (`channel_id`, `status`)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `radio_audio_assets` (
+                        `id` TEXT NOT NULL,
+                        `episode_id` TEXT NOT NULL,
+                        `file_path` TEXT NOT NULL,
+                        `provider_id` TEXT NOT NULL,
+                        `voice_id` TEXT NOT NULL,
+                        `duration_ms` INTEGER NOT NULL,
+                        `file_size` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `content_hash` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        `expires_at` INTEGER,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_radio_audio_assets_episode_id_status` " +
+                        "ON `radio_audio_assets` (`episode_id`, `status`)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `radio_episode_deletion_logs` (
+                        `id` TEXT NOT NULL,
+                        `episode_id` TEXT NOT NULL,
+                        `episode_title` TEXT NOT NULL,
+                        `channel_id` TEXT,
+                        `creator_agent_id` TEXT NOT NULL,
+                        `operator_id` TEXT NOT NULL,
+                        `operator_type` TEXT NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `requested_by_user` INTEGER NOT NULL,
+                        `deleted_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_radio_episode_deletion_logs_episode_id` " +
+                        "ON `radio_episode_deletion_logs` (`episode_id`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_radio_episode_deletion_logs_deleted_at` " +
+                        "ON `radio_episode_deletion_logs` (`deleted_at`)"
                 )
             }
         }

@@ -199,6 +199,19 @@ sealed interface Screen {
     @Serializable
     data object BookShelf : Screen
 
+    // ===== 小机电台（Radio）=====
+    @Serializable
+    data object RadioHome : Screen
+
+    @Serializable
+    data class RadioChannel(val channelId: String) : Screen
+
+    @Serializable
+    data class RadioEpisode(val episodeId: String) : Screen
+
     @Serializable
     data class BookReader(val bookId: Int) : Screen
+
+    @Serializable
+    data class AssistantVoice(val assistantId: String) : Screen
 }

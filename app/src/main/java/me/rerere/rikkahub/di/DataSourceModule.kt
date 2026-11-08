@@ -113,7 +113,9 @@ val dataSourceModule = module {
                 AppDatabase.MIGRATION_39_40,
                 AppDatabase.MIGRATION_40_41,
                 AppDatabase.MIGRATION_41_42,
-                AppDatabase.MIGRATION_42_43
+                AppDatabase.MIGRATION_42_43,
+                AppDatabase.MIGRATION_43_44,
+                AppDatabase.MIGRATION_44_45
             )
             .build()
     }
@@ -147,6 +149,10 @@ val dataSourceModule = module {
     single { get<AppDatabase>().appLockDao() }
     single { get<AppDatabase>().callRecordDao() }
     single { get<AppDatabase>().scheduleEventDao() }
+    single { get<AppDatabase>().radioChannelDao() }
+    single { get<AppDatabase>().radioEpisodeDao() }
+    single { get<AppDatabase>().radioAudioAssetDao() }
+    single { get<AppDatabase>().radioEpisodeDeletionLogDao() }
 
     single<DbTransactionRunner> { RoomTransactionRunner(get()) }
 
@@ -229,7 +235,9 @@ val dataSourceModule = module {
             context = get(),
             secureStore = get(),
             secretKeyManager = get(),
-            conversationRepo = get()
+            conversationRepo = get(),
+            callRecordRepository = get(),
+            radioRepository = get()
         )
     }
     single<Retrofit> {

@@ -16,6 +16,10 @@ interface CallRecordDao {
     @Query("SELECT * FROM call_records WHERE id = :callId LIMIT 1")
     suspend fun getById(callId: String): CallRecordEntity?
 
+    /** 全量记录（备份/恢复对账用）。 */
+    @Query("SELECT * FROM call_records")
+    suspend fun getAll(): List<CallRecordEntity>
+
     @Query("SELECT * FROM call_records WHERE id = :callId LIMIT 1")
     fun getByIdFlow(callId: String): Flow<CallRecordEntity?>
 

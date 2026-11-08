@@ -18,6 +18,9 @@ class CallRecordRepository(private val dao: CallRecordDao) {
 
     suspend fun getById(callId: String): CallRecordEntity? = dao.getById(callId)
 
+    /** 全量记录（备份/恢复对账用）。 */
+    suspend fun getAllRecords(): List<CallRecordEntity> = dao.getAll()
+
     fun getByIdFlow(callId: String): Flow<CallRecordEntity?> = dao.getByIdFlow(callId)
 
     fun getByConversation(conversationId: String): Flow<List<CallRecordEntity>> =

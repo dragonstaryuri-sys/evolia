@@ -321,3 +321,55 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 -   **单元测试**: `./gradlew :app:testDebugUnitTest`（纯 JVM 环境，无 Robolectric）。注意 `android.util.Log` **未 mock**——需要单测覆盖的逻辑必须抽为不依赖 Android API 的纯函数（参考 `mergeSyncedTools`、`buildMcpCatalogPrompt` 的做法）。现有测试位于 `app/src/test/java/me/rerere/rikkahub/`。
 -   **最小编译检查**: `./gradlew :app:compileDebugKotlin`。
 -   **模块依赖顺序**: `app` 依赖 `ai / common / search / tts / highlight`；改动子模块公共接口后必须连同 `app` 一起编译验证。
+
+## 12. 小机电台 (Radio) 与媒体基础设施 (2026-11)
+
+> 核心文件：`data/radio/`（RadioService 业务层 / RadioRepository / RadioAudioRules 纯函数 / RadioAudioGenerator）、`core-data/.../db/entity/Radio*Entity.kt`、`data/ai/tools/RadioAgentTools.kt`（Agent 工具）、`service/media/`（统一播放）、`ui/pages/radio/`（页面）。
+
+### 12.1 数据模型（DB v44，4 张新表）
+- `radio_channels`（栏目）/ `radio_episodes`（节目，status=DRAFT/PUBLISHED）/ `radio_audio_assets`（音频资产，status=CURRENT/BACKUP）/ `radio_episode_deletion_logs`（删除审计，**无 FK、独立于节目记录存在**）。
+- **不使用 Room FK**，关联完整性由 `RadioService` 业务校验（删栏目前必须处理关联节目）。
+- **新增表必须同步登记 `DatabaseSanitizer` 白名单（蛇形物理表名）**：`radio_channels` / `radio_episodes` / `radio_audio_assets` / `radio_episode_deletion_logs`。
+- 每期节目只有一份文字稿（`radio_episodes.content`），无草稿表、无版本历史。
+
+### 12.2 节目业务规则（UI 与 Agent 工具共用 RadioService，禁止各自实现）
+- **保存**：只有 `save_episode`（工具）落库；对话中生成未保存的文字稿不是节目。
+- **修改**：DRAFT 可改标题+文字稿；PUBLISHED 只能改标题（`update_episode` 对 PUBLISHED 必须明确报错）。
+- **文字稿变化即清音频**：修改未发布节目文字稿后立即删除 current+backup 音频文件与 `radio_audio_assets` 记录，禁止旧稿音频留作备用。
+- **删除**：删除节目只向创作 Agent 提供（工具 `delete_episode`）；用户不能在 UI 直接删 AI 创作的节目。删除时清理节目+全部音频+资产记录，但必须写入 `radio_episode_deletion_logs`（含 operator_id/operator_type/reason/requested_by_user）；用户点名删除无需重复确认，Agent 自主删除必须有明确依据。
+- **发布**：`publish_episode` 只校验不合成——节目存在、有文字稿、有 current 音频、文件真实可播（MediaExtractor）、`content_hash` 与当前文字稿一致；缺音频返回失败要求先 `generate_episode_audio`。
+- **音频丢失降级**：发布后音频文件丢失/损坏 → 节目保持 PUBLISHED，页面展示异常态，不回草稿；重新生成使用创作 Agent 当前语音配置。
+
+### 12.3 音频资产生命周期
+- 存储：`filesDir/radio_audio/{audioId}.m4a`（AAC 32kbps 单声道，采样率随 Provider；编码失败降级 WAV）。**不得放进 TTS 临时缓存**；不参与通话录音 7 天清理；「清理缓存」只清 upload/、images/，天然不影响。
+- 生成：TextChunker 分句 → 逐句 TTS 合成（16-bit LE mono PCM）→ 拼接（句间 200ms 静音）→ 校验成功后才写资产记录；**任一分句失败即中止并删半成品**，不得先删旧音频。
+- **同一文字稿重新生成**：新音频成为 current，原 current 转 backup（3 天过期），原 backup 直接删除；**恢复备用音频**：backup↔current 互换，新 backup 重算 3 天。策略只适用于文字稿未变（`content_hash` 判定）。
+- 备用音频过期与孤儿文件（DB 无引用且 >24h）由 `RadioAudioCleanupWorker` 每日清理。
+- `radio_audio_assets` 必须记录**实际使用**的 provider_id + voice_id（回退后记录回退结果）。
+- 并发：RadioService 以 per-episode `Mutex` 串行化「文字稿更新 vs 音频生成/发布」。
+
+### 12.4 Radio Agent LocalTools（按需 Schema，复刻 MCP 模式）
+- `data/ai/tools/RadioAgentTools.kt`：常驻仅两个固定工具 `get_radio_tool_schema`（查参数定义）与 `call_radio_tool`（执行，先经 `validateAgainstSchema` 校验）；工具目录（10 个业务工具名+描述）由 `buildRadioCatalogPrompt`（纯函数，有单测）注入 systemPrompt。工具清单：get_channels / manage_channel / save_episode（创建+更新未发布文字稿，已吸收 update_episode）/ update_episode_title / query_episodes / get_episode_content / delete_episode / generate_episode_audio（**不返回音色信息**，后台生成）/ restore_episode_audio / publish_episode（成功提示引导调用 share_episode）/ share_episode（发送电台分享卡片消息，autoplay=1 自动播放；无 delete_episode_audio——音频删除不向 Agent 开放）。
+- 工具开关：`LocalToolOption.RadioStation`（按助手 opt-in，默认关），在 ChatService 工具装配处与 LocalTools 同路径追加。
+- 全部工具调用走 RadioService（参数校验/状态校验/音频资产管理/删除审计共用），禁止工具内直连 DAO。
+- `manage_channel`(create) 与 `publish_episode` 的授权要求（需用户明确授权）是**行为约束**，写在工具描述中；自动发布权不随功能默认获得。
+
+### 12.5 Agent 独立语音配置（统一语音选择）
+- `Assistant.voiceProviderId + voiceId`（可空；null = 用全局默认）；引用必须是 **provider_id + voice_id**，不能只存音色名。
+- Settings 新增 `ttsVoiceEntries: List<TTSVoiceEntry>`（用户管理的可用音色库）与 `defaultTtsVoiceEntryId`；空列表=旧模式（全局默认仍走 `selectedTTSProvider`，老用户零迁移）；非空时全局默认=default 条目（失效回退第一个有效项→legacy）。
+- 解析统一走 `TtsVoiceResolver.resolve`（纯函数，有单测）：Agent 专属（且在音色库中）→ 全局默认 → legacy selectedTTSProvider → SystemTTS；不可用回退时返回 `fallbackNotice` 提示用户。**所有 TTS 调用点**（Radio 生成、微信语音消息、语音通话、自动朗读）都必须经此解析。
+- `withVoiceOverride(setting, voiceId)` 按子类映射音色字段；MiniMax DESIGN/CLONE 音色不支持作 Agent 专属音色（回退并提示）。
+- 音色库 UI：语音服务设置内管理（添加/设默认/删除），**禁止删除或禁用最后一个可用音色**。
+
+### 12.6 统一媒体播放 (Media3 Session)
+- `service/media/MediaPlaybackService : MediaSessionService`（单实例 ExoPlayer + MediaSession，foregroundServiceType=mediaPlayback）；UI 只经 `MediaPlaybackController`（MediaController 封装，Koin single）发指令/订阅状态，**禁止各页面自建 ExoPlayer 播电台/录音**。
+- 电台节目与通话录音共用同一播放会话；**同一时刻只允许一个媒体源播放**（与聊天语音条 VoiceMessagePlayer 双向互斥：统一播放器开播即停 VoiceMessagePlayer，反之亦然）。实时语音通话链路不接入。
+- 队列项只存 ID 引用（episodeId/callId），标题实时从 DB 读取；改名后经 `refreshMetadata` 刷新播放器与通知栏（禁止维护标题副本）。播放模式：随机/单曲循环/顺序（顺序播完即停，不自动循环列表）。
+
+### 12.7 备份恢复（媒体资产）
+- `WebDavConfig.BackupItem` 新增 `CALL_RECORDINGS` / `RADIO_AUDIO`，默认勾选；两者依赖 DATABASE（未勾选时 UI 禁用）。ZIP 布局新增 `call_recordings/`、`radio_audio/` 顶层目录。
+- 老用户一次性迁移（DataStore key `backup_items_media_migrated`）：补两项默认勾选，保留用户原 DATABASE/FILES/TTS_CACHE 选择；迁移后用户取消勾选不被回退。
+- 恢复规则：录音/电台音频文件写回私有目录，**公共目录导出件的 DB 绝对路径改写回相对路径**（forever 语义不变）；`forever` / `audioExpiresAt` / `expires_at` 原值保留，不重置；文件缺失 → 录音 `audio=null`、电台删对应资产记录并按无音频降级，节目保持 PUBLISHED。
+
+### 12.8 定时创作
+复用 `agent_task_manager`（AGENT_TASK）：定时唤起 Agent 走 `ChatService.executeAgentTask` 同一生成链路，Radio 工具可用即可定时创作草稿/发布；不新增 Radio 专用调度器。

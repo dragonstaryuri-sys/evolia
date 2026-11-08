@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -16,6 +17,7 @@ import kotlinx.coroutines.sync.withLock
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.tts.model.PlaybackState
+import me.rerere.rikkahub.data.ai.TtsVoiceResolver
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
@@ -179,6 +181,8 @@ class CustomTtsStateImpl(
     private var lastJobActiveTimeMs: Long = 0L
     // 通话期间挂起自动朗读消费（true 时 startAutoRead 不推进指针、不调用 speak）
     private val autoReadPaused = AtomicBoolean(false)
+    // 当前自动朗读会话归属的助手 ID：驱动统一语音选择（Agent 专属音色）
+    private val activeAssistantIdFlow = MutableStateFlow<Uuid?>(null)
 
     override val isAvailable: StateFlow<Boolean> get() = controller.isAvailable
     override val isSpeaking: StateFlow<Boolean> get() = controller.isSpeaking
@@ -188,10 +192,14 @@ class CustomTtsStateImpl(
     override val playbackState: StateFlow<PlaybackState> get() = controller.playbackState
 
     init {
-        // 监听 settings 变化，自动更新 TTS provider
+        // 监听 settings / 当前会话助手变化，统一语音选择后更新 TTS provider（AGENTS.md 12.5）
         scope.launch {
-            settingsStore.settingsFlow.collect { settings ->
-                controller.setProvider(settings.getSelectedTTSProvider())
+            combine(settingsStore.settingsFlow, activeAssistantIdFlow) { settings, assistantId ->
+                val assistant = assistantId?.let { settings.getAssistantById(it) }
+                TtsVoiceResolver.resolveForAssistant(settings, assistant)
+            }.collect { resolution ->
+                resolution.fallbackNotice?.let { Log.w(TAG, "[AutoRead] TTS 音色回退: $it") }
+                controller.setProvider(resolution.providerSetting)
             }
         }
     }
@@ -418,6 +426,8 @@ class CustomTtsStateImpl(
             combine(convFlow, jobFlow, autoPlayFlow) { conv, job, autoPlay ->
                 Triple(conv, job, autoPlay)
             }.collect { (conv, job, autoPlay) ->
+                // 跟随当前会话助手，驱动统一语音选择（Agent 专属音色）
+                activeAssistantIdFlow.value = conv.assistantId
                 // 每次 AI 准备说下一句话之前，都先看一眼 settings 里的时间
                 if (settingsStore.settingsFlow.value.isMuteTime()) {
                     Log.i(TAG, "[AutoRead] 当前处于静音时段，已跳过播放")

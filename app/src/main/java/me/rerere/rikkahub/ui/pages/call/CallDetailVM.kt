@@ -25,8 +25,10 @@ import me.rerere.rikkahub.core.data.db.entity.CallRecordEntity
 import me.rerere.rikkahub.core.data.repository.CallRecordRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.service.media.MediaPlaybackController
+import me.rerere.rikkahub.service.media.PlaybackSourceType
 import me.rerere.rikkahub.service.voice.CallRecorder
-import me.rerere.rikkahub.service.voice.VoiceMessagePlayer
+import me.rerere.rikkahub.service.voice.VoiceMessagePlayback
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -57,7 +59,8 @@ private sealed interface ExportResult {
  *
  * - 订阅通话记录实体（[CallRecordEntity]）；
  * - 拉取该 callId 的真实通话转写（messageSource == CALL）；
- * - 复用全局单例 [VoiceMessagePlayer] 播放录音（与聊天页语音条互斥）；
+ * - 通过统一媒体播放控制器 [MediaPlaybackController] 播放录音
+ *   （与电台共用同一 MediaSession，离开页面继续播放，通知栏可控）；
  * - 录音永久保存（移动到公共 Download/Evolia，单份存储）/ 手动删除。
  */
 class CallDetailVM(
@@ -65,11 +68,11 @@ class CallDetailVM(
     private val context: Application,
     private val callRecordRepository: CallRecordRepository,
     private val conversationRepository: ConversationRepository,
-    private val voiceMessagePlayer: VoiceMessagePlayer,
+    private val mediaPlaybackController: MediaPlaybackController,
     private val settingsStore: SettingsStore,
 ) : ViewModel() {
 
-    /** 录音播放 key（与聊天页语音条 key 空间保持一致，避免冲突）。 */
+    /** 录音播放 key（UI 兼容保留；实际播放状态来自统一播放器）。 */
     val audioKey: String = "call_audio:$callId"
 
     val record: StateFlow<CallRecordEntity?> = callRecordRepository.getByIdFlow(callId)
@@ -86,11 +89,28 @@ class CallDetailVM(
         .map { it.displaySetting.userNickname.ifEmpty { "用户" } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, "用户")
 
-    /** 全局播放器状态（仅当播放 key == audioKey 时对本页有意义）。 */
-    val playback = voiceMessagePlayer.playback
+    /** 统一播放器状态：仅当当前媒体源是本通话录音时对本页有意义（否则 null = 未在播本条）。 */
+    val playback: StateFlow<VoiceMessagePlayback?> = mediaPlaybackController.state
+        .map { st ->
+            val current = st.currentItem
+            if (current?.sourceType == PlaybackSourceType.CALL_RECORDING && current.id == callId) {
+                VoiceMessagePlayback(
+                    key = audioKey,
+                    isPlaying = st.isPlaying,
+                    positionMs = st.positionMs,
+                    durationMs = st.durationMs,
+                    speed = st.speed
+                )
+            } else {
+                null
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    /** 当前播放倍速（持久化在播放器层，滑动后重建仍保持）。 */
-    val speed = voiceMessagePlayer.speed
+    /** 当前播放倍速（持久化在统一播放器层，滑动后重建仍保持）。 */
+    val speed: StateFlow<Float> = mediaPlaybackController.state
+        .map { it.speed }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 1.0f)
 
     private val _transcript = MutableStateFlow<List<UIMessage>>(emptyList())
     val transcript: StateFlow<List<UIMessage>> = _transcript.asStateFlow()
@@ -147,12 +167,29 @@ class CallDetailVM(
             }
             return
         }
-        voiceMessagePlayer.playOrToggle(audioKey, file.toUri())
+        val current = mediaPlaybackController.state.value.currentItem
+        val isCurrent = current?.sourceType == PlaybackSourceType.CALL_RECORDING && current.id == callId
+        if (isCurrent) {
+            mediaPlaybackController.togglePlayPause()
+        } else {
+            val item = MediaPlaybackController.callRecording(
+                id = callId,
+                filePath = file.absolutePath,
+                title = "通话录音",
+                subtitle = assistantName.value.ifEmpty { "Evolia" }
+            )
+            mediaPlaybackController.playSingleItem(item)
+        }
     }
 
-    fun seekTo(positionMs: Long) = voiceMessagePlayer.seekTo(audioKey, positionMs)
+    fun seekTo(positionMs: Long) {
+        val current = mediaPlaybackController.state.value.currentItem
+        if (current?.sourceType == PlaybackSourceType.CALL_RECORDING && current.id == callId) {
+            mediaPlaybackController.seekTo(positionMs)
+        }
+    }
 
-    fun setSpeed(speed: Float) = voiceMessagePlayer.setSpeed(audioKey, speed)
+    fun setSpeed(speed: Float) = mediaPlaybackController.setSpeed(speed)
 
     /**
      * 永久保存录音：把音频文件**移动**到公共下载目录 Download/Evolia，全程只保留一份文件。
@@ -304,12 +341,12 @@ class CallDetailVM(
 
     /**
      * 删除录音（二次确认后调用）：
-     * 先停播放器，再删文件；文件不存在视为已删除直接修正数据库。
+     * 先停统一播放器（若正在播本条），再删文件；文件不存在视为已删除直接修正数据库。
      * 文件删除失败保留记录以便重试，不伪装成功。
      */
     fun deleteAudio(record: CallRecordEntity?) {
         viewModelScope.launch {
-            voiceMessagePlayer.stop()
+            mediaPlaybackController.removeItem(PlaybackSourceType.CALL_RECORDING, callId)
             val relative = record?.audio
             if (relative == null) {
                 _message.value = CallDetailMessage("录音已不存在")
@@ -339,7 +376,6 @@ class CallDetailVM(
 
     override fun onCleared() {
         super.onCleared()
-        // 全局单例播放器：只停播放，不 release
-        voiceMessagePlayer.stop()
+        // 统一媒体播放器为全局 MediaSession：离开页面继续后台播放，不在此停止
     }
 }

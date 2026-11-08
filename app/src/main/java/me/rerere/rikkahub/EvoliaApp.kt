@@ -122,6 +122,13 @@ class EvoliaApp : Application() {
             PeriodicWorkRequestBuilder<CallAudioCleanupWorker>(24, TimeUnit.HOURS).build()
         )
 
+        // 电台音频清理：备用音频 3 天过期 + 孤儿文件，每 24h 周期清理
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "radio_audio_cleanup",
+            ExistingPeriodicWorkPolicy.UPDATE,
+            PeriodicWorkRequestBuilder<me.rerere.rikkahub.service.RadioAudioCleanupWorker>(24, TimeUnit.HOURS).build()
+        )
+
         // Schedule Master Memory (L3) Daily Consolidation at 3:00 AM
         scheduleDailyMasterMemorySync()
 
@@ -160,6 +167,12 @@ class EvoliaApp : Application() {
                     activeCallId = get<VoiceCallManager>().currentActiveCallId
                 )
             }.onFailure { Log.e(TAG, "Call recovery reconcile failed", it) }
+        }
+
+        // 预置电台默认栏目（幂等：栏目空间为空时补入早安/晚安频道，允许用户删除/修改）
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching { get<me.rerere.rikkahub.data.radio.RadioService>().ensureDefaultChannels() }
+                .onFailure { Log.e(TAG, "ensure default radio channels failed", it) }
         }
 
         get<AppScope>().launch {

@@ -9,6 +9,8 @@ import io.pebbletemplates.pebble.PebbleEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -138,6 +140,11 @@ class SettingsStore(
         val CALL_RINGTONE_CUSTOM_PATH = stringPreferencesKey("call_ringtone_custom_path")
         // 打印机配置（设备信息 + 自动打印开关）
         val PRINT_CONFIG = stringPreferencesKey("print_config")
+        // ===== 小机电台与 Agent 独立语音（2026-11）=====
+        // 用户手动维护的电台播放列表（有序 episodeId 列表）
+        val RADIO_PLAYLIST = stringPreferencesKey("radio_playlist")
+        // 备份项媒体资产一次性迁移标记（老用户补 CALL_RECORDINGS/RADIO_AUDIO）
+        val BACKUP_ITEMS_MEDIA_MIGRATED = booleanPreferencesKey("backup_items_media_migrated")
     }
 
     private val dataStore = context.settingsStore
@@ -247,6 +254,9 @@ class SettingsStore(
                 printerConfig = preferences[PRINT_CONFIG]?.let {
                     JsonInstant.decodeFromString<PrinterDeviceConfig>(it)
                 } ?: PrinterDeviceConfig(),
+                radioPlaylist = preferences[RADIO_PLAYLIST]?.let {
+                    JsonInstant.decodeFromString(it)
+                } ?: emptyList(),
             )
         }
         .map {
@@ -407,6 +417,32 @@ class SettingsStore(
         .onEach { quickCache.updateCache(it) }
         .toMutableStateFlow(scope, quickCache.createCachedSettings())
 
+    init {
+        // 老用户一次性迁移：补入 CALL_RECORDINGS / RADIO_AUDIO 备份项（保留原有选择）。
+        // 以 DataStore 标记位保证只执行一次，之后用户取消勾选不会被回补。
+        scope.launch {
+            runCatching { migrateMediaBackupItemsOnce() }
+                .onFailure { android.util.Log.w("SettingsStore", "备份项媒体资产迁移失败", it) }
+        }
+    }
+
+    private suspend fun migrateMediaBackupItemsOnce() {
+        val migrated = dataStore.data.firstOrNull()?.get(BACKUP_ITEMS_MEDIA_MIGRATED) == true
+        if (migrated) return
+        // 必须等 DataStore 首次真实加载完成：settingsFlow.value 的初始快照来自
+        // quickCache 缓存（可能为 dummy/init=true），基于陈旧快照的 update 会被
+        // persistLocked 的 init 守卫静默跳过，导致「标记已置位但迁移未生效」。
+        settingsFlowRaw.first { !it.init }
+        update { current ->
+            if (current.init) {
+                current
+            } else {
+                current.copy(webDavConfig = ensureMediaBackupItems(current.webDavConfig))
+            }
+        }
+        dataStore.edit { preferences -> preferences[BACKUP_ITEMS_MEDIA_MIGRATED] = true }
+    }
+
     private suspend fun persistMigratedSettings(settings: Settings) {
         dataStore.edit { preferences ->
             preferences[PROVIDERS] = JsonInstant.encodeToString(settings.providers)
@@ -522,6 +558,7 @@ class SettingsStore(
             preferences[CALL_RINGTONE] = settingsToSave.callRingtone
             preferences[CALL_RINGTONE_CUSTOM_PATH] = settingsToSave.callRingtoneCustomPath
             preferences[PRINT_CONFIG] = JsonInstant.encodeToString(settingsToSave.printerConfig)
+            preferences[RADIO_PLAYLIST] = JsonInstant.encodeToString(settingsToSave.radioPlaylist)
         }
     }
 
@@ -630,6 +667,9 @@ data class Settings(
     val callRingtoneCustomPath: String = "",
     // 打印机配置（已保存设备 + 自动打印开关，默认未配置/关闭）
     val printerConfig: PrinterDeviceConfig = PrinterDeviceConfig(),
+    // ===== 小机电台（2026-11）=====
+    // 用户手动维护的电台播放列表（有序 episodeId，UI 已由统一播放器队列取代，字段保留兼容）。
+    val radioPlaylist: List<String> = emptyList(),
 ) {
     companion object {
         fun dummy() = Settings(init = true)
@@ -751,11 +791,30 @@ data class WebDavConfig(
     val username: String = "",
     val password: String = "",
     val path: String = "evolia_backups",
-    val items: List<BackupItem> = listOf(BackupItem.DATABASE, BackupItem.FILES),
+    val items: List<BackupItem> = listOf(
+        BackupItem.DATABASE,
+        BackupItem.FILES,
+        BackupItem.CALL_RECORDINGS,
+        BackupItem.RADIO_AUDIO
+    ),
     val maxBackupFiles: Int = 3
 ) {
     @Serializable
-    enum class BackupItem { DATABASE, FILES, TTS_CACHE }
+    enum class BackupItem { DATABASE, FILES, TTS_CACHE, CALL_RECORDINGS, RADIO_AUDIO }
+}
+
+/**
+ * 老用户一次性迁移（纯函数，单测固化）：为旧配置补入 CALL_RECORDINGS / RADIO_AUDIO
+ * 两个默认勾选的媒体资产备份项，保留用户原有 DATABASE/FILES/TTS_CACHE 选择。
+ * 已包含时原样返回；由 DataStore 的 backup_items_media_migrated 标记保证只执行一次，
+ * 迁移后用户取消勾选不会被再次补回。
+ */
+internal fun ensureMediaBackupItems(config: WebDavConfig): WebDavConfig {
+    val missing = listOf(
+        WebDavConfig.BackupItem.CALL_RECORDINGS,
+        WebDavConfig.BackupItem.RADIO_AUDIO
+    ).filter { it !in config.items }
+    return if (missing.isEmpty()) config else config.copy(items = config.items + missing)
 }
 
 @Serializable
@@ -816,7 +875,7 @@ internal val DEFAULT_ASSISTANTS = listOf(
         temperature = 0.6f,
         systemPrompt = "你是用户创造的ai",
         isMain = true,
-        localTools = listOf(LocalToolOption.UpdateProfile, LocalToolOption.PeekUser, LocalToolOption.DeviceControl, LocalToolOption.TimeSense)
+        localTools = listOf(LocalToolOption.UpdateProfile, LocalToolOption.PeekUser, LocalToolOption.DeviceControl, LocalToolOption.TimeSense, LocalToolOption.RadioStation)
     )
 )
 val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")

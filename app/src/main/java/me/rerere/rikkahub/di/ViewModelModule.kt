@@ -2,10 +2,14 @@ package me.rerere.rikkahub.di
 
 import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailVM
+import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantVoiceVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantImportVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantImportMemoryVM
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
 import me.rerere.rikkahub.ui.pages.call.CallDetailVM
+import me.rerere.rikkahub.ui.pages.radio.RadioChannelVM
+import me.rerere.rikkahub.ui.pages.radio.RadioEpisodeVM
+import me.rerere.rikkahub.ui.pages.radio.RadioHomeVM
 import me.rerere.rikkahub.ui.pages.call.HistoryCallVM
 import me.rerere.rikkahub.ui.pages.chat.ChatVM
 import me.rerere.rikkahub.ui.pages.chat.ChatListVM
@@ -48,7 +52,8 @@ val viewModelModule = module {
             asrManager = get(),
             voiceMessagePlayer = get(),
             customTtsState = get(),
-            callRecordRepository = get()
+            callRecordRepository = get(),
+            radioService = get()
         )
     }
     viewModel<SettingVM> {
@@ -151,7 +156,39 @@ val viewModelModule = module {
             context = get(),
             callRecordRepository = get(),
             conversationRepository = get(),
-            voiceMessagePlayer = get(),
+            mediaPlaybackController = get(),
+            settingsStore = get()
+        )
+    }
+    viewModel<AssistantVoiceVM> { params ->
+        AssistantVoiceVM(
+            assistantId = params.get(),
+            settingsStore = get()
+        )
+    }
+    viewModel<RadioHomeVM> {
+        RadioHomeVM(
+            context = get(),
+            radioService = get(),
+            mediaPlaybackController = get(),
+            settingsStore = get()
+        )
+    }
+    viewModel<RadioChannelVM> { params ->
+        RadioChannelVM(
+            channelId = params.get(),
+            context = get(),
+            radioService = get(),
+            mediaPlaybackController = get(),
+            settingsStore = get()
+        )
+    }
+    viewModel<RadioEpisodeVM> { params ->
+        RadioEpisodeVM(
+            episodeId = params.get(),
+            context = get(),
+            radioService = get(),
+            mediaPlaybackController = get(),
             settingsStore = get()
         )
     }

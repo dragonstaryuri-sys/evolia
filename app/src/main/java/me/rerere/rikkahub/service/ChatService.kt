@@ -357,6 +357,7 @@ class ChatService(
     private val embeddingService: EmbeddingService,
     private val ttsManager: TTSManager,
     private val radioService: RadioService,
+    private val mediaPlaybackController: me.rerere.rikkahub.service.media.MediaPlaybackController,
     ) {
     data class ContextRefreshResult(
         val success: Boolean,
@@ -1552,6 +1553,7 @@ class ChatService(
                                         it is LocalToolOption.ImageGeneration ||
                                         it is LocalToolOption.DeviceControl ||
                                         it is LocalToolOption.PrintContent ||
+                                        it is LocalToolOption.RadioStation ||
                                         @Suppress("DEPRECATION") it is LocalToolOption.CameraCapture
                                 }
                             }
@@ -1573,7 +1575,7 @@ class ChatService(
                             // 小机电台工具按需加载（AGENTS.md 12.4）：同样只注册两个固定函数，
                             // 需助手开启 LocalToolOption.RadioStation
                             if (targetOptions.contains(LocalToolOption.RadioStation)) {
-                                addAll(buildRadioAgentTools(radioService, assistant))
+                                addAll(buildRadioAgentTools(radioService, assistant, mediaPlaybackController))
                             }
 
                         },

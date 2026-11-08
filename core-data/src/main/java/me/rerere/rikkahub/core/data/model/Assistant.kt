@@ -119,6 +119,19 @@ data class Assistant(
     val enableDetailMemory: Boolean = true,
     val detailMemoryThreshold: Int = 20,
 
+    /**
+     * Agent 专属语音配置（可空 = 使用全局默认，即设置页选中的 Provider/音色）。
+     *
+     * - [voiceProviderId]：当前选用的全局 Provider（Settings.ttsProviders 中）；
+     * - [voiceSettings]：**每个 Provider 各自的声音配置副本**（providerId →
+     *   TTSProviderSetting 子类 JSON，音色/语速/模型可独立调整）。
+     *   切换 Provider 后再切回来，之前为该 Provider 配置的信息直接复用，无需重填。
+     *   运行时经 TtsVoiceResolver 合并：apiKey/baseUrl/region/groupId 等连接类字段
+     *   始终取全局最新值（全局改 key 自动生效），声音字段取对应副本。
+     */
+    val voiceProviderId: Uuid? = null,
+    val voiceSettings: Map<String, String> = emptyMap(),
+
     val hasExtendedState: Boolean = isMain,
     val includeUserProfile: Boolean = isMain,
 )

@@ -9,6 +9,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -28,6 +36,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -390,6 +399,8 @@ private fun SharedTransitionScope.ChatListNormal(
                 .nestedScroll(userScrollConnection),
         ) {
             item(ScrollBottomKey) { Spacer(Modifier.fillMaxWidth().height(5.dp)) }
+
+            // 当前助手最近发布的电台节目卡片：点击直接播放（无需进入小机电台页）
 
             val pageState = paginationState as? ConversationRepository.ChatPaginationState.Success
             if (pageState?.loadingDirection == ConversationRepository.PageLoadDirection.NEWER) {

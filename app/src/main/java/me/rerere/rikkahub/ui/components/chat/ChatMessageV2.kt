@@ -1169,6 +1169,15 @@ private sealed class AssistantRenderItem {
         override val isLastInTurn: Boolean,
         override val totalInTurn: Int,
     ) : AssistantRenderItem()
+
+    /** share_episode 电台分享卡片：挂在 AI 消息的 ToolCall 上（必渲染），播放/暂停 + 跳转节目详情 */
+    data class RadioShareItem(
+        override val node: MessageNode,
+        val episodeId: String,
+        override val isFirstInTurn: Boolean,
+        override val isLastInTurn: Boolean,
+        override val totalInTurn: Int,
+    ) : AssistantRenderItem()
 }
 
 /**
@@ -1264,6 +1273,24 @@ private fun AssistantMessageTurn(
                             isFirstInTurn = false, isLastInTurn = false, totalInTurn = 0
                         )
                     }
+                    is UIMessagePart.ToolCall -> {
+                        // share_episode 工具：电台分享卡片挂在 AI 消息的 ToolCall 上（assistant 消息必然渲染，
+                        // 不依赖 TOOL 结果消息的可见性）；卡片自行校验节目与音频可用性
+                        if (part.toolName == "share_episode") {
+                            val argsObj = runCatching {
+                                me.rerere.rikkahub.common.JsonInstant.parseToJsonElement(part.arguments).jsonObject
+                            }.getOrNull()
+                            val shareEpisodeId =
+                                argsObj?.get("episode_id")?.jsonPrimitiveOrNull?.contentOrNull
+                            if (!shareEpisodeId.isNullOrBlank()) {
+                                flat += AssistantRenderItem.RadioShareItem(
+                                    node = node,
+                                    episodeId = shareEpisodeId,
+                                    isFirstInTurn = false, isLastInTurn = false, totalInTurn = 0
+                                )
+                            }
+                        }
+                    }
                     is UIMessagePart.ToolResult -> {
                         // camera_capture 工具：把拍下来的照片直接渲染在 AI 回复气泡里
                         if (part.toolName == "camera_capture") {
@@ -1305,6 +1332,7 @@ private fun AssistantMessageTurn(
                 is AssistantRenderItem.AudioItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
                 is AssistantRenderItem.CameraCaptureImageItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
                 is AssistantRenderItem.PrintTaskItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
+                is AssistantRenderItem.RadioShareItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
             }
         }
     }
@@ -1491,6 +1519,16 @@ private fun AssistantMessageTurn(
                         } else {
                             PrintTaskCard(
                                 taskId = item.taskId,
+                                modifier = Modifier.widthIn(max = maxWidth)
+                            )
+                        }
+                    }
+
+                    is AssistantRenderItem.RadioShareItem -> {
+                        // 电台分享卡片：播放/暂停 + 点击跳节目详情（不触发 AI 轮次）
+                        if (!selecting) {
+                            RadioShareCard(
+                                episodeId = item.episodeId,
                                 modifier = Modifier.widthIn(max = maxWidth)
                             )
                         }

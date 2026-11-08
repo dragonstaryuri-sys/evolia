@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
@@ -399,6 +400,9 @@ fun AssistantDetailPage(
                     onNavigateToHistoryCall = {
                         globalNavController.navigate(Screen.HistoryCall(assistantId = id))
                     },
+                    onNavigateToVoice = {
+                        globalNavController.navigate(Screen.AssistantVoice(assistantId = id))
+                    },
                     onClearConversationsAndSegments = { vm.clearConversationsAndSegmentMemory() }
                 )
             }
@@ -586,6 +590,7 @@ private fun AssistantDetailHome(
     onNavigateToUI: () -> Unit,
     onNavigateToAdvanced: () -> Unit,
     onNavigateToHistoryCall: () -> Unit,
+    onNavigateToVoice: () -> Unit,
     onClearConversationsAndSegments: () -> Unit
 ) {
     Column(
@@ -691,6 +696,12 @@ private fun AssistantDetailHome(
                 title = stringResource(R.string.assistant_detail_history_call_title),
                 description = stringResource(R.string.assistant_detail_history_call_desc),
                 onClick = onNavigateToHistoryCall
+            )
+            NavigationCard(
+                icon = Icons.Rounded.RecordVoiceOver,
+                title = stringResource(R.string.assistant_voice_title),
+                description = stringResource(R.string.assistant_voice_entry_desc),
+                onClick = onNavigateToVoice
             )
         }
 

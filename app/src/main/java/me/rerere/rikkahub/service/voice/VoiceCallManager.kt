@@ -74,6 +74,7 @@ import me.rerere.rikkahub.core.data.model.deleteMessages
 import me.rerere.rikkahub.core.data.model.normalizeMessageNodes
 import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.core.data.repository.CallRecordRepository
+import me.rerere.rikkahub.data.ai.TtsVoiceResolver
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
@@ -952,6 +953,8 @@ class VoiceCallManager(
             enterCallAudioMode()
 
             chatService.setCallMode(convId, active = true)
+            // 注册活跃通话信息：自动化任务（executeAgentTask）据此把通话中触发的回复打标为通话消息
+            chatService.setActiveCallInfo(convId, callId, active = true)
             startL1Timer(convId)
             startUserSilenceMonitor()
             warmUpRecordAudioPermission()
@@ -968,7 +971,12 @@ class VoiceCallManager(
             startProximitySensor()
 
             val settings = settingsStore.settingsFlow.value
-            ttsController.setProvider(settings.getSelectedTTSProvider())
+            // 统一语音选择：按通话会话助手解析专属音色（AGENTS.md 12.5）
+            val callTtsResolution = TtsVoiceResolver.resolveForAssistant(
+                settings, chatService.getConversationAssistant(_activeCallConversationId.value)
+            )
+            callTtsResolution.fallbackNotice?.let { Log.w(TAG, "通话 TTS 音色回退: $it") }
+            ttsController.setProvider(callTtsResolution.providerSetting)
 
             playCallGreetingThenListen()
 
@@ -2355,7 +2363,10 @@ class VoiceCallManager(
                 return@launch
             }
             if (!_isActive.value || _callStatus.value != CallStatus.THINKING) return@launch
-            val ttsSetting = settingsStore.settingsFlow.value.getSelectedTTSProvider()
+            val ttsSetting = TtsVoiceResolver.resolveForAssistant(
+                settingsStore.settingsFlow.value,
+                chatService.getConversationAssistant(_activeCallConversationId.value)
+            ).providerSetting
             Log.i(TAG, "playListenerCueDelayed: LLM 未在 ${LISTENER_CUE_DELAY_MS}ms 内返回可朗读内容, 播放提示语")
             runCatching {
                 playListenerCueNow(ttsSetting)
@@ -2495,13 +2506,21 @@ class VoiceCallManager(
                 if (System.currentTimeMillis() - lastUserSpeakAtMs < EXTERNAL_REPLY_SILENCE_GATE_MS) continue
 
                 val callStartMs = _callStartTimeMs.value
+                val currentCallId = activeCallId
                 val conv = chatService.getConversationFlow(convId).value
                 val candidate = conv.messageNodes.lastOrNull { node ->
-                    node.role == MessageRole.ASSISTANT &&
-                        node.timelineCreatedAt >= callStartMs &&
-                        !node.currentMessage.skipContext &&
-                        node.currentMessage.messageSource == MessageSource.NORMAL &&
-                        node.id !in spokenAssistantNodeIds
+                    val isAssistant = node.role == MessageRole.ASSISTANT
+                    val afterCallStart = node.timelineCreatedAt >= callStartMs
+                    val notYetSpoken = node.id !in spokenAssistantNodeIds
+                    val msg = node.currentMessage
+                    // 普通外部回复：定时任务/监控器在非通话打标路径触发的 NORMAL 源回复
+                    val isNormalExternalReply = !msg.skipContext && msg.messageSource == MessageSource.NORMAL
+                    // 通话中自动化任务触发的回复：CALL 源 + 当前通话 callId（executeAgentTask 打标）
+                    val isCallTaskReply = msg.skipContext &&
+                        msg.messageSource == MessageSource.CALL &&
+                        currentCallId != null &&
+                        msg.callId == currentCallId
+                    isAssistant && afterCallStart && notYetSpoken && (isNormalExternalReply || isCallTaskReply)
                 } ?: continue
 
                 // 先登记去重，避免下一轮轮询重复触发（即使文本为空）
@@ -3381,6 +3400,8 @@ class VoiceCallManager(
         conversationId?.let {
             chatService.stopGeneration(it)
             chatService.setCallMode(it, active = false)
+            // 注销活跃通话信息：挂断后自动化任务回落为普通消息源（与既有行为一致）
+            chatService.setActiveCallInfo(it, null, active = false)
         }
         // 停止前台 Service + 释放 WakeLock
         VoiceCallForegroundService.stop(context)

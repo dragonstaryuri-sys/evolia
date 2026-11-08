@@ -151,6 +151,18 @@ fun DiscoverPage() {
                     }
                 )
             }
+
+            // 7. 小机电台
+            item {
+                DiscoverItem(
+                    title = stringResource(R.string.radio_discover_title),
+                    description = stringResource(R.string.radio_discover_desc),
+                    icon = { Icon(Icons.Rounded.Radio, null, tint = MaterialTheme.colorScheme.primary) },
+                    onClick = {
+                        navController.navigate(Screen.RadioHome)
+                    }
+                )
+            }
         }
     }
 }

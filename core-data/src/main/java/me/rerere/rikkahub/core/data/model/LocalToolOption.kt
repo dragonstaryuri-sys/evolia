@@ -62,6 +62,14 @@ sealed class LocalToolOption {
     data object PrintContent : LocalToolOption()
 
     /**
+     * 小机电台：启用后该助手获得 get_radio_tool_schema / call_radio_tool
+     * 两个按需 Schema 入口（栏目/节目/音频/发布管理）。
+     */
+    @Serializable
+    @SerialName("radio_station")
+    data object RadioStation : LocalToolOption()
+
+    /**
      * 已废弃：摄像头拍照已合并到 [DeviceControl] 开关下。
      * 保留此枚举仅为兼容旧数据库反序列化；运行时等同于 [DeviceControl]。
      * 新代码不应再使用此枚举。

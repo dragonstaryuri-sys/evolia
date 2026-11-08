@@ -26,6 +26,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantAffectScope
 import me.rerere.rikkahub.core.data.model.Avatar
@@ -85,11 +86,13 @@ class ChatVM(
     val voiceMessagePlayer: VoiceMessagePlayer,
     private val customTtsState: CustomTtsState,
     private val callRecordRepository: CallRecordRepository,
+    private val radioService: me.rerere.rikkahub.data.radio.RadioService,
 ) : ViewModel() {
 
     // --- 通话状态暴露（直接转发 VoiceCallManager 的 StateFlow, 避免冗余复制） ---
     val callStatus: StateFlow<CallStatus> = voiceCallManager.callStatus
     val callIsMuted: StateFlow<Boolean> = voiceCallManager.isMuted
+
     val callIsSpeakerOn: StateFlow<Boolean> = voiceCallManager.isSpeakerOn
     val callIsHeadsetConnected: StateFlow<Boolean> = voiceCallManager.isHeadsetConnected
     val isCallActive: StateFlow<Boolean> = voiceCallManager.isActive

@@ -340,6 +340,25 @@ fun AssistantToolsSubPage(
                     )
                 }
             )
+            // 小机电台（按需 Schema 双固定工具，AGENTS.md 12.4）
+            val radioEnabled = assistant.localTools.contains(LocalToolOption.RadioStation)
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_tools_radio_title),
+                subtitle = stringResource(R.string.assistant_tools_radio_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = radioEnabled,
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.RadioStation
+                            } else {
+                                assistant.localTools - LocalToolOption.RadioStation
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
             // Image Generation
             SettingGroupItem(
                 title = stringResource(R.string.img_gen_title),

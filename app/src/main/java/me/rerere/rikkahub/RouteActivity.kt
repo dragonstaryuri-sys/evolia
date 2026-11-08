@@ -122,6 +122,10 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPermissionCheckPage
 import me.rerere.rikkahub.ui.pages.setting.SettingNotificationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingCallRingtonePage
 import me.rerere.rikkahub.ui.pages.home.HomePage
+import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantVoicePage
+import me.rerere.rikkahub.ui.pages.radio.RadioChannelPage
+import me.rerere.rikkahub.ui.pages.radio.RadioEpisodePage
+import me.rerere.rikkahub.ui.pages.radio.RadioHomePage
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryEditorPage
@@ -154,11 +158,13 @@ class RouteActivity : AppCompatActivity() {
     private val okHttpClient by inject<OkHttpClient>()
     private val settingsStore by inject<SettingsStore>()
     private val chatService by inject<me.rerere.rikkahub.service.ChatService>()
+    private val mediaPlaybackController by inject<me.rerere.rikkahub.service.media.MediaPlaybackController>()
     private val agentTaskScheduler by inject<AgentTaskScheduler>()
     private val webdavSync by inject<WebdavSync>()
     private var navStack by mutableStateOf<NavHostController?>(null)
     private var pendingAssistantId by mutableStateOf<String?>(null)
     private var pendingConversationId by mutableStateOf<String?>(null)
+    private var pendingRadioPlayerJump by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -223,6 +229,9 @@ class RouteActivity : AppCompatActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        if (intent?.getStringExtra("target_screen") == "radio_player") {
+            pendingRadioPlayerJump = true
+        }
         val targetScreen = intent?.getStringExtra("target_screen")
         val intentAssistantId = intent?.getStringExtra("assistantId")
         val intentConversationId = intent?.getStringExtra("conversationId")
@@ -304,6 +313,26 @@ class RouteActivity : AppCompatActivity() {
             if (conversationIdStr != null) {
                 pendingConversationId = null
                 navBackStack.navigate(Screen.Chat(conversationIdStr))
+            }
+        }
+        // 媒体通知点击：按当前播放项状态驱动导航（电台节目 → 节目详情；通话录音 → 通话详情）
+        val radioPlayerJump = pendingRadioPlayerJump
+        LaunchedEffect(radioPlayerJump) {
+            if (radioPlayerJump) {
+                pendingRadioPlayerJump = false
+                val currentItem = mediaPlaybackController.state.value.currentItem
+                when (currentItem?.sourceType) {
+                    me.rerere.rikkahub.service.media.PlaybackSourceType.RADIO_EPISODE ->
+                        navBackStack.navigate(me.rerere.rikkahub.Screen.RadioEpisode(episodeId = currentItem.id))
+
+                    me.rerere.rikkahub.service.media.PlaybackSourceType.CALL_RECORDING -> {
+                        runCatching {
+                            navBackStack.navigate(me.rerere.rikkahub.Screen.CallDetail(callId = currentItem.id))
+                        }
+                    }
+
+                    null -> Unit
+                }
             }
         }
     }
@@ -477,6 +506,21 @@ class RouteActivity : AppCompatActivity() {
                     }
                     composable<Screen.DiarySearch> {
                         DiarySearchPage()
+                    }
+                    composable<Screen.AssistantVoice> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.AssistantVoice>()
+                        AssistantVoicePage(assistantId = route.assistantId)
+                    }
+                    composable<Screen.RadioHome> {
+                        RadioHomePage()
+                    }
+                    composable<Screen.RadioChannel> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.RadioChannel>()
+                        RadioChannelPage(channelId = route.channelId)
+                    }
+                    composable<Screen.RadioEpisode> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.RadioEpisode>()
+                        RadioEpisodePage(episodeId = route.episodeId)
                     }
                     composable<Screen.HourLight> {
                         HourLightPage()

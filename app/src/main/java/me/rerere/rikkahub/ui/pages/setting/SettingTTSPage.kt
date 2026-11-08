@@ -25,6 +25,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -61,6 +64,7 @@ import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.DEFAULT_SYSTEM_TTS_ID
+import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AutoProviderIcon
@@ -87,6 +91,7 @@ import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.text.style.TextOverflow

@@ -95,14 +95,18 @@ private const val TAG = "TTSProviderConfigure"
 fun TTSProviderConfigure(
     setting: TTSProviderSetting,
     modifier: Modifier = Modifier,
-    onValueChange: (TTSProviderSetting) -> Unit
+    onValueChange: (TTSProviderSetting) -> Unit,
+    voiceOnly: Boolean = false,
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = modifier.verticalScroll(rememberScrollState())
+        // voiceOnly（助手语音配置页）时滚动交给外层 sheet 的 LazyColumn：
+        // 内部再套 verticalScroll 会因 lazy item 的无限高度约束崩溃
+        modifier = if (voiceOnly) modifier else modifier.verticalScroll(rememberScrollState())
     ) {
         // Name
-        FormItem(
+        if (!voiceOnly) {
+            FormItem(
             label = { Text(stringResource(R.string.setting_tts_page_name)) },
             description = { Text(stringResource(R.string.setting_tts_page_name_description)) }
         ) {
@@ -115,17 +119,18 @@ fun TTSProviderConfigure(
                 placeholder = { Text(stringResource(R.string.setting_tts_page_name_placeholder)) }
             )
         }
+        }
 
         // Provider-specific fields
         when (setting) {
-            is TTSProviderSetting.OpenAI -> OpenAITTSConfiguration(setting, onValueChange)
-            is TTSProviderSetting.Mimo -> MimoTTSConfiguration(setting, onValueChange)
-            is TTSProviderSetting.Custom -> CustomTTSConfiguration(setting, onValueChange)
-            is TTSProviderSetting.Gemini -> GeminiTTSConfiguration(setting, onValueChange)
-            is TTSProviderSetting.MiniMax -> MiniMaxTTSConfiguration(setting, onValueChange)
-            is TTSProviderSetting.ElevenLabs -> ElevenLabsTTSConfiguration(setting, onValueChange)
-            is TTSProviderSetting.SystemTTS -> SystemTTSConfiguration(setting, onValueChange)
-            is TTSProviderSetting.Azure -> AzureTTSConfiguration(setting, onValueChange)
+            is TTSProviderSetting.OpenAI -> OpenAITTSConfiguration(setting, onValueChange, voiceOnly)
+            is TTSProviderSetting.Mimo -> MimoTTSConfiguration(setting, onValueChange, voiceOnly)
+            is TTSProviderSetting.Custom -> CustomTTSConfiguration(setting, onValueChange, voiceOnly)
+            is TTSProviderSetting.Gemini -> GeminiTTSConfiguration(setting, onValueChange, voiceOnly)
+            is TTSProviderSetting.MiniMax -> MiniMaxTTSConfiguration(setting, onValueChange, voiceOnly)
+            is TTSProviderSetting.ElevenLabs -> ElevenLabsTTSConfiguration(setting, onValueChange, voiceOnly)
+            is TTSProviderSetting.SystemTTS -> SystemTTSConfiguration(setting, onValueChange, voiceOnly)
+            is TTSProviderSetting.Azure -> AzureTTSConfiguration(setting, onValueChange, voiceOnly)
         }
     }
 }
@@ -134,7 +139,8 @@ fun TTSProviderConfigure(
 @Composable
 private fun MimoTTSConfiguration(
     setting: TTSProviderSetting.Mimo,
-    onValueChange: (TTSProviderSetting) -> Unit
+    onValueChange: (TTSProviderSetting) -> Unit,
+    voiceOnly: Boolean = false,
 ) {
     val tts = LocalTTSState.current
     val context = LocalContext.current
@@ -274,7 +280,8 @@ private fun MimoTTSConfiguration(
     // ---- UI ----
     var apiKeyVisible by remember { mutableStateOf(false) }
 
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
         description = { Text("小米 MiMo API Key") }
     ) {
@@ -296,8 +303,10 @@ private fun MimoTTSConfiguration(
             }
         )
     }
+        }
 
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
         description = { Text("接口地址 (预设地址，不可编辑)") }
     ) {
@@ -309,6 +318,7 @@ private fun MimoTTSConfiguration(
             enabled = false
         )
     }
+        }
 
     // ---- 模型选择器：预设 + 官方获取 + 手动输入 ----
     FormItem(
@@ -667,11 +677,13 @@ private fun MimoTTSConfiguration(
 @Composable
 private fun CustomTTSConfiguration(
     setting: TTSProviderSetting.Custom,
-    onValueChange: (TTSProviderSetting) -> Unit
+    onValueChange: (TTSProviderSetting) -> Unit,
+    voiceOnly: Boolean = false,
 ) {
     var apiKeyVisible by remember { mutableStateOf(false) }
 
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
         description = { Text(stringResource(R.string.setting_tts_page_api_key_description)) }
     ) {
@@ -695,8 +707,10 @@ private fun CustomTTSConfiguration(
             }
         )
     }
+        }
 
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
         description = { Text(stringResource(R.string.setting_tts_page_base_url_description)) }
     ) {
@@ -709,6 +723,7 @@ private fun CustomTTSConfiguration(
             placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) }
         )
     }
+        }
 
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_model)) },
@@ -742,7 +757,8 @@ private fun CustomTTSConfiguration(
 @Composable
 private fun AzureTTSConfiguration(
     setting: TTSProviderSetting.Azure,
-    onValueChange: (TTSProviderSetting) -> Unit
+    onValueChange: (TTSProviderSetting) -> Unit,
+    voiceOnly: Boolean = false,
 ) {
     val tts = LocalTTSState.current
     var voices by remember { mutableStateOf<List<TTSVoice>>(emptyList()) }
@@ -795,7 +811,8 @@ private fun AzureTTSConfiguration(
     }
 
     var apiKeyVisible by remember { mutableStateOf(false) }
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
         description = { Text(stringResource(R.string.setting_tts_page_api_key_description_azure)) }
     ) {
@@ -817,8 +834,10 @@ private fun AzureTTSConfiguration(
             }
         )
     }
+        }
 
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_region)) },
         description = { Text(stringResource(R.string.setting_tts_page_region_description)) }
     ) {
@@ -829,6 +848,7 @@ private fun AzureTTSConfiguration(
             placeholder = { Text("eastus") }
         )
     }
+        }
 
     var showVoicePicker by remember { mutableStateOf(false) }
     FormItem(
@@ -936,7 +956,8 @@ private fun AzureTTSConfiguration(
 @Composable
 private fun MiniMaxTTSConfiguration(
     setting: TTSProviderSetting.MiniMax,
-    onValueChange: (TTSProviderSetting) -> Unit
+    onValueChange: (TTSProviderSetting) -> Unit,
+    voiceOnly: Boolean = false,
 ) {
     val tts = LocalTTSState.current
     val context = LocalContext.current
@@ -1154,7 +1175,8 @@ private fun MiniMaxTTSConfiguration(
 
     // ====== 通用 API Key UI ======
     var apiKeyVisible by remember { mutableStateOf(false) }
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
         description = { Text(stringResource(R.string.setting_tts_page_api_key_description)) }
     ) {
@@ -1170,6 +1192,7 @@ private fun MiniMaxTTSConfiguration(
             }
         )
     }
+        }
 
     FormItem(
         label = { Text("Group ID") },
@@ -1183,7 +1206,8 @@ private fun MiniMaxTTSConfiguration(
         )
     }
 
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
         description = { Text("接口地址 (预设地址，不可编辑)") }
     ) {
@@ -1194,6 +1218,7 @@ private fun MiniMaxTTSConfiguration(
             enabled = false
         )
     }
+        }
 
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_model)) },
@@ -2382,7 +2407,8 @@ private fun AzureStylePicker(
 @Composable
 private fun OpenAITTSConfiguration(
     setting: TTSProviderSetting.OpenAI,
-    onValueChange: (TTSProviderSetting) -> Unit
+    onValueChange: (TTSProviderSetting) -> Unit,
+    voiceOnly: Boolean = false,
 ) {
     // 自动修正预设地址
     LaunchedEffect(setting.id) {
@@ -2392,7 +2418,8 @@ private fun OpenAITTSConfiguration(
     }
 
     var apiKeyVisible by remember { mutableStateOf(false) }
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
         description = { Text(stringResource(R.string.setting_tts_page_api_key_description)) }
     ) {
@@ -2416,8 +2443,10 @@ private fun OpenAITTSConfiguration(
             }
         )
     }
+        }
 
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
         description = { Text("接口地址 (预设地址，不可编辑)") }
     ) {
@@ -2429,6 +2458,7 @@ private fun OpenAITTSConfiguration(
             enabled = false
         )
     }
+        }
 
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_model)) },
@@ -2506,7 +2536,8 @@ private fun OpenAITTSConfiguration(
 @Composable
 private fun GeminiTTSConfiguration(
     setting: TTSProviderSetting.Gemini,
-    onValueChange: (TTSProviderSetting) -> Unit
+    onValueChange: (TTSProviderSetting) -> Unit,
+    voiceOnly: Boolean = false,
 ) {
     // 自动修正预设地址
     LaunchedEffect(setting.id) {
@@ -2516,7 +2547,8 @@ private fun GeminiTTSConfiguration(
     }
 
     var apiKeyVisible by remember { mutableStateOf(false) }
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
         description = { Text(stringResource(R.string.setting_tts_page_api_key_description_gemini)) }
     ) {
@@ -2540,8 +2572,10 @@ private fun GeminiTTSConfiguration(
             }
         )
     }
+        }
 
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
         description = { Text("接口地址 (预设地址，不可编辑)") }
     ) {
@@ -2553,6 +2587,7 @@ private fun GeminiTTSConfiguration(
             enabled = false
         )
     }
+        }
 
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_model)) },
@@ -2586,10 +2621,12 @@ private fun GeminiTTSConfiguration(
 @Composable
 private fun ElevenLabsTTSConfiguration(
     setting: TTSProviderSetting.ElevenLabs,
-    onValueChange: (TTSProviderSetting) -> Unit
+    onValueChange: (TTSProviderSetting) -> Unit,
+    voiceOnly: Boolean = false,
 ) {
     var apiKeyVisible by remember { mutableStateOf(false) }
-    FormItem(
+    if (!voiceOnly) {
+            FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
         description = { Text(stringResource(R.string.setting_tts_page_api_key_description_elevenlabs)) }
     ) {
@@ -2613,6 +2650,7 @@ private fun ElevenLabsTTSConfiguration(
             }
         )
     }
+        }
 
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_voice_id)) },
@@ -2662,7 +2700,8 @@ private fun ElevenLabsTTSConfiguration(
 @Composable
 private fun SystemTTSConfiguration(
     setting: TTSProviderSetting.SystemTTS,
-    onValueChange: (TTSProviderSetting) -> Unit
+    onValueChange: (TTSProviderSetting) -> Unit,
+    voiceOnly: Boolean = false,
 ) {
     val context = LocalContext.current
     var voices by remember { mutableStateOf(emptyList<android.speech.tts.Voice>()) }
