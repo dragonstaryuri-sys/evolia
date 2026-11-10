@@ -15,7 +15,6 @@ class BackgroundTaskPayloadTest {
             episodeId = "ep-1",
             contentHash = "hash-1",
             episodeTitle = "午夜电台",
-            userInstruction = "生成并发布",
             followUpInstruction = "完成后发布",
         )
         val json = RadioAudioTaskCodec.encodePayload(payload)
@@ -25,13 +24,12 @@ class BackgroundTaskPayloadTest {
 
     @Test
     fun `old payload without new fields decodes with defaults`() {
-        // 模拟旧版本写入的 JSON（缺少后加字段）
-        val oldJson = """{"version":1,"episodeId":"ep-2","contentHash":"hash-2"}"""
+        // 模拟旧版本写入的 JSON（缺少后加字段；含已移除的 userInstruction 遗留键，ignoreUnknownKeys 兼容）
+        val oldJson = """{"version":1,"episodeId":"ep-2","contentHash":"hash-2","userInstruction":"旧授权摘录"}"""
         val decoded = RadioAudioTaskCodec.decodePayload(oldJson) ?: error("解码失败")
         assertEquals("ep-2", decoded.episodeId)
         assertEquals("hash-2", decoded.contentHash)
         assertNull(decoded.followUpInstruction)
-        assertNull(decoded.userInstruction)
     }
 
     @Test

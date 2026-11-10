@@ -429,7 +429,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - 指令消息：`【系统自动化指令 - 后台任务完成】` + 结构化 JSON（task_id/task_type/status/result/error/授权动作），`skipContext=true + MessageSource.AGENT_TASK`——用户不可见（ChatList 按 skipContext 过滤）、上下文白名单完整带入不截断（GenerationHandler isContextWhitelistedSource）。新轮次经 `executeBackgroundTaskCallback` → `handleMessageComplete(isAutomatedCallbackTurn=true)` 独立执行，不伪装原 Turn。L1/L2 摘要是否把该类消息当用户表达【待验证，若纳入需在摘要选材过滤 USER 角色 AGENT_TASK 消息】。
 
 ### 13.5 completion_policy 与授权
-- `notify_user`：仅更新任务状态+UI+通知，不唤起 Agent；`notify_agent`（默认）：完成后唤起 Agent 决定告知/后续；`continue_workflow`：唤起 Agent 推进**已授权**工作流——`follow_up_instruction` 必填，payload 记录创建时自动截取的锚点用户消息原文（`userInstruction`）作授权追溯依据，**Agent 自填 follow_up 不构成授权**。
+- `notify_user`：仅更新任务状态+UI+通知，不唤起 Agent；`notify_agent`（默认）：完成后唤起 Agent 决定告知/后续；`continue_workflow`：唤起 Agent 推进**已授权**工作流——`follow_up_instruction` 必填，**Agent 自填 follow_up 不构成授权**。
 - **publish 工具层强制（机器可验证）**：自动化回调轮次（`RadioToolContext.isAutomatedCallbackTurn`）必须携带授权 `publish_episode:{episodeId}`（由持久化指令解析进 authorizedActions），无授权返回结构化错误引导 Agent 向用户确认；普通对话轮次保持「用户口头授权后调用」既有行为不变。删除类操作不进入 continue_workflow 范围。
 
 ### 13.6 通用任务工具与 UI

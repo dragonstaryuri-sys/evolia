@@ -43,8 +43,6 @@ data class RadioAudioTaskPayload(
     val contentHash: String,
     /** 节目标题快照，仅用于通知文案展示（展示时以 DB 最新标题为准） */
     val episodeTitle: String? = null,
-    /** 原始用户指令摘录（任务创建时自动截取锚点用户消息，非 Agent 自填）；授权追溯依据 */
-    val userInstruction: String? = null,
     /** Agent 声明的完成后续动作（不构成授权）；continue_workflow 时必填 */
     val followUpInstruction: String? = null,
 )

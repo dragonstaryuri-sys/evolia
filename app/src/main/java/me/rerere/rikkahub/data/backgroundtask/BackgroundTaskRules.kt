@@ -208,8 +208,7 @@ object BackgroundTaskRules {
         completionPolicy: String,
         resultJson: String?,
         errorMessage: String?,
-        followUpInstruction: String?,
-        userInstruction: String?
+        followUpInstruction: String?
     ): String {
         val data = CallbackInstructionData(
             callbackId = callbackMessageId(taskId).toString(),
@@ -222,7 +221,6 @@ object BackgroundTaskRules {
             error = errorMessage,
             authorizedPublishEpisodeAction = authorizedPublishAction(completionPolicy, followUpInstruction, refKey),
             followUpInstruction = followUpInstruction,
-            userInstruction = userInstruction,
         )
         val json = JsonInstant.encodeToString(CallbackInstructionData.serializer(), data)
         val resultSummary = when (status) {
@@ -302,5 +300,4 @@ internal data class CallbackInstructionData(
     /** 机器可验证授权动作，如 publish_episode:{episodeId}；null = 无授权 */
     val authorizedPublishEpisodeAction: String? = null,
     val followUpInstruction: String? = null,
-    val userInstruction: String? = null,
 )

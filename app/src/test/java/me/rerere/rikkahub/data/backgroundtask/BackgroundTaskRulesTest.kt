@@ -167,7 +167,6 @@ class BackgroundTaskRulesTest {
         resultJson = resultJson,
         errorMessage = if (status == "failed") "第 3/10 句语音合成失败" else null,
         followUpInstruction = followUp,
-        userInstruction = "帮我生成并直接发布节目",
     )
 
     @Test

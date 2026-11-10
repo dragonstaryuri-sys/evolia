@@ -818,7 +818,6 @@ class ChatService(
                 resultJson = task.resultJson,
                 errorMessage = task.errorMessage,
                 followUpInstruction = payload?.followUpInstruction,
-                userInstruction = payload?.userInstruction,
             )
             authorizedActions = listOfNotNull(
                 me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.authorizedPublishAction(
@@ -1774,18 +1773,12 @@ class ChatService(
                             // 需助手开启 LocalToolOption.RadioStation。
                             // 上下文透传：会话/锚点/授权信息供后台任务创建与自动化轮次授权校验使用
                             if (targetOptions.contains(LocalToolOption.RadioStation)) {
-                                val anchorUserMessage = currentConversation.currentMessages
-                                    .lastOrNull { it.role == MessageRole.USER }
-                                    ?.takeUnless { it.skipContext }
-                                    ?.toContentText()
-                                    ?.take(500)
                                 addAll(buildRadioAgentTools(
                                     radioService = radioService,
                                     assistant = assistant,
                                     mediaPlaybackController = mediaPlaybackController,
                                     conversationId = currentConversation.id,
                                     sourceTurnId = currentConversation.currentMessages.lastOrNull()?.id?.toString(),
-                                    userInstructionSnippet = anchorUserMessage,
                                     isAutomatedCallbackTurn = isAutomatedCallbackTurn,
                                     authorizedActions = authorizedActions,
                                     backgroundTaskManager = backgroundTaskManager,

@@ -43,8 +43,6 @@ data class RadioToolContext(
     val conversationId: Uuid? = null,
     /** 来源轮次锚点消息 ID（仅作任务来源关联）。 */
     val sourceTurnId: String? = null,
-    /** 锚点用户消息原文摘录（后台任务授权追溯依据；Agent 不可自填）。 */
-    val userInstructionSnippet: String? = null,
     /** 本轮是否为后台任务回调唤起的自动化轮次（continue_workflow 授权校验开关）。 */
     val isAutomatedCallbackTurn: Boolean = false,
     /** 自动化轮次的机器可验证授权动作（如 publish_episode:{episodeId}）；普通对话轮次恒为空。 */
@@ -73,7 +71,6 @@ fun buildRadioAgentTools(
     mediaPlaybackController: me.rerere.rikkahub.service.media.MediaPlaybackController? = null,
     conversationId: Uuid? = null,
     sourceTurnId: String? = null,
-    userInstructionSnippet: String? = null,
     isAutomatedCallbackTurn: Boolean = false,
     authorizedActions: Set<String> = emptySet(),
     backgroundTaskManager: me.rerere.rikkahub.data.backgroundtask.BackgroundTaskManager? = null,
@@ -85,7 +82,6 @@ fun buildRadioAgentTools(
         mediaPlaybackController = mediaPlaybackController,
         conversationId = conversationId,
         sourceTurnId = sourceTurnId,
-        userInstructionSnippet = userInstructionSnippet,
         isAutomatedCallbackTurn = isAutomatedCallbackTurn,
         authorizedActions = authorizedActions,
     )
@@ -703,7 +699,6 @@ private suspend fun createRadioAudioGenerationTask(
         episodeId = episodeId,
         contentHash = contentHash,
         episodeTitle = episode.title,
-        userInstruction = ctx.userInstructionSnippet,
         followUpInstruction = followUp,
     )
 
