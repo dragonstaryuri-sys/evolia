@@ -85,6 +85,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE
 import me.rerere.rikkahub.data.ai.tools.LocalTools
+import me.rerere.rikkahub.data.ai.tools.buildBackgroundTaskTools
 import me.rerere.rikkahub.data.ai.tools.buildMcpAgentTools
 import me.rerere.rikkahub.data.ai.tools.buildRadioAgentTools
 import me.rerere.rikkahub.data.radio.RadioService
@@ -138,6 +139,16 @@ import kotlinx.datetime.toInstant
 import me.rerere.rikkahub.BuildConfig
 
 private const val TAG = "ChatService"
+
+/**
+ * 后台任务回调投递结果（BackgroundTaskManager 据此更新 callback_state）：
+ * - Delivered：指令已注入/锚定并开始独立生成轮次（COMPLETED 在轮次结束时写入）
+ * - Busy：会话出现竞态忙碌，回 PENDING 由生成结束钩子重投
+ * - AgentMissing / ConversationMissing：目标不可达 → ABANDONED + 兜底通知（任务结果保留）
+ */
+enum class CallbackDeliveryResult {
+    Delivered, Busy, AgentMissing, ConversationMissing
+}
 
 /**
  * 微信模式下每个分句转为语音消息的触发概率（10%）。
@@ -358,6 +369,7 @@ class ChatService(
     private val ttsManager: TTSManager,
     private val radioService: RadioService,
     private val mediaPlaybackController: me.rerere.rikkahub.service.media.MediaPlaybackController,
+    private val backgroundTaskManager: me.rerere.rikkahub.data.backgroundtask.BackgroundTaskManager,
     ) {
     data class ContextRefreshResult(
         val success: Boolean,
@@ -452,6 +464,9 @@ class ChatService(
     private val conversationMutexes = ConcurrentHashMap<Uuid, Mutex>()
     // 数据库写入单独串行化，避免发送、刷新、分页切换和后台任务交错覆盖。
     private val persistenceMutexes = ConcurrentHashMap<Uuid, Mutex>()
+
+    /** 生成期纯流式文本增量落库的节流间隔（新节点出现即立即落库，不受此限制）。 */
+    private val INCREMENTAL_SAVE_INTERVAL_MS = 2_000L
     // getConversationFlow may create a lightweight fallback. Cache presence alone does
     // not mean that the real database conversation has been loaded.
     private val initializedConversationIds = ConcurrentHashMap.newKeySet<Uuid>()
@@ -703,6 +718,183 @@ class ChatService(
                 Log.e(TAG, "后台任务调度失败", e)
             }
         }
+    }
+
+    // ====================================================================
+    // 后台任务回调唤起（通用后台任务机制，AGENTS.md 专用章节）
+    // ====================================================================
+
+    /** 会话是否有活跃生成轮（回调投递的忙判定；Manager 据此延后投递，不无条件打断用户当前对话）。 */
+    fun isConversationBusy(conversationId: Uuid): Boolean =
+        _generationJobs.value[conversationId] != null || (_isAiTypingMap.value[conversationId] == true)
+
+    /**
+     * INJECTED 状态恢复判定：回调消息之后是否已产生 ASSISTANT 响应、回调消息是否仍是末节点。
+     * 基于会话内容而非时间租约——回调生成轮可能长于任何合理租约，无需心跳续期。
+     */
+    suspend fun resolveInjectedCallbackRecovery(
+        task: me.rerere.rikkahub.core.data.db.entity.BackgroundTaskEntity
+    ): me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.InjectedRecovery {
+        val conversationId = task.conversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+            ?: return me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.InjectedRecovery.MARK_COMPLETED
+        val callbackMessageId = me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.callbackMessageId(task.id)
+        val mutex = conversationMutexes.computeIfAbsent(conversationId) { Mutex() }
+        return mutex.withLock {
+            val conversation = conversations[conversationId]?.value
+                ?: conversationRepo.getConversationById(conversationId)
+                ?: return@withLock me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.InjectedRecovery.MARK_COMPLETED
+            val nodes = conversation.messageNodes
+            val callbackNodeIndex = nodes.indexOfFirst { node -> node.messages.any { it.id == callbackMessageId } }
+            if (callbackNodeIndex < 0) {
+                // 回调消息不在快照中（异常路径）：保守标记完成，结果可通过 get_background_task 查询
+                return@withLock me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.InjectedRecovery.MARK_COMPLETED
+            }
+            val hasAssistantResponse = nodes.drop(callbackNodeIndex + 1).any { node ->
+                node.messages.any { it.role == MessageRole.ASSISTANT }
+            }
+            val isCallbackMessageLastNode = callbackNodeIndex == nodes.lastIndex
+            me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.decideInjectedRecovery(
+                hasAssistantResponseAfterCallback = hasAssistantResponse,
+                isCallbackMessageLastNode = isCallbackMessageLastNode
+            )
+        }
+    }
+
+    /**
+     * 后台任务完成回调 → 唤起 Agent（独立新轮次，不伪装原 Turn 仍在执行）。
+     *
+     * fresh 模式：注入隐藏指令消息（skipContext=true + MessageSource.AGENT_TASK：
+     * 用户不可见〔ChatList 按 skipContext 过滤〕、上下文白名单完整带入不截断），
+     * 消息 ID 由 task_id 确定性派生——幂等，同一任务事件永不重复注入。
+     * resume 模式：进程崩溃后 INJECTED 恢复——不重复注入，以既有消息为锚直接续跑生成。
+     *
+     * 授权：continue_workflow 的机器授权（authorizedActions）从持久化指令/任务参数解析，
+     * 仅作用于自动化轮次（publish 等业务动作的工具层校验开关）。
+     */
+    suspend fun executeBackgroundTaskCallback(
+        task: me.rerere.rikkahub.core.data.db.entity.BackgroundTaskEntity,
+        resume: Boolean = false
+    ): CallbackDeliveryResult {
+        // 1. 目标 Agent 解析（已删除 → ABANDONED，结果保留在任务记录）
+        val agentId = task.agentId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+            ?: return CallbackDeliveryResult.AgentMissing
+        val assistant = settingsStore.settingsFlow.value.getAssistantById(agentId)
+            ?: return CallbackDeliveryResult.AgentMissing
+
+        // 2. 目标会话解析（任务记录的会话 → 助手最新会话兜底；不存在 → ABANDONED，不新建）
+        val conversationId = task.conversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+            ?: conversationRepo.getConversationsOfAssistant(agentId).first()
+                .maxByOrNull { it.updateAt }?.id
+            ?: return CallbackDeliveryResult.ConversationMissing
+
+        // 3. 忙判定（竞态防护）：变忙则回 PENDING，由生成结束钩子重投（不强行打断）
+        if (isConversationBusy(conversationId)) return CallbackDeliveryResult.Busy
+
+        val callbackMessageId = me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.callbackMessageId(task.id)
+        var authorizedActions: Set<String> = emptySet()
+
+        if (resume) {
+            // resume：指令消息必须仍是会话末节点（双检；状态已变化则回 PENDING 重判）
+            initializeConversation(conversationId, targetAssistantId = agentId)
+            val conversation = conversations[conversationId]?.value
+                ?: return CallbackDeliveryResult.ConversationMissing
+            val lastNode = conversation.messageNodes.lastOrNull()
+            val instructionMsg = lastNode?.messages?.firstOrNull { it.id == callbackMessageId }
+            if (instructionMsg == null) return CallbackDeliveryResult.Busy
+            val parsed = me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.parseCallbackInstruction(
+                instructionMsg.toContentText()
+            )
+            if (parsed == null || parsed.taskId != task.id) return CallbackDeliveryResult.Busy
+            authorizedActions = listOfNotNull(parsed.authorizedPublishEpisodeAction).toSet()
+        } else {
+            // fresh：构造指令并注入（幂等——已存在的回调消息不重复插入）
+            val payload = me.rerere.rikkahub.data.backgroundtask.RadioAudioTaskCodec.decodePayload(task.payloadJson)
+            val instruction = me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.buildCallbackInstruction(
+                taskId = task.id,
+                taskType = task.taskType,
+                refKey = task.refKey,
+                status = task.status,
+                completionPolicy = task.completionPolicy,
+                resultJson = task.resultJson,
+                errorMessage = task.errorMessage,
+                followUpInstruction = payload?.followUpInstruction,
+                userInstruction = payload?.userInstruction,
+            )
+            authorizedActions = listOfNotNull(
+                me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.authorizedPublishAction(
+                    completionPolicy = task.completionPolicy,
+                    followUpInstruction = payload?.followUpInstruction,
+                    refKey = task.refKey
+                )
+            ).toSet()
+
+            initializeConversation(conversationId, targetAssistantId = agentId)
+            updateConversation(conversationId, normalizeNodes = true) { old ->
+                val alreadyInjected = old.messageNodes.any { node -> node.messages.any { it.id == callbackMessageId } }
+                if (alreadyInjected) {
+                    old
+                } else {
+                    old.copy(
+                        messageNodes = old.messageNodes + UIMessage(
+                            id = callbackMessageId,
+                            role = MessageRole.USER,
+                            parts = listOf(UIMessagePart.Text(instruction)),
+                            skipContext = true,
+                            messageSource = MessageSource.AGENT_TASK
+                        ).toMessageNode(conversationId),
+                        updateAt = Instant.now()
+                    )
+                }
+            }
+            mutateConversationAndSave(conversationId) { current -> current }
+            backgroundTaskManager.markCallbackInjected(task.id)
+        }
+
+        // 4. 独立生成轮次（与 executeAgentTask 同模式注册 generationJob）
+        val startedAt = System.currentTimeMillis()
+        var generationError: Throwable? = null
+        _isAiTypingMap.update { it + (conversationId to true) }
+        val job = appScope.launch {
+            try {
+                handleMessageComplete(
+                    conversationId = conversationId,
+                    includeSkipContextMessages = true,
+                    responseMessageSource = MessageSource.NORMAL,
+                    isAutomatedCallbackTurn = true,
+                    authorizedActions = authorizedActions
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "后台任务回调生成失败: task=${task.id}", e)
+                generationError = e
+            } finally {
+                // 竞态防护：同 triggerAIResponse，避免旧 job 的 finally 清除新 job 的 typing 状态
+                val isStillActiveJob = _generationJobs.value[conversationId] == currentCoroutineContext().job
+                if (isStillActiveJob) {
+                    _isAiTypingMap.update { it - conversationId }
+                }
+            }
+        }
+        setGenerationJob(conversationId, job)
+        job.invokeOnCompletion { error ->
+            _generationJobs.update { current ->
+                if (current[conversationId] == job) current - conversationId else current
+            }
+            if (error != null && generationError == null) generationError = error
+            appScope.launch {
+                runCatching {
+                    backgroundTaskManager.markCallbackCompleted(
+                        task.id,
+                        error = generationError?.message
+                    )
+                }
+                // 回调轮次结束：消化该会话积压的延后回调与 INJECTED 恢复
+                backgroundTaskManager.dispatchCallbacks(conversationId)
+                delay(500)
+                checkAllConversationsReferences()
+            }
+        }
+        Log.i(TAG, "background task callback ${if (resume) "resumed" else "delivered"}: task=${task.id} conv=$conversationId (${System.currentTimeMillis() - startedAt}ms)")
+        return CallbackDeliveryResult.Delivered
     }
 
     private fun hasReference(conversationId: Uuid): Boolean =
@@ -1309,7 +1501,11 @@ class ChatService(
         responseMessageSource: MessageSource = MessageSource.NORMAL,
         callId: String? = null,
         requirement: String? = null,
-        targetMessageId: Uuid? = null
+        targetMessageId: Uuid? = null,
+        /** 后台任务回调唤起的自动化轮次：publish 等有业务影响的动作仅在此类轮次强制机器授权 */
+        isAutomatedCallbackTurn: Boolean = false,
+        /** 自动化轮次的机器可验证授权动作（如 publish_episode:{episodeId}），由持久化的回调指令解析 */
+        authorizedActions: Set<String> = emptySet()
     ) {
             val mutex = conversationMutexes.computeIfAbsent(conversationId) { Mutex() }
             mutex.withLock {
@@ -1365,6 +1561,8 @@ class ChatService(
                 val modelId = assistant.chatModelId ?: settings.chatModelId
                 val model = settings.findModelById(modelId) ?: settings.getCurrentChatModel() ?: return@runCatching
                 var firstTokenTime: Long? = null
+                // 增量节流落库计时（新节点/工具边界立即落库，纯文本流按间隔节流）
+                var lastIncrementalSaveAt = 0L
                 if (!model.abilities.contains(ModelAbility.TOOL)) {
                     val hasExternalTools =
                         (assistant.searchMode !is AssistantSearchMode.Off) || mcpManager.getAllAvailableTools()
@@ -1569,10 +1767,29 @@ class ChatService(
                             // get_mcp_tool_schema 的 systemPrompt 注入系统提示
                             addAll(buildMcpAgentTools(mcpManager))
 
+                            // 通用后台任务工具（常驻注册，Schema 极小）：主动查询是回调机制的兜底能力
+                            addAll(buildBackgroundTaskTools(backgroundTaskManager, assistant.id, currentConversation.id))
+
                             // 小机电台工具按需加载（AGENTS.md 12.4）：同样只注册两个固定函数，
-                            // 需助手开启 LocalToolOption.RadioStation
+                            // 需助手开启 LocalToolOption.RadioStation。
+                            // 上下文透传：会话/锚点/授权信息供后台任务创建与自动化轮次授权校验使用
                             if (targetOptions.contains(LocalToolOption.RadioStation)) {
-                                addAll(buildRadioAgentTools(radioService, assistant, mediaPlaybackController))
+                                val anchorUserMessage = currentConversation.currentMessages
+                                    .lastOrNull { it.role == MessageRole.USER }
+                                    ?.takeUnless { it.skipContext }
+                                    ?.toContentText()
+                                    ?.take(500)
+                                addAll(buildRadioAgentTools(
+                                    radioService = radioService,
+                                    assistant = assistant,
+                                    mediaPlaybackController = mediaPlaybackController,
+                                    conversationId = currentConversation.id,
+                                    sourceTurnId = currentConversation.currentMessages.lastOrNull()?.id?.toString(),
+                                    userInstructionSnippet = anchorUserMessage,
+                                    isAutomatedCallbackTurn = isAutomatedCallbackTurn,
+                                    authorizedActions = authorizedActions,
+                                    backgroundTaskManager = backgroundTaskManager,
+                                ))
                             }
 
                         },
@@ -1798,6 +2015,25 @@ class ChatService(
                                         .copy(chatSuggestions = emptyList())
                                     currentConversation = nextState
                                     updateConversation(conversationId) { nextState }
+
+                                    // ===== 增量节流持久化（修复「中断/退出页面后已流式显示的内容丢失」）=====
+                                    // 根因：原实现生成期零持久化（仅用户消息与整轮结束两次写库），TTS 等长耗时
+                                    // 工具阻塞期间 partial 只存在于内存，退出页面重进即丢失。
+                                    // 策略：新节点出现（ToolCall/ToolResult 边界）立即落库；纯流式文本按间隔节流；
+                                    // 保存协程在 per-conversation persistenceMutex 内读最新快照，防旧覆盖新。
+                                    val changedNodeIds = nextState.messageNodes
+                                        .filter { node -> messagesToSync.any { m -> node.messages.any { it.id == m.id } } }
+                                        .map { it.id }
+                                        .toSet()
+                                    val isToolBoundary = newMessages.any { it.role == MessageRole.TOOL }
+                                    val nowTs = System.currentTimeMillis()
+                                    val shouldPersistNow =
+                                        anyNewMessages || isToolBoundary ||
+                                            nowTs - lastIncrementalSaveAt >= INCREMENTAL_SAVE_INTERVAL_MS
+                                    if (shouldPersistNow && changedNodeIds.isNotEmpty()) {
+                                        lastIncrementalSaveAt = nowTs
+                                        launchIncrementalNodeSave(conversationId, changedNodeIds)
+                                    }
                                 }
                             }
 
@@ -2068,10 +2304,31 @@ class ChatService(
                 }
 
                 // 统一持久化当前内存快照到 DB（取消/异常两种出口都走这里）。
-                // 使用 appScope + persistenceMutex 串行，防止打断后用户立即发新消息造成旧覆盖新。
+                // 快照修复：同步捕获局部 currentConversation（Conversation/UIMessage 均为不可变 data class，
+                // 捕获引用即冻结快照），再异步直存捕获对象——不再经 mutateConversationAndSave 的
+                // ensureConversationLoaded 从 DB 重载。若生成期间内存被逐出（中断后 500ms 的引用检查），
+                // 旧实现会保存"无 partial 的 DB 快照"导致已流式内容彻底丢失；现直存捕获快照消除该竞态。
+                // 保存仍走 persistenceMutex 串行，防止打断后用户立即发新消息造成旧覆盖新。
                 val finalConv = currentConversation
+                val interruptedNodesChanged = if (isCancellation) {
+                    // 中断语义：仅停止生成，保留已生成内容；对最后一条流式 ASSISTANT 消息标记 interrupted
+                    //（随消息 JSON 持久化，重进会话显示「已停止」，不会被误识别为生成中）
+                    val marked = finalConv.markLastStreamingAssistantInterrupted()
+                    if (marked != finalConv) {
+                        currentConversation = marked
+                        updateConversation(conversationId) { marked }
+                    }
+                    marked
+                } else {
+                    finalConv
+                }
                 appScope.launch {
-                    mutateConversationAndSave(conversationId) { current -> current }
+                    val mutex = persistenceMutexes.computeIfAbsent(conversationId) { Mutex() }
+                    mutex.withLock {
+                        // 保存同步捕获的快照（异常路径 interrupted 标记已更新在快照内）
+                        runCatching { conversationRepo.saveConversation(interruptedNodesChanged) }
+                            .onFailure { Log.e(TAG, "中断/异常兜底保存失败: conv=$conversationId", it) }
+                    }
                     if (!temporaryConversations.contains(conversationId)) {
                         val currentSettings = settingsStore.settingsFlow.value
                         val updatedAssistants = currentSettings.assistants.map {
@@ -2120,6 +2377,10 @@ class ChatService(
                 }.invokeOnCompletion { removeConversationReference(conversationId) }
             }
         }
+
+        // 生成轮次结束钩子（成功/失败/取消三路径统一）：消化该会话积压的延后回调
+        // （任务完成时会话忙而延后的 PENDING）与 INJECTED 恢复（崩溃后未完成的回调轮次）
+        runCatching { backgroundTaskManager.dispatchCallbacks(conversationId) }
     }
 
     /**
@@ -2704,6 +2965,51 @@ class ChatService(
             }
             val newNode = oldNode.copy(messages = newNodeMessages)
             conv.copy(messageNodes = nodes.toMutableList().apply { set(idx, newNode) })
+        }
+    }
+
+    /**
+     * 中断标记：对最后一条流式中的 ASSISTANT 消息（最后一个含 ASSISTANT 的节点的当前选中消息）
+     * 置 interrupted=true。不可变快照上的纯变换；节点/消息无匹配时原样返回。
+     */
+    private fun Conversation.markLastStreamingAssistantInterrupted(): Conversation {
+        val nodes = messageNodes
+        val lastAssistantNodeIndex = nodes.indexOfLast { it.currentMessage.role == MessageRole.ASSISTANT }
+        if (lastAssistantNodeIndex < 0) return this
+        val hasMarked = nodes.indexOfFirst { node ->
+            node.messages.any { it.role == MessageRole.ASSISTANT && it.interrupted }
+        }
+        if (hasMarked >= 0) return this // 已有标记（重入的兜底路径），不重复标记
+        return copy(messageNodes = nodes.mapIndexed { idx, node ->
+            if (idx != lastAssistantNodeIndex) {
+                node
+            } else {
+                node.copy(messages = node.messages.mapIndexed { mIdx, msg ->
+                    if (mIdx == node.selectIndex && msg.role == MessageRole.ASSISTANT && !msg.interrupted) {
+                        msg.copy(interrupted = true)
+                    } else {
+                        msg
+                    }
+                })
+            }
+        })
+    }
+
+    /**
+     * 生成期增量落库（fire-and-forget）：把指定节点从最新内存快照差量 upsert 进 DB
+     * （不删除任何行，分页窗口外数据安全）。在 per-conversation persistenceMutex 内
+     * 重新读取最新快照，保证保存内容与全量保存串行且不会用旧快照覆盖新快照。
+     */
+    private fun launchIncrementalNodeSave(conversationId: Uuid, nodeIds: Set<Uuid>) {
+        if (nodeIds.isEmpty()) return
+        appScope.launch(Dispatchers.IO) {
+            val mutex = persistenceMutexes.computeIfAbsent(conversationId) { Mutex() }
+            mutex.withLock {
+                if (!ensureConversationLoaded(conversationId)) return@withLock
+                val conversation = getConversationFlow(conversationId).value
+                runCatching { conversationRepo.saveNodesForConversation(conversation, nodeIds) }
+                    .onFailure { Log.e(TAG, "增量落库失败: conv=$conversationId", it) }
+            }
         }
     }
 

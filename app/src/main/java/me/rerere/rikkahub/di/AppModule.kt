@@ -159,6 +159,25 @@ val appModule = module {
 
     singleOf(::ChatService)
 
+    // ===== 通用后台任务机制 =====
+    single {
+        me.rerere.rikkahub.data.backgroundtask.RadioAudioGenerationExecutor(
+            context = get(),
+            radioService = get(),
+            audioGenerator = get(),
+            settingsStore = get(),
+            backgroundTaskRepository = get(),
+        )
+    }
+    single {
+        me.rerere.rikkahub.data.backgroundtask.BackgroundTaskManager(
+            context = get(),
+            backgroundTaskRepository = get(),
+            appScope = get<AppScope>(),
+            radioAudioExecutor = get(),
+        )
+    }
+
     // ===== 小机电台（Radio）=====
     single {
         me.rerere.rikkahub.data.radio.RadioAudioGenerator(

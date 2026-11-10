@@ -2129,6 +2129,8 @@
   <string name="notification_channel_relationship_profile">关系档案更新</string>
   <string name="notification_channel_data_backup">数据备份</string>
   <string name="notification_channel_incoming_call">AI 通话</string>
+  <string name="notification_channel_background_task">后台任务</string>
+  <string name="notification_action_cancel_task">取消任务</string>
   <string name="call_ringtone_page_title">来电铃声</string>
   <string name="call_ringtone_system_default">系统铃声</string>
   <string name="call_ringtone_custom">自定义铃声</string>

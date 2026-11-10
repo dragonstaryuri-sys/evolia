@@ -79,7 +79,11 @@ data class UIMessage(
     val versionTag: String? = null, // Links messages from same generation for multi-node turn versioning
     val skipContext: Boolean = false, // 如果为 true，这条消息在后续对话中不会被作为上下文发送给 AI
     val messageSource: MessageSource = MessageSource.NORMAL, // 消息来源标识，控制 skipContext 消息在上下文中的截断策略
-    val callId: String? = null // 归属的通话 ID（=CallRecordEntity.id）；老消息缺省为 null，不做批量改写
+    val callId: String? = null, // 归属的通话 ID（=CallRecordEntity.id）；老消息缺省为 null，不做批量改写
+    // 流式生成被用户中断时，由取消兜底持久化路径对最后一条流式 ASSISTANT 消息标记（随消息 JSON 持久化，
+    // 重新进入会话后 UI 显示「已停止」，不会被误识别为仍在生成——生成中判定走内存态 generationJobs）。
+    // 默认 false，旧记录反序列化走默认值，完全兼容。
+    val interrupted: Boolean = false,
 ) {
     /**
      * 标记此消息是否为「损坏消息占位」。

@@ -115,7 +115,8 @@ val dataSourceModule = module {
                 AppDatabase.MIGRATION_41_42,
                 AppDatabase.MIGRATION_42_43,
                 AppDatabase.MIGRATION_43_44,
-                AppDatabase.MIGRATION_44_45
+                AppDatabase.MIGRATION_44_45,
+                AppDatabase.MIGRATION_45_46
             )
             .build()
     }
@@ -153,6 +154,7 @@ val dataSourceModule = module {
     single { get<AppDatabase>().radioEpisodeDao() }
     single { get<AppDatabase>().radioAudioAssetDao() }
     single { get<AppDatabase>().radioEpisodeDeletionLogDao() }
+    single { get<AppDatabase>().backgroundTaskDao() }
 
     single<DbTransactionRunner> { RoomTransactionRunner(get()) }
 

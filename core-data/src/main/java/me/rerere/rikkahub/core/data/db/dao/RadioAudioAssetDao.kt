@@ -26,6 +26,10 @@ interface RadioAudioAssetDao {
     @Query("SELECT * FROM radio_audio_assets WHERE episode_id = :episodeId AND status = 'BACKUP' LIMIT 1")
     suspend fun getBackup(episodeId: String): RadioAudioAssetEntity?
 
+    /** 按后台任务 ID 查资产：提交原子边界崩溃恢复时判断该任务的音频是否已提交（不限 CURRENT，防重复合成）。 */
+    @Query("SELECT * FROM radio_audio_assets WHERE task_id = :taskId AND content_hash = :contentHash LIMIT 1")
+    suspend fun getByTaskId(taskId: String, contentHash: String): RadioAudioAssetEntity?
+
     @Query("SELECT * FROM radio_audio_assets")
     suspend fun getAll(): List<RadioAudioAssetEntity>
 

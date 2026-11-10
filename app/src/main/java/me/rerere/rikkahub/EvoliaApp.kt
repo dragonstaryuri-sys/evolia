@@ -91,6 +91,18 @@ class EvoliaApp : Application() {
             Log.e(TAG, "Failed to initialize AgentTaskScheduler", e)
         }
 
+        // 通用后台任务启动恢复（异步，不阻塞启动）：WorkManager 丢失的任务重入队、
+        // 租约过期的执行中任务重置 queued、过期 DELIVERING 回调回 PENDING 并重试投递
+        try {
+            val backgroundTaskManager: me.rerere.rikkahub.data.backgroundtask.BackgroundTaskManager = get()
+            get<AppScope>().launch(Dispatchers.IO) {
+                runCatching { backgroundTaskManager.recoverTasks() }
+                    .onFailure { Log.e(TAG, "BackgroundTaskManager.recoverTasks failed", it) }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize BackgroundTaskManager recovery", e)
+        }
+
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "spontaneous_notification",
             ExistingPeriodicWorkPolicy.UPDATE,
@@ -159,12 +171,17 @@ class EvoliaApp : Application() {
 
         // 通话异常对账：恢复遗留 CONNECTED 记录（估算结束时间）+ 清理孤儿录音。
         // IO 协程异步执行，不阻塞启动；内部幂等，单条失败仅记日志。
+        // VoiceCallManager → ChatService 构造含 ProcessLifecycleOwner.addObserver（主线程约束），
+        // 必须在主线程解析，否则 IO 竞态先到时 Koin 创建失败、本轮对账被跳过（仅记错误日志）。
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching {
+                val activeCallId = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                    get<VoiceCallManager>().currentActiveCallId
+                }
                 CallRecovery.reconcile(
                     context = applicationContext,
                     repository = get(),
-                    activeCallId = get<VoiceCallManager>().currentActiveCallId
+                    activeCallId = activeCallId
                 )
             }.onFailure { Log.e(TAG, "Call recovery reconcile failed", it) }
         }

@@ -64,7 +64,12 @@ data class RadioAudioAssetEntity(
 
     /** 备用音频过期时间戳（毫秒），CURRENT 状态为 null。 */
     @ColumnInfo(name = "expires_at")
-    val expiresAt: Long? = null
+    val expiresAt: Long? = null,
+
+    /** 生成该音频的后台任务 ID（background_tasks.id）；UI 路径直接生成为 null。
+     *  提交原子边界崩溃恢复时据此判断该任务的音频是否已提交，防止重复合成/重复换备。 */
+    @ColumnInfo(name = "task_id")
+    val taskId: String? = null
 )
 
 /** 音频资产状态常量。 */

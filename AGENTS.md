@@ -375,7 +375,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - 并发：RadioService 以 per-episode `Mutex` 串行化「文字稿更新 vs 音频生成/发布」。
 
 ### 12.4 Radio Agent LocalTools（按需 Schema，复刻 MCP 模式）
-- `data/ai/tools/RadioAgentTools.kt`：常驻仅两个固定工具 `get_radio_tool_schema`（查参数定义）与 `call_radio_tool`（执行，先经 `validateAgainstSchema` 校验）；工具目录（10 个业务工具名+描述）由 `buildRadioCatalogPrompt`（纯函数，有单测）注入 systemPrompt。工具清单：get_channels / manage_channel / save_episode（创建+更新未发布文字稿，已吸收 update_episode）/ update_episode_title / query_episodes / get_episode_content / delete_episode / generate_episode_audio（**不返回音色信息**，后台生成）/ restore_episode_audio / publish_episode（成功提示引导调用 share_episode）/ share_episode（发送电台分享卡片消息，autoplay=1 自动播放；无 delete_episode_audio——音频删除不向 Agent 开放）。
+- `data/ai/tools/RadioAgentTools.kt`：常驻仅两个固定工具 `get_radio_tool_schema`（查参数定义）与 `call_radio_tool`（执行，先经 `validateAgainstSchema` 校验）；工具目录（10 个业务工具名+描述）由 `buildRadioCatalogPrompt`（纯函数，有单测）注入 systemPrompt。工具清单：get_channels / manage_channel / save_episode（创建+更新未发布文字稿，已吸收 update_episode）/ update_episode_title / query_episodes / get_episode_content / delete_episode / generate_episode_audio（**异步后台任务**：立即返回 task_id 不阻塞对话，chunk 断点续传 + 50min 总时限 + completion_policy 回传，见第 13 节；不返回音色信息）/ restore_episode_audio / publish_episode（成功提示引导调用 share_episode；自动化回调轮次的发布需机器授权，见 13.5）/ share_episode（发送电台分享卡片消息，autoplay=1 自动播放；无 delete_episode_audio——音频删除不向 Agent 开放）。
 - 工具开关：`LocalToolOption.RadioStation`（按助手 opt-in，默认关），在 ChatService 工具装配处与 LocalTools 同路径追加。
 - 全部工具调用走 RadioService（参数校验/状态校验/音频资产管理/删除审计共用），禁止工具内直连 DAO。
 - `manage_channel`(create) 与 `publish_episode` 的授权要求（需用户明确授权）是**行为约束**，写在工具描述中；自动发布权不随功能默认获得。
@@ -399,3 +399,48 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ### 12.8 定时创作
 复用 `agent_task_manager`（AGENT_TASK）：定时唤起 Agent 走 `ChatService.executeAgentTask` 同一生成链路，Radio 工具可用即可定时创作草稿/发布；不新增 Radio 专用调度器。
+
+## 13. 通用后台任务机制与结果回传（2026-11）
+
+> 核心文件：`data/backgroundtask/`（BackgroundTaskManager / BackgroundTaskExecutor / RadioAudioGenerationExecutor / BackgroundTaskRules / BackgroundTaskPayload / ChunkResumeRules）、`core-data/.../db/entity/BackgroundTaskEntity.kt` + `dao/BackgroundTaskDao.kt`（条件 UPDATE 状态机）、`service/BackgroundTaskWorker.kt`（长时运行 Worker）、`service/BackgroundTaskActionReceiver.kt`（通知取消 action）、`data/ai/tools/BackgroundTaskTools.kt`（get/cancel 工具）、`ui/components/chat/BackgroundTaskCard.kt`（任务卡片）。
+
+### 13.1 数据模型（DB v46）
+- `background_tasks` 表：任务状态/结果/回调投递状态的**唯一事实源**——Agent 查询（get_background_task）、UI 任务卡片、回调投递都只读此表，不依赖内存 State / WorkManager 临时状态 / 进程内 EventBus。**新增表已登记 DatabaseSanitizer 白名单（`background_tasks`）**。
+- `radio_audio_assets.task_id`：任务与资产关联；提交原子边界崩溃恢复的幂等判据（按 task_id+content_hash 查已提交资产，不限 CURRENT——已提交后转备份也不重复合成）。
+- **deadline 语义（产品定稿）**：`deadline_at = created_at + 50min`，任务**总生命周期上限，含排队等待时间**。TTS 预计 30 分钟内完成，50 分钟容纳网络波动/调度延迟/中断恢复，防止任务无限挂起。不追求连续运行满 50 分钟；验收重点是「被系统停止后能恢复执行」。认领/逐句心跳/重试认领前都检查 deadline，超时置 failed（保留诊断信息与可恢复数据）。
+
+### 13.2 状态机与并发（禁止回退的硬约束）
+- 六态：`queued → running → committing → succeeded|failed`；`queued|running → cancelled`。全部状态变更走 BackgroundTaskDao **条件 UPDATE**（认领/终态/取消/回调各迁移均带 status+execution_id 条件），终态不可覆盖；旧 Worker（execution_id 不匹配）无法写入新 Worker 结果。
+- **SQL 状态字面量必须全大写（历史 bug 硬约束）**：实体列存 `BackgroundTaskStatus.name`（'QUEUED' 等），SQLite 字符串比较默认 BINARY 大小写敏感——@Query 里写小写 `'queued'` 会让条件 UPDATE 永远匹配 0 行（症状：任务永远停在 QUEUED、Worker 重试耗尽后静默 failure、取消/恢复扫描全部失效）。新增状态相关 SQL 时必须核对大小写。
+- 执行租约：`execution_id + lease_expires_at`（60s，逐句心跳续租）。**租约过期仅代表「可认领」，实际重调度延迟 = max(租约剩余, WorkManager backoff)**，不代表 60s 内必然重跑。Worker 显式 `.setBackoffCriteria(LINEAR, 30s)`——项目「不设 backoff」惯例的唯一例外（进程被杀后需要尽快续跑，避免指数退避吃掉 deadline），改其他 Worker 时不要照抄。
+- 创建并发：per-refKey Mutex（**单进程假设**：Manifest 无 android:process，全部创建路径经 Manager）+ 锁内「查活跃任务→决策→插入」+ 启动对账兜底（同 ref_key 多活跃任务保留最新取消其余）。不用部分唯一索引（Room 校验 @Entity 声明的索引，partial/expression 索引无法声明，会触发迁移校验失败）。
+- **提交原子边界（committing）**：生成文件 → `toCommitting`（此后取消被明确拒绝）→ `RadioService.commitEpisodeAudio`（episodeLock 内 re-check content_hash 封堵「生成→提交」间文字稿变化 + asset-by-task_id 幂等保护）→ `finalizeSucceeded`（result 与终态同条 UPDATE 原子落库）。崩溃恢复：committing+租约过期 → 重认领回 running → 按 task_id 判断资产已提交（直接 finalize succeeded）或未提交（断点续传后重走提交）。
+- 取消语义：仅 queued/running 可取消；cancelTask 原子置 cancelled + cancelUniqueWork；Worker 被停止的清理必须在 `withContext(NonCancellable)` 内（历史 bug 模式）。**用户中断对话不取消后台任务**（Worker 挂 WorkManager，独立于生成 Job）。
+
+### 13.3 执行机制（50 分钟可行性）
+- WorkManager 2.11 长时运行 Worker + `setForeground(dataSync)`；Manifest 已声明 `androidx.work.impl.foreground.SystemForegroundService` `foregroundServiceType="dataSync"`（tools:node="merge"）。Android 15/16 dataSync 6h/24h 预算是硬约束（与 mediaProcessing 共享预算）——超预算 onTimeout → Worker 停止 → WorkManager 自动重跑 → 租约过期重认领 → 断点续传续跑；预算彻底耗尽任务 failed（"系统后台执行预算耗尽"类文案）。用户与 App 交互会重置 dataSync 计时。**不引入独立自建 FGS**（同类型同预算，丢 WorkManager 持久化调度零收益）。
+- **TTS chunk 断点续传（`RadioAudioGenerator.generateChunked`）**：每句独立 chunk 文件（`radio_audio/tmp/{taskId}/chunk_{i}.part` → 原子 rename → `chunk_{i}.pcm`，**rename 原子性即句子完成事实源**，正确性不依赖 progress_json——其仅作 UI 进度展示）；恢复按 `ChunkResumeRules` 最大连续前缀续跑、清理 .part 残留；`manifest.json`（原子写）记录 total/providerId/sampleRate——缺失或 provider 变化 → 全部作废重跑（防采样率失配拼接）。`PcmAacEncoder.encodeFile` 流式编码（50 分钟 PCM ≈144MB **不可载入内存**；旧 `encode(ByteArray)` 路径保留给 UI 短稿）。单句失败立即重试 1 次；任务级 ≤3 次（Result.retry 共享同一 deadline，不重新获得完整 50 分钟）。
+- 启动恢复：`EvoliaApp.onCreate` 异步 `BackgroundTaskManager.recoverTasks()`（幂等）：WorkManager 丢失的重入队 / 租约过期执行中任务重置 queued / deadline 已过置 failed / 回调恢复。
+
+### 13.4 任务结果回传与 Agent 后台唤起
+- 回调状态机与任务状态**互相独立**：`NONE → PENDING → DELIVERING → INJECTED → COMPLETED`（ABANDONED 旁路）。**任务 succeeded ≠ 回调已送达**：回调失败不改任务状态、不丢结果（Agent 可随时 get_background_task 查询，卡片仍显示成功）；ABANDONED 仅表示唤起不可达，走 ai_messages 兜底通知（gate notificationAiReplyEnabled），任务结果保留。
+- 投递时机三处：任务终态即时 / ChatService 生成结束钩子（消化会话忙延后的 PENDING + INJECTED 恢复）/ App 启动扫描。会话忙（generationJob/aiTyping）→ 保持 PENDING 延后，**不无条件打断用户当前对话**；同会话多回调按 created_at 串行。
+- **注入幂等（永不重复注入）**：回调指令消息 ID = `BackgroundTaskRules.callbackMessageId(taskId)`（MD5 确定性派生，注入前查库判重）。**INJECTED 恢复按会话内容判定、不按时间租约**（生成轮可能长于任何合理租约）：回调消息后已有 ASSISTANT 响应 → COMPLETED；无响应且消息为末节点 → **resume 模式**（不重复注入，以既有消息为锚直接续跑生成，授权从持久化指令重新解析）；用户已继续对话 → 保守 COMPLETED（结果可查询）。DELIVERING 认领租约 10min 仅覆盖 claim→注入窗口。
+- 指令消息：`【系统自动化指令 - 后台任务完成】` + 结构化 JSON（task_id/task_type/status/result/error/授权动作），`skipContext=true + MessageSource.AGENT_TASK`——用户不可见（ChatList 按 skipContext 过滤）、上下文白名单完整带入不截断（GenerationHandler isContextWhitelistedSource）。新轮次经 `executeBackgroundTaskCallback` → `handleMessageComplete(isAutomatedCallbackTurn=true)` 独立执行，不伪装原 Turn。L1/L2 摘要是否把该类消息当用户表达【待验证，若纳入需在摘要选材过滤 USER 角色 AGENT_TASK 消息】。
+
+### 13.5 completion_policy 与授权
+- `notify_user`：仅更新任务状态+UI+通知，不唤起 Agent；`notify_agent`（默认）：完成后唤起 Agent 决定告知/后续；`continue_workflow`：唤起 Agent 推进**已授权**工作流——`follow_up_instruction` 必填，payload 记录创建时自动截取的锚点用户消息原文（`userInstruction`）作授权追溯依据，**Agent 自填 follow_up 不构成授权**。
+- **publish 工具层强制（机器可验证）**：自动化回调轮次（`RadioToolContext.isAutomatedCallbackTurn`）必须携带授权 `publish_episode:{episodeId}`（由持久化指令解析进 authorizedActions），无授权返回结构化错误引导 Agent 向用户确认；普通对话轮次保持「用户口头授权后调用」既有行为不变。删除类操作不进入 continue_workflow 范围。
+
+### 13.6 通用任务工具与 UI
+- `get_background_task`（task_id 缺省 = 当前会话最近 10 条，解决上下文裁剪后找不到 task_id；所有权校验 agent_id）/ `cancel_background_task`（所有权+状态校验；committing/终态明确拒绝）。**主动查询是回调的兜底能力，不是替代品**。
+- 任务卡片 `BackgroundTaskCard`：订阅 `observeTask` Flow；五态（排队/生成中·第 N/M 句进度条/完成·播放入口走 MediaPlaybackController/失败·原因+重试提示/已取消）；**callback_state 不混入卡片主状态**。挂载惯例同 RadioShareCard：ToolResult 识别 task_id → `AssistantRenderItem.BackgroundTaskItem`；**task_id 必须先过 `BackgroundTaskRules.isBackgroundTaskId` UUID 校验**（agent_task_manager 等其他任务体系也返回数字型 task_id，未校验会误挂载「任务记录不存在或已被清理」占位卡）；**turn 内按 taskId 去重**（创建返回与多次 get_background_task 查询结果都带 task_id，只渲染首张——卡片订阅 DB 实时状态，重复卡片无信息量）；跨 turn 查询渲染新卡片（新一轮对话的实时状态展示）。
+
+### 13.7 新长耗时工具接入清单
+实现 `BackgroundTaskExecutor`（taskType + `execute(task, executionId, onProgress)` + `cleanup`/`cleanupTransientOutput`）→ AppModule 注册 → BackgroundTaskManager.executors 登记即可；调度/租约/状态机/回调/查询/取消/通知全部复用，禁止在业务模块内自建任务管理。
+
+## 14. 消息持久化与中断规则（2026-11 修订）
+
+- **生成期增量持久化（禁止回退到「整轮结束才写库」）**：普通模式 collect 内——新节点出现（ToolCall/ToolResult 边界，anyNewMessages 判定）立即 `launchIncrementalNodeSave`；纯流式文本 ≥2s 节流（`INCREMENTAL_SAVE_INTERVAL_MS`）。保存走 per-conversation persistenceMutex **锁内重新读取最新快照**后差量 upsert（`ConversationRepository.saveNodesForConversation`，仅 upsert 指定节点行+消息行，orderIndex 取全列表位置，**不删除任何行**——分页窗口外数据安全）。整轮结束全量保存保留；微信模式逐句落库保留。
+- **中断语义（硬约束）**：stopGeneration 只取消生成 Job——不删除 Turn/消息/ToolCall/ToolResult、不取消已创建的后台任务、不清内存。取消兜底保存**同步捕获**局部 currentConversation 快照（Conversation/UIMessage 均不可变 data class，捕获引用即冻结）后直存 `conversationRepo.saveConversation(捕获对象)`——**禁止**经 mutateConversationAndSave/ensureConversationLoaded 从 DB 重载（中断后 500ms 内存逐出竞态会用无 partial 的 DB 快照覆盖丢失已流式内容）。最后一条流式 ASSISTANT 消息标记 `interrupted=true`（UIMessage 字段，随 JSON 持久化；UI 显示「已停止，以上内容已保留」；「生成中」判定走内存态 generationJobs，重进会话不会把已中断消息误判为生成中）。
+- **重进页面窗口重建顺序（禁止回退）**：ChatVM 的会话节点同步 collector 必须在 `initPaginationManager`（loadInitial 完成）之后启动——loadInitial 以 DB 清空重建窗口，与内存同步并发执行顺序不定时 partial 被抹掉且 TTS 阻塞期间无新发射无法自动补回。节点合并沿用 syncConversationNodes 既有规则（内存新版本按 id 替换、空壳不覆盖、缺节点追加、窗口外不受影响）。

@@ -38,7 +38,17 @@ data class RadioToolContext(
     /** Agent 声音配置副本 JSON（TtsVoiceResolver 合并全局 Provider 使用）。 */
     val assistantVoiceSettingJson: String?,
     /** share_episode 自动播放用；null 时不支持自动播放。 */
-    val mediaPlaybackController: me.rerere.rikkahub.service.media.MediaPlaybackController? = null
+    val mediaPlaybackController: me.rerere.rikkahub.service.media.MediaPlaybackController? = null,
+    /** 当前会话 ID（后台任务回传关联；null 表示无会话上下文）。 */
+    val conversationId: Uuid? = null,
+    /** 来源轮次锚点消息 ID（仅作任务来源关联）。 */
+    val sourceTurnId: String? = null,
+    /** 锚点用户消息原文摘录（后台任务授权追溯依据；Agent 不可自填）。 */
+    val userInstructionSnippet: String? = null,
+    /** 本轮是否为后台任务回调唤起的自动化轮次（continue_workflow 授权校验开关）。 */
+    val isAutomatedCallbackTurn: Boolean = false,
+    /** 自动化轮次的机器可验证授权动作（如 publish_episode:{episodeId}）；普通对话轮次恒为空。 */
+    val authorizedActions: Set<String> = emptySet(),
 )
 
 /**
@@ -60,16 +70,27 @@ data class RadioCatalogEntry(val name: String, val description: String)
 fun buildRadioAgentTools(
     radioService: RadioService,
     assistant: Assistant,
-    mediaPlaybackController: me.rerere.rikkahub.service.media.MediaPlaybackController? = null
+    mediaPlaybackController: me.rerere.rikkahub.service.media.MediaPlaybackController? = null,
+    conversationId: Uuid? = null,
+    sourceTurnId: String? = null,
+    userInstructionSnippet: String? = null,
+    isAutomatedCallbackTurn: Boolean = false,
+    authorizedActions: Set<String> = emptySet(),
+    backgroundTaskManager: me.rerere.rikkahub.data.backgroundtask.BackgroundTaskManager? = null,
 ): List<Tool> {
-    val defs = buildRadioToolDefs(radioService)
-    if (defs.isEmpty()) return emptyList()
     val ctx = RadioToolContext(
         assistantId = assistant.id,
         assistantProviderId = assistant.voiceProviderId,
         assistantVoiceSettingJson = assistant.voiceProviderId?.let { pid -> assistant.voiceSettings[pid.toString()] },
-        mediaPlaybackController = mediaPlaybackController
+        mediaPlaybackController = mediaPlaybackController,
+        conversationId = conversationId,
+        sourceTurnId = sourceTurnId,
+        userInstructionSnippet = userInstructionSnippet,
+        isAutomatedCallbackTurn = isAutomatedCallbackTurn,
+        authorizedActions = authorizedActions,
     )
+    val defs = buildRadioToolDefs(radioService, backgroundTaskManager, ctx)
+    if (defs.isEmpty()) return emptyList()
     return listOf(
         buildGetRadioToolSchemaTool(defs),
         buildCallRadioToolTool(defs, ctx)
@@ -78,7 +99,13 @@ fun buildRadioAgentTools(
 
 /** 目录注入系统提示（由 Tool.systemPrompt 调用）。 */
 fun getRadioCatalogSystemPrompt(radioService: RadioService): String {
-    return buildRadioCatalogPrompt(buildRadioToolDefs(radioService).map {
+    // 仅提取 name/description 构建目录，不执行工具；使用中性上下文占位
+    val neutralCtx = RadioToolContext(
+        assistantId = Uuid.random(),
+        assistantProviderId = null,
+        assistantVoiceSettingJson = null
+    )
+    return buildRadioCatalogPrompt(buildRadioToolDefs(radioService, backgroundTaskManager = null, ctx = neutralCtx).map {
         RadioCatalogEntry(it.name, it.description)
     })
 }
@@ -273,7 +300,11 @@ internal fun validateAgainstSchema(args: JsonObject, schema: InputSchema.Obj): L
 // 工具定义注册表（12 个，全部经 RadioService 执行）
 // ====================================================================
 
-fun buildRadioToolDefs(service: RadioService): List<RadioToolDef> {
+fun buildRadioToolDefs(
+    service: RadioService,
+    backgroundTaskManager: me.rerere.rikkahub.data.backgroundtask.BackgroundTaskManager?,
+    ctx: RadioToolContext
+): List<RadioToolDef> {
     return listOf(
         defGetChannels(service),
         defManageChannel(service),
@@ -282,9 +313,9 @@ fun buildRadioToolDefs(service: RadioService): List<RadioToolDef> {
         defQueryEpisodes(service),
         defGetEpisodeContent(service),
         defDeleteEpisode(service),
-        defGenerateEpisodeAudio(service),
+        defGenerateEpisodeAudio(service, backgroundTaskManager, ctx),
         defRestoreEpisodeAudio(service),
-        defPublishEpisode(service),
+        defPublishEpisode(service, ctx),
         defShareEpisode(service)
     )
 }
@@ -295,8 +326,9 @@ private fun buildRadioToolUsageNotes(toolName: String): String = when (toolName)
     "save_episode" -> "创建新节目时不传 episode_id；更新未发布节目文字稿时传 episode_id。保存前应先在对话中生成文字稿并与用户确认；保存成功后才能生成音频。"
     "update_episode" -> "只允许修改未发布节目；文字稿变化会立即删除该节目的当前音频与备用音频。"
     "delete_episode" -> "用户明确要求删除时传 initiated_by_user=true，无需反复确认；你自主删除时必须给出明确的删除依据(reason)，系统会记录删除审计。"
-    "generate_episode_audio" -> "必须基于数据库中已保存的文字稿生成，不能使用对话中尚未保存的内容。"
-    "publish_episode" -> "发布前必须有有效音频；"
+    "generate_episode_audio" -> "必须基于数据库中已保存的文字稿生成，不能使用对话中尚未保存的内容。" +
+        "本工具为异步后台任务：立即返回 task_id 后继续对话，不要等待或轮询；进度可用 get_background_task 查询。"
+    "publish_episode" -> "发布前必须有有效音频；发布需要用户明确授权（自动化回调轮次仅限系统授权携带时）。"
     else -> ""
 }
 
@@ -587,19 +619,34 @@ private fun defDeleteEpisode(service: RadioService): RadioToolDef = RadioToolDef
     }
 )
 
-private fun defGenerateEpisodeAudio(service: RadioService): RadioToolDef = RadioToolDef(
+private fun defGenerateEpisodeAudio(
+    service: RadioService,
+    backgroundTaskManager: me.rerere.rikkahub.data.backgroundtask.BackgroundTaskManager?,
+    ctx: RadioToolContext
+): RadioToolDef = RadioToolDef(
     name = "generate_episode_audio",
-    description = "为节目生成音频（基于数据库中当前已保存的文字稿，使用你的语音配置）。" +
-        "仅在用户确认稿子无需修改后才调用本工具；" +
-        "同一文字稿重新生成时，旧音频自动转为备用音频（3 天有效）。",
+    description = "为节目生成音频（异步后台任务）。调用后立即返回 task_id，音频在后台生成，" +
+        "期间可以继续与用户对话，不要等待或轮询；完成后按 completion_policy 回传结果或通知用户，" +
+        "也可随时用 get_background_task 查询进度。基于数据库中当前已保存的文字稿，使用你的语音配置；" +
+        "仅在用户确认稿子无需修改后才调用。同一文字稿重新生成时，旧音频自动转为备用音频（3 天有效）。",
     schema = schemaOf(
-        "episode_id" to prop("string", "节目 ID")
+        "episode_id" to prop("string", "节目 ID"),
+        "completion_policy" to prop(
+            "string",
+            "完成策略：notify_user=仅通知用户（不唤起你）；notify_agent=完成后唤起你决定如何告知用户（默认）；" +
+                "continue_workflow=完成后唤起你继续已授权的后续动作（必须在 follow_up_instruction 写明，且需要用户原始指令明确授权）"
+        ),
+        "follow_up_instruction" to prop(
+            "string",
+            "continue_workflow 时必填：完成后要执行的动作说明（注意：这不构成用户授权，授权以用户原始指令为准）"
+        ),
     ),
     execute = { args, ctx ->
         val episodeId = args.readString("episode_id")
         if (episodeId.isNullOrBlank()) {
             buildJsonObject { put("error", JsonPrimitive("episode_id 为必填参数")) }
-        } else {
+        } else if (backgroundTaskManager == null) {
+            // 后台任务管理器不可用：回退同步生成（保持旧行为，保证工具始终可用）
             val outcome = service.generateEpisodeAudio(
                 episodeId = episodeId,
                 assistantProviderId = ctx.assistantProviderId,
@@ -612,9 +659,104 @@ private fun defGenerateEpisodeAudio(service: RadioService): RadioToolDef = Radio
                 put("duration_ms", JsonPrimitive(outcome.asset.durationMs))
                 outcome.fallbackNotice?.let { put("voice_fallback_notice", JsonPrimitive(it)) }
             }
+        } else {
+            createRadioAudioGenerationTask(service, backgroundTaskManager, ctx, episodeId, args)
         }
     }
 )
+
+/**
+ * 创建电台音频生成后台任务（立即返回，不等待 TTS 完成）。
+ * 冲突规则：同节目同文字稿 → 幂等复用既有任务；同节目不同文字稿 → 拒绝并返回既有任务 ID。
+ */
+private suspend fun createRadioAudioGenerationTask(
+    service: RadioService,
+    manager: me.rerere.rikkahub.data.backgroundtask.BackgroundTaskManager,
+    ctx: RadioToolContext,
+    episodeId: String,
+    args: kotlinx.serialization.json.JsonObject
+): kotlinx.serialization.json.JsonObject {
+    val policyInput = args.readString("completion_policy")
+    if (!me.rerere.rikkahub.data.backgroundtask.CompletionPolicies.isValid(policyInput)) {
+        return buildJsonObject {
+            put("error", JsonPrimitive("completion_policy 仅支持 notify_user / notify_agent / continue_workflow"))
+        }
+    }
+    val completionPolicy = policyInput
+        ?: me.rerere.rikkahub.data.backgroundtask.CompletionPolicies.NOTIFY_AGENT
+    val followUp = args.readString("follow_up_instruction")
+    if (completionPolicy == me.rerere.rikkahub.data.backgroundtask.CompletionPolicies.CONTINUE_WORKFLOW &&
+        followUp.isNullOrBlank()
+    ) {
+        return buildJsonObject {
+            put("error", JsonPrimitive("continue_workflow 需要在 follow_up_instruction 写明完成后的动作"))
+        }
+    }
+
+    // 基于当前已保存文字稿的哈希创建任务（执行时与提交时二次校验）
+    val episode = service.getEpisode(episodeId)
+    val contentHash = me.rerere.rikkahub.data.radio.RadioEpisodeRules.contentHash(episode.content)
+    if (episode.content.isBlank()) {
+        return buildJsonObject { put("error", JsonPrimitive("节目文字稿为空，无法生成音频")) }
+    }
+    val payload = me.rerere.rikkahub.data.backgroundtask.RadioAudioTaskPayload(
+        episodeId = episodeId,
+        contentHash = contentHash,
+        episodeTitle = episode.title,
+        userInstruction = ctx.userInstructionSnippet,
+        followUpInstruction = followUp,
+    )
+
+    val outcome = manager.createTask(
+        taskType = me.rerere.rikkahub.data.backgroundtask.BackgroundTaskTypes.RADIO_AUDIO_GENERATION,
+        refKey = me.rerere.rikkahub.data.backgroundtask.BackgroundTaskTypes.refKeyForRadioAudio(episodeId),
+        payloadJson = me.rerere.rikkahub.data.backgroundtask.RadioAudioTaskCodec.encodePayload(payload),
+        completionPolicy = completionPolicy,
+        agentId = ctx.assistantId.toString(),
+        conversationId = ctx.conversationId?.toString(),
+        sourceTurnId = ctx.sourceTurnId,
+        conflictDecider = { existing ->
+            me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.decideConflict(
+                activeTasks = existing.mapNotNull { task ->
+                    me.rerere.rikkahub.data.backgroundtask.RadioAudioTaskCodec.decodePayload(task.payloadJson)
+                        ?.let { payload ->
+                            me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.ConflictCandidate(
+                                taskId = task.id,
+                                contentHash = payload.contentHash,
+                                createdAt = task.createdAt,
+                                isExecuting = task.status != me.rerere.rikkahub.core.data.db.entity.BackgroundTaskStatus.QUEUED.name
+                            )
+                        }
+                },
+                contentHash = contentHash
+            )
+        }
+    )
+    return when (outcome) {
+        is me.rerere.rikkahub.data.backgroundtask.CreateTaskOutcome.Created -> buildJsonObject {
+            put("success", JsonPrimitive(true))
+            put("task_id", JsonPrimitive(outcome.taskId))
+            put("status", JsonPrimitive("queued"))
+            put("episode_id", JsonPrimitive(episodeId))
+            put("message", JsonPrimitive("音频生成任务已创建，正在后台执行；期间可继续与用户对话，完成后会自动回传结果"))
+        }
+
+        is me.rerere.rikkahub.data.backgroundtask.CreateTaskOutcome.Reused -> buildJsonObject {
+            put("success", JsonPrimitive(true))
+            put("task_id", JsonPrimitive(outcome.taskId))
+            put("status", JsonPrimitive("queued"))
+            put("episode_id", JsonPrimitive(episodeId))
+            put("message", JsonPrimitive("相同文字稿的生成任务已在进行中，无需重复创建"))
+        }
+
+        is me.rerere.rikkahub.data.backgroundtask.CreateTaskOutcome.Rejected -> buildJsonObject {
+            put("success", JsonPrimitive(false))
+            put("error", JsonPrimitive(outcome.message))
+            put("existing_task_id", JsonPrimitive(outcome.existingTaskId))
+            put("message", JsonPrimitive("该节目已有进行中的生成任务，可用 get_background_task 查询其状态"))
+        }
+    }
+}
 
 private fun defRestoreEpisodeAudio(service: RadioService): RadioToolDef = RadioToolDef(
     name = "restore_episode_audio",
@@ -638,18 +780,37 @@ private fun defRestoreEpisodeAudio(service: RadioService): RadioToolDef = RadioT
     }
 )
 
-private fun defPublishEpisode(service: RadioService): RadioToolDef = RadioToolDef(
+private fun defPublishEpisode(service: RadioService, ctx: RadioToolContext): RadioToolDef = RadioToolDef(
     name = "publish_episode",
     description = "发布节目。发布前校验：节目存在、文字稿存在、当前音频有效且对应当前文字稿；" +
-        "缺少有效音频时发布失败（本工具不负责自动生成音频，请先调用 generate_episode_audio）。",
+        "缺少有效音频时发布失败（本工具不负责自动生成音频，请先调用 generate_episode_audio）。" +
+        "发布属于有业务影响的动作：普通对话轮次下必须有用户明确授权；" +
+        "后台任务回调唤起的自动化轮次仅当携带系统授权（continue_workflow 且用户原始指令明确授权）时才能自动发布。",
     schema = schemaOf(
         "episode_id" to prop("string", "节目 ID")
     ),
-    execute = { args, _ ->
+    execute = { args, toolCtx ->
         val episodeId = args.readString("episode_id")
         if (episodeId.isNullOrBlank()) {
             buildJsonObject { put("error", JsonPrimitive("episode_id 为必填参数")) }
         } else {
+            // 工具层授权校验（AGENTS.md 通用后台任务章节）：
+            // 仅自动化回调轮次强制机器授权；普通对话轮次保持"用户口头授权后调用"的既有行为
+            val isAutomatedTurn = toolCtx.isAutomatedCallbackTurn
+            val authorized = "publish_episode:$episodeId" in toolCtx.authorizedActions
+            if (isAutomatedTurn && !authorized) {
+                return@RadioToolDef buildJsonObject {
+                    put("success", JsonPrimitive(false))
+                    put(
+                        "error",
+                        JsonPrimitive(
+                            "本次为后台任务自动化轮次，未携带该节目的发布授权" +
+                                "（continue_workflow 需用户原始指令明确授权）。" +
+                                "请向用户说明任务已完成并请求用户确认后再发布。"
+                        )
+                    )
+                }
+            }
             val episode = service.publishEpisode(episodeId)
             buildJsonObject {
                 put("success", JsonPrimitive(true))

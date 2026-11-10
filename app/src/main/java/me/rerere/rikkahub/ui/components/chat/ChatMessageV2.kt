@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -94,6 +95,7 @@ import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
 import me.rerere.rikkahub.data.ai.tools.extractRadioShareEpisodeId
+import me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules
 import me.rerere.rikkahub.data.ai.transformers.AudioToTextTransformer
 import me.rerere.rikkahub.service.removeVoiceMessageMarkerForDisplay
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
@@ -1179,6 +1181,23 @@ private sealed class AssistantRenderItem {
         override val isLastInTurn: Boolean,
         override val totalInTurn: Int,
     ) : AssistantRenderItem()
+
+    /** 通用后台任务卡片：挂在 ToolResult（task_id）上，状态唯一来源 background_tasks 表 */
+    data class BackgroundTaskItem(
+        override val node: MessageNode,
+        val taskId: String,
+        override val isFirstInTurn: Boolean,
+        override val isLastInTurn: Boolean,
+        override val totalInTurn: Int,
+    ) : AssistantRenderItem()
+
+    /** 中断提示：流式生成被用户中断的最后一条 ASSISTANT 消息（interrupted 标记）显示「已停止」 */
+    data class InterruptedHintItem(
+        override val node: MessageNode,
+        override val isFirstInTurn: Boolean,
+        override val isLastInTurn: Boolean,
+        override val totalInTurn: Int,
+    ) : AssistantRenderItem()
 }
 
 /**
@@ -1249,6 +1268,10 @@ private fun AssistantMessageTurn(
         effectiveDisplay.autoCloseThinking
     ) {
         val flat = mutableListOf<AssistantRenderItem>()
+        // 后台任务卡片按 taskId 去重（turn 内）：任务创建返回与后续 get_background_task 查询结果
+        // 都携带 task_id，卡片本身订阅 DB 实时状态，同一任务只保留首张（即创建时那张）即可，
+        // 避免多次查询渲染出重复卡片。
+        val seenBackgroundTaskIds = mutableSetOf<String>()
         group.filteredNodes.forEach { node ->
             node.currentMessage.parts.forEach { part ->
                 when (part) {
@@ -1313,9 +1336,40 @@ private fun AssistantMessageTurn(
                                 )
                             }
                         }
+                        // 通用后台任务卡片：create 类工具返回顶层 task_id（call_radio_tool 二段式）；
+                        // get_background_task 返回嵌套 task 摘要。print_content 有专属卡片故跳过。
+                        // 状态唯一来源 background_tasks 表（与 Agent 查询同源，UI 与 Agent 不矛盾）。
+                        // task_id 必须是 UUID 才挂载：agent_task_manager 等工具返回的数字型
+                        // task_id 属于其他任务体系，查不到记录会渲染出误导性的占位卡片。
+                        // turn 内按 taskId 去重：同一任务只渲染首张卡片，重复查询不再追加。
+                        if (part.toolName != "print_content" && part.toolName != "camera_capture") {
+                            val contentObj = part.content as? JsonObject
+                            val nestedTask = contentObj?.get("task") as? JsonObject
+                            val backgroundTaskId =
+                                contentObj?.get("task_id")?.jsonPrimitiveOrNull?.contentOrNull
+                                    ?: nestedTask?.get("task_id")?.jsonPrimitiveOrNull?.contentOrNull
+                            val validTaskId = backgroundTaskId
+                                ?.takeIf { BackgroundTaskRules.isBackgroundTaskId(it) }
+                            if (validTaskId != null && seenBackgroundTaskIds.add(validTaskId)) {
+                                flat += AssistantRenderItem.BackgroundTaskItem(
+                                    node = node,
+                                    taskId = validTaskId,
+                                    isFirstInTurn = false, isLastInTurn = false, totalInTurn = 0
+                                )
+                            }
+                        }
                     }
                     else -> Unit
                 }
+            }
+            // 中断提示：该节点的当前消息被用户中断（interrupted 标记随消息持久化，重进会话仍显示）
+            if (node.currentMessage.role == me.rerere.ai.core.MessageRole.ASSISTANT &&
+                node.currentMessage.interrupted
+            ) {
+                flat += AssistantRenderItem.InterruptedHintItem(
+                    node = node,
+                    isFirstInTurn = false, isLastInTurn = false, totalInTurn = 0
+                )
             }
         }
         val total = flat.size
@@ -1329,6 +1383,8 @@ private fun AssistantMessageTurn(
                 is AssistantRenderItem.CameraCaptureImageItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
                 is AssistantRenderItem.PrintTaskItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
                 is AssistantRenderItem.RadioShareItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
+                is AssistantRenderItem.BackgroundTaskItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
+                is AssistantRenderItem.InterruptedHintItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
             }
         }
     }
@@ -1526,6 +1582,37 @@ private fun AssistantMessageTurn(
                             RadioShareCard(
                                 episodeId = item.episodeId,
                                 modifier = Modifier.widthIn(max = maxWidth)
+                            )
+                        }
+                    }
+
+                    is AssistantRenderItem.BackgroundTaskItem -> {
+                        // 通用后台任务卡片：五态 + 逐句进度，状态来自 DB（不触发 AI 轮次）
+                        if (!selecting) {
+                            BackgroundTaskCard(
+                                taskId = item.taskId,
+                                modifier = Modifier.widthIn(max = maxWidth)
+                            )
+                        }
+                    }
+
+                    is AssistantRenderItem.InterruptedHintItem -> {
+                        // 中断提示：已生成内容保留，仅停止继续生成
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Stop,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "已停止生成，以上内容已保留",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 4.dp)
                             )
                         }
                     }

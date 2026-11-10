@@ -65,6 +65,10 @@ val repositoryModule = module {
     }
 
     single {
+        BackgroundTaskRepository(backgroundTaskDao = get())
+    }
+
+    single {
         BookRepository(bookDAO = get())
     }
 

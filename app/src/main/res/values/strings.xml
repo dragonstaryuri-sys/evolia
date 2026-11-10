@@ -2145,6 +2145,8 @@
   <string name="notification_channel_relationship_profile">Relationship profile updates</string>
   <string name="notification_channel_data_backup">Data backup</string>
   <string name="notification_channel_incoming_call">AI calls</string>
+  <string name="notification_channel_background_task">Background tasks</string>
+  <string name="notification_action_cancel_task">Cancel task</string>
   <string name="call_ringtone_page_title">Call ringtone</string>
   <string name="call_ringtone_system_default">System ringtone</string>
   <string name="call_ringtone_custom">Custom ringtone</string>

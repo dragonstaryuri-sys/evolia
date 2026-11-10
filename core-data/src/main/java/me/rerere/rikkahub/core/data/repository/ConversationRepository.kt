@@ -492,6 +492,59 @@ class ConversationRepository(
     }
 
     /**
+     * 差量持久化：仅 upsert 指定节点的实体行（节点行 + 其消息行），不触碰其他节点、不删除任何行
+     * （分页窗口之外的数据安全）。生成期增量落库专用（ToolCall/ToolResult 边界立即保存 +
+     * 流式文本节流保存），orderIndex 与全量 [syncMessages] 一致取节点在完整列表中的位置。
+     * 配合 per-conversation persistenceMutex（调用方在锁内基于最新快照调用）防止旧快照覆盖新快照。
+     */
+    suspend fun saveNodesForConversation(conversation: Conversation, nodeIds: Set<Uuid>) =
+        withContext(Dispatchers.IO) {
+            if (nodeIds.isEmpty()) return@withContext
+            val normalized = conversation.normalizeMessageNodes()
+            val convId = normalized.id.toString()
+            val changedNodeEntities = normalized.messageNodes.mapIndexed { index, node ->
+                index to node
+            }.filter { (_, node) -> node.id in nodeIds }
+            if (changedNodeEntities.isEmpty()) return@withContext
+
+            val nodeEntities = changedNodeEntities.map { (index, node) ->
+                val nodeCreatedAt = if (node.timelineCreatedAt > 0L) {
+                    node.timelineCreatedAt
+                } else {
+                    node.messages
+                        .minOfOrNull {
+                            it.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+                        }
+                        ?: System.currentTimeMillis()
+                }
+                ChatMessageNodeEntity(
+                    id = node.id.toString(),
+                    conversationId = convId,
+                    selectIndex = node.selectIndex,
+                    orderIndex = index,
+                    createdAt = nodeCreatedAt
+                )
+            }
+            val messageEntities = changedNodeEntities.flatMap { (_, node) ->
+                node.messages.filter { !it.isPlaceholder }.mapIndexed { index, msg ->
+                    ChatMessageEntity(
+                        id = msg.id.toString(),
+                        nodeId = node.id.toString(),
+                        conversationId = convId,
+                        contentJson = JsonInstant.encodeToString(msg),
+                        createdAt = msg.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds(),
+                        orderIndex = index,
+                        isDeleted = false
+                    )
+                }
+            }
+            db.withTransaction {
+                chatMessageDAO.insertNodes(nodeEntities)
+                chatMessageDAO.insertMessages(messageEntities)
+            }
+        }
+
+    /**
      * Atomically applies an explicit message/node deletion and the replacement graph.
      * This avoids the old per-message delete/upsert interleaving used by multi-select.
      */

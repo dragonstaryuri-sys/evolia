@@ -118,6 +118,9 @@ class RadioRepository(
 
     suspend fun getCurrentAsset(episodeId: String): RadioAudioAssetEntity? = assetDao.getCurrent(episodeId)
     suspend fun getBackupAsset(episodeId: String): RadioAudioAssetEntity? = assetDao.getBackup(episodeId)
+    /** 按后台任务 ID 查已提交资产（不限状态）：提交原子边界崩溃恢复的幂等判据。 */
+    suspend fun getAssetByTaskId(taskId: String, contentHash: String): RadioAudioAssetEntity? =
+        assetDao.getByTaskId(taskId, contentHash)
     suspend fun upsertAsset(asset: RadioAudioAssetEntity) = assetDao.upsert(asset)
     suspend fun updateAssetStatus(id: String, status: String, expiresAt: Long?) =
         assetDao.updateStatus(id, status, expiresAt)

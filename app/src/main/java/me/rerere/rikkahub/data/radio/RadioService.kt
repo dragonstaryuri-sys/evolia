@@ -24,7 +24,14 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 
 /** 业务规则违反时抛出；工具层转 {"error": message}，UI 层直接展示 message。 */
-class RadioServiceException(message: String) : Exception(message)
+open class RadioServiceException(message: String) : Exception(message)
+
+/**
+ * 节目文字稿与任务创建时不一致（content_hash 不匹配）：任务创建后文字稿被更新。
+ * 后台任务执行器将此异常映射为 PermanentFailure（"文字稿已更新，本次生成已丢弃"），
+ * 此时 TTS 尚未开始 / 资产尚未提交，无文件需要清理。
+ */
+class RadioEpisodeContentChangedException(message: String) : RadioServiceException(message)
 
 /**
  * 播放联动钩子：节目标题变更/删除后刷新或停止统一播放器。
@@ -477,16 +484,23 @@ class RadioService(
      * 语音选择：Agent 专属（providerId+voiceId，须在音色库中）→ 全局默认 → legacy；
      * 发生回退时 [GenerateAudioOutcome.fallbackNotice] 携带提示文案，
      * 资产记录实际使用的 provider/voice。
+     *
+     * @param expectedContentHash 非空时先与节目当前文字稿哈希比对，不一致抛
+     * [RadioEpisodeContentChangedException]（后台任务创建后文字稿被更新的防护；此时尚未合成，无文件需清理）
      */
     suspend fun generateEpisodeAudio(
         episodeId: String,
         assistantProviderId: Uuid?,
         assistantVoiceSettingJson: String?,
+        expectedContentHash: String? = null,
         now: Long = System.currentTimeMillis()
     ): GenerateAudioOutcome = lockFor(episodeId).withLock {
         val episode = getEpisode(episodeId)
         val content = episode.content
         if (content.isBlank()) throw RadioServiceException("节目文字稿为空，无法生成音频")
+        if (expectedContentHash != null && RadioEpisodeRules.contentHash(content) != expectedContentHash) {
+            throw RadioEpisodeContentChangedException("节目文字稿已更新，本次生成已取消，请重新发起")
+        }
 
         val resolution = TtsVoiceResolver.resolve(
             settings = settingsStore.settingsFlow.value,
@@ -549,6 +563,94 @@ class RadioService(
                 GenerateAudioOutcome(asset = newAsset, fallbackNotice = resolution.fallbackNotice)
             }
         }
+    }
+
+    /**
+     * 读取节目文字稿并校验任务期望哈希（短暂持 episodeLock，读完即释放）。
+     * 后台任务执行器生成阶段不持锁（避免长时间阻塞 UI 换备/编辑），
+     * 文字稿变化由 [commitEpisodeAudio] 在提交时二次校验兜底。
+     */
+    suspend fun getEpisodeContentChecked(episodeId: String, expectedContentHash: String): String =
+        lockFor(episodeId).withLock {
+            val episode = getEpisode(episodeId)
+            val content = episode.content
+            if (content.isBlank()) throw RadioServiceException("节目文字稿为空，无法生成音频")
+            if (RadioEpisodeRules.contentHash(content) != expectedContentHash) {
+                throw RadioEpisodeContentChangedException("节目文字稿已更新，本次生成已取消，请重新发起")
+            }
+            content
+        }
+
+    /**
+     * 幂等检查：该后台任务的音频是否已在崩溃前提交（按 task_id + content_hash 匹配，不限状态——
+     * 已提交后又被用户重新生成转为备份的情况也不重复合成）。
+     */
+    suspend fun findCommittedAudioForTask(taskId: String, contentHash: String): RadioAudioAssetEntity? =
+        repository.getAssetByTaskId(taskId, contentHash)
+
+    /**
+     * 提交后台任务生成的音频资产（提交原子边界，独立 episodeLock）。
+     *
+     * 与 [generateEpisodeAudio] 的区别：合成与提交解耦——Worker 先生成文件，
+     * 再经本方法在锁内重新校验并落库（committing 状态中间边界）：
+     * - 重新比对文字稿哈希：封堵「生成完成 → 提交执行」之间文字稿变化的窗口，
+     *   不一致抛 [RadioEpisodeContentChangedException]（结果丢弃，不落资产）；
+     * - 文件可播校验（MediaExtractor）；
+     * - 资产记录 [RadioAudioAssetEntity.taskId]，崩溃恢复据此判断该任务音频是否已提交（幂等判据）；
+     * - 遵守 current/backup 换备策略；失败不影响既有有效音频。
+     *
+     * 失败抛 RadioServiceException，调用方（RadioAudioGenerationExecutor）据此
+     * 置任务 failed 并清理生成文件与工作目录。
+     */
+    suspend fun commitEpisodeAudio(
+        episodeId: String,
+        audioFile: File,
+        audioId: String,
+        contentHash: String,
+        taskId: String,
+        providerId: String,
+        voiceId: String,
+        durationMs: Long,
+        now: Long = System.currentTimeMillis()
+    ): RadioAudioAssetEntity = lockFor(episodeId).withLock {
+        // 幂等保护：崩溃后重入（committing → running 重认领 → 重走提交）时，
+        // 已提交的资产直接返回，不重复换备（防重复创建资产/破坏 current/backup 规则）
+        repository.getAssetByTaskId(taskId, contentHash)?.let { return@withLock it }
+        val episode = getEpisode(episodeId)
+        val content = episode.content
+        if (content.isBlank()) throw RadioServiceException("节目文字稿为空，无法提交音频")
+        if (RadioEpisodeRules.contentHash(content) != contentHash) {
+            throw RadioEpisodeContentChangedException("节目文字稿已更新，本次生成结果已丢弃，请重新发起")
+        }
+        if (!CallRecovery.isAudioFilePlayable(audioFile)) {
+            throw RadioServiceException("生成的音频文件校验失败，请重试")
+        }
+        val newAsset = RadioAudioAssetEntity(
+            id = audioId,
+            episodeId = episodeId,
+            filePath = relativeAudioPath(audioFile),
+            providerId = providerId,
+            voiceId = voiceId,
+            durationMs = durationMs,
+            fileSize = audioFile.length(),
+            status = RadioAudioStatus.CURRENT,
+            contentHash = contentHash,
+            createdAt = now,
+            taskId = taskId
+        )
+        val current = repository.getCurrentAsset(episodeId)
+        val backup = repository.getBackupAsset(episodeId)
+        val plan = RadioAudioRules.planRegenerationSwap(
+            newAssetId = newAsset.id,
+            newContentHash = newAsset.contentHash,
+            currentAssetId = current?.id,
+            currentContentHash = current?.contentHash,
+            backupAssetId = backup?.id,
+            now = now
+        )
+        applySwapPlan(plan, episodeId, newAsset)
+        playbackHook.onEpisodeAudioReplaced(episodeId, newAsset)
+        newAsset
     }
 
     /** 恢复备用音频：BACKUP ↔ CURRENT 互换，新 BACKUP 重算 3 天有效期。 */
@@ -702,7 +804,8 @@ class RadioService(
     }
 
     /** 从 Provider 配置中提取实际音色 ID（用于资产记录）。 */
-    private fun extractVoiceId(setting: me.rerere.tts.provider.TTSProviderSetting): String {
+    /** 提取实际生效音色 ID（后台任务执行器复用，禁止各自实现 Provider 映射）。 */
+    fun extractVoiceId(setting: me.rerere.tts.provider.TTSProviderSetting): String {
         return when (setting) {
             is me.rerere.tts.provider.TTSProviderSetting.OpenAI -> setting.voice
             is me.rerere.tts.provider.TTSProviderSetting.Custom -> setting.voice

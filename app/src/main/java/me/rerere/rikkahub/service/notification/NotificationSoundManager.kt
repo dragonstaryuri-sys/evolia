@@ -29,6 +29,9 @@ class NotificationSoundManager(private val context: Context) {
         const val BACKUP_CHANNEL_ID = "data_backup"
         const val INCOMING_CALL_CHANNEL_ID = "incoming_call"
 
+        /** 通用后台任务（长时运行 Worker 前台通知）：静音低优先级，运行期间常驻可取消。 */
+        const val BACKGROUND_TASK_CHANNEL_ID = "background_task"
+
         /**
          * 需要清理的历史渠道 ID。
          * 迁移到精简渠道后从系统侧删除这些旧渠道，避免用户在系统通知设置里看到一堆残留类别。
@@ -90,6 +93,12 @@ class NotificationSoundManager(private val context: Context) {
             sound = defaultSound,
             audioAttributes = audioAttrs,
             vibrationEnabled = true)
+        // 后台任务：静音低优先级常驻通知（长时运行 Worker 前台保活），不悬浮不振动
+        createChannel(manager, BACKGROUND_TASK_CHANNEL_ID, R.string.notification_channel_background_task,
+            importance = NotificationManagerCompat.IMPORTANCE_LOW,
+            sound = null,
+            audioAttributes = null,
+            vibrationEnabled = false)
 
         // 清理历史渠道（无效 ID 调用无副作用）
         LEGACY_CHANNEL_IDS.forEach { manager.deleteNotificationChannel(it) }

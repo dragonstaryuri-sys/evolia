@@ -658,14 +658,24 @@ class ChatVM(
                 skipAutoArchive = !targetMessageId.isNullOrBlank()
             )
 
+            // 内存节点同步 collector 必须在 loadInitial 完成之后启动（修复「重进页面丢失流式 partial」
+            // 的竞态：loadInitial 以 DB 清空重建窗口，与内存同步并发共用同一 mutex 顺序不定，
+            // 同步先执行则 partial 被 clear 抹掉，且 TTS 阻塞期间 conversation 流无新发射无法自动补回；
+            // 先建 DB 窗口再启动同步，StateFlow 对新订阅者的首次发射即把未落库节点叠加到窗口上）
+            startConversationNodeSync()
+
             _isConversationLoaded.value = true
         }
+    }
 
-        // 同步整个活跃会话。刷新一个多节点工具回合时，首节点的版本和后续
-        // 工具节点都可能变化，不能只注入列表末尾的节点。
-        // 同时通过前后快照差集找出被物理移除的节点（例如用户拨号通话里 AI 回复的
-        // 裸 0/1 决策节点，在解析后会被删除），传给分页管理器使其从缓存窗口剔除，
-        // 避免已删除节点仍显示在对话列表（退出重进后才会消失）。
+    /**
+     * 同步整个活跃会话到分页窗口。刷新一个多节点工具回合时，首节点的版本和后续
+     * 工具节点都可能变化，不能只注入列表末尾的节点。
+     * 同时通过前后快照差集找出被物理移除的节点（例如用户拨号通话里 AI 回复的
+     * 裸 0/1 决策节点，在解析后会被删除），传给分页管理器使其从缓存窗口剔除，
+     * 避免已删除节点仍显示在对话列表（退出重进后才会消失）。
+     */
+    private fun startConversationNodeSync() {
         var previousConversationId: Uuid? = null
         var previousNodeIds: Set<Uuid> = emptySet()
         viewModelScope.launch {

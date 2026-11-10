@@ -45,9 +45,10 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         RadioChannelEntity::class,
         RadioEpisodeEntity::class,
         RadioAudioAssetEntity::class,
-        RadioEpisodeDeletionLogEntity::class
+        RadioEpisodeDeletionLogEntity::class,
+        BackgroundTaskEntity::class
     ],
-    version = 45,
+    version = 46,
     exportSchema = true
 )
 @TypeConverters(
@@ -81,6 +82,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun radioEpisodeDao(): RadioEpisodeDao
     abstract fun radioAudioAssetDao(): RadioAudioAssetDao
     abstract fun radioEpisodeDeletionLogDao(): RadioEpisodeDeletionLogDao
+    abstract fun backgroundTaskDao(): BackgroundTaskDao
 
     companion object {
         const val TAG = "AppDatabase"
@@ -559,6 +561,71 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.v(TAG, "开始 44->45 迁移：radio_episodes 新增点赞标记 liked")
                 db.execSQL(
                     "ALTER TABLE `radio_episodes` ADD COLUMN `liked` INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        /**
+         * 45 → 46：通用后台任务机制。
+         *
+         * 1. 新建 background_tasks 表：任务状态/结果/回调投递状态的唯一事实源
+         *    （Agent 查询、UI 任务卡片、回调投递都只读此表）。
+         *    - 状态机全部走条件 UPDATE 原子变更，终态不可覆盖（见 BackgroundTaskDao 注释）；
+         *    - deadline_at = created_at + 50min，产品定稿语义：任务总生命周期上限（含排队等待）；
+         *    - 执行租约 execution_id/lease_expires_at 支撑进程被杀后的失效重认领与断点续传。
+         *    不使用 Room 外键：关联完整性由 BackgroundTaskManager 业务校验。
+         * 2. radio_audio_assets 新增 task_id 列：任务与音频资产关联，
+         *    提交原子边界（committing 状态）崩溃恢复时据此判断资产是否已提交，防止重复合成/重复换备。
+         *
+         * 仅新增表与可空列，不改动任何既有数据，历史数据完整保留。
+         */
+        val MIGRATION_45_46 = object : Migration(45, 46) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 45->46 迁移：新建 background_tasks 表，radio_audio_assets 新增 task_id")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `background_tasks` (
+                        `id` TEXT NOT NULL,
+                        `task_type` TEXT NOT NULL,
+                        `ref_key` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `payload_json` TEXT NOT NULL,
+                        `result_json` TEXT,
+                        `error_message` TEXT,
+                        `agent_id` TEXT,
+                        `conversation_id` TEXT,
+                        `source_turn_id` TEXT,
+                        `completion_policy` TEXT NOT NULL,
+                        `callback_state` TEXT NOT NULL,
+                        `callback_claimed_at` INTEGER,
+                        `callback_attempt_count` INTEGER NOT NULL,
+                        `callback_last_error` TEXT,
+                        `created_at` INTEGER NOT NULL,
+                        `started_at` INTEGER,
+                        `completed_at` INTEGER,
+                        `deadline_at` INTEGER NOT NULL,
+                        `retry_count` INTEGER NOT NULL,
+                        `execution_id` TEXT,
+                        `lease_expires_at` INTEGER,
+                        `progress_json` TEXT,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_background_tasks_status` " +
+                        "ON `background_tasks` (`status`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_background_tasks_task_type_ref_key` " +
+                        "ON `background_tasks` (`task_type`, `ref_key`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_background_tasks_conversation_id` " +
+                        "ON `background_tasks` (`conversation_id`)"
+                )
+                db.execSQL(
+                    "ALTER TABLE `radio_audio_assets` ADD COLUMN `task_id` TEXT"
                 )
             }
         }

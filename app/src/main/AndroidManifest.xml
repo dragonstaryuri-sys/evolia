@@ -175,6 +175,13 @@
             android:resource="@xml/accessibility_service_config" />
     </service>
 
+    <!-- 通用后台任务：WorkManager 长时运行 Worker 前台类型（targetSdk 34+ 必须显式声明，
+         tools:node="merge" 与库自带声明合并） -->
+    <service
+        android:name="androidx.work.impl.foreground.SystemForegroundService"
+        android:foregroundServiceType="dataSync"
+        tools:node="merge" />
+
     <provider
       android:name="androidx.core.content.FileProvider"
       android:authorities="${applicationId}.fileprovider"
@@ -198,6 +205,11 @@
 
     <receiver
         android:name=".service.ScheduledMessageReceiver"
+        android:exported="false" />
+
+    <!-- 通用后台任务前台通知的「取消任务」action -->
+    <receiver
+        android:name=".service.BackgroundTaskActionReceiver"
         android:exported="false" />
 
     <!-- 自动任务兜底心跳广播 -->
