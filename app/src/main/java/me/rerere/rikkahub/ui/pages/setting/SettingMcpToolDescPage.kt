@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -107,7 +108,11 @@ fun SettingMcpToolDescPage(vm: McpToolDescVM = koinViewModel()) {
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+        // imePadding：edge-to-edge 下 adjustResize 不生效，需显式消费 IME insets，
+        // 键盘弹出时收缩内容区，避免列表底部输入框被键盘遮挡
+        modifier = Modifier
+            .imePadding()
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
         if (uiState.items.isEmpty()) {
             Column(
