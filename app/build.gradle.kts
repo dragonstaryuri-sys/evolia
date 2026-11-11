@@ -20,6 +20,16 @@ android {
     compileSdk = 36
     val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
 
+    // 是否正在构建 Release 产物（assemble/bundle/install *Release）。
+    // 用于签名配置无效时快速失败，避免静默产出无签名 APK 分发给用户（表现为"未检测到签名/校验不通过"）。
+    val isBuildingReleasePackage = gradle.startParameter.taskNames.any { taskName ->
+        val simpleTaskName = taskName.substringAfterLast(':').lowercase()
+        val isReleasePackagingTask = simpleTaskName.startsWith("assemble") ||
+            simpleTaskName.startsWith("bundle") ||
+            simpleTaskName.startsWith("install")
+        isReleasePackagingTask && simpleTaskName.contains("release")
+    }
+
     // 安全读取 local.properties
     val localProperties = Properties()
     val localPropertiesFile = rootProject.file("local.properties")
@@ -119,11 +129,19 @@ android {
     buildTypes {
         release {
             val releaseSigningConfig = signingConfigs.findByName("release")
-            if (releaseSigningConfig?.storeFile != null && releaseSigningConfig.storeFile?.exists() == true) {
+            val hasValidReleaseKeystore = releaseSigningConfig?.storeFile != null &&
+                releaseSigningConfig.storeFile?.exists() == true
+            if (hasValidReleaseKeystore) {
                 signingConfig = releaseSigningConfig
+            } else if (isBuildingReleasePackage) {
+                // 硬错误：签名无效却继续构建会静默产出无签名 APK（安装时"未检测到签名"），必须直接失败
+                throw GradleException(
+                    "Release 签名配置无效：无法从 local.properties 解析出存在的 storeFile，拒绝构建未签名的 Release 产物。" +
+                        "请检查 storeFile/storePassword/keyAlias/keyPassword 配置及 keystore 文件路径是否有效。"
+                )
             } else {
                 signingConfig = null
-                println("提示: 当前未配置有效的 Release 签名。")
+                println("提示: 当前未配置有效的 Release 签名（本次任务不涉及 Release 产物构建，跳过校验）。")
             }
 
             // 开源项目不混淆：避免 R8 把 Sherpa-Onnx JNI 字段名混淆后导致 ASR/VAD 崩溃

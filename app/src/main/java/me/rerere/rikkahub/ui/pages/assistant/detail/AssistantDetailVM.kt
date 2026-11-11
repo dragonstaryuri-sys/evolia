@@ -1029,13 +1029,19 @@ class AssistantDetailVM(
 
     fun updateMemory(memory: AssistantMemory) {
         viewModelScope.launch {
-            if (memory.type == MemoryType.SEGMENT) {
-                memoryRepository.updateSegmentContent(kotlin.math.abs(memory.id), memory.content)
-            } else if (memory.id < 0) {
-                // Fallback for negative IDs if type is not set correctly
-                memoryRepository.updateSegmentContent(kotlin.math.abs(memory.id), memory.content)
-            } else {
-                memoryRepository.updateContent(memory.id, memory.content)
+            // runCatching：记忆可能已被并发删除/清理（AI 工具、批量优化等），
+            // updateContent 对不存在的 id 会抛 IllegalStateException 直接崩溃
+            runCatching {
+                if (memory.type == MemoryType.SEGMENT) {
+                    memoryRepository.updateSegmentContent(kotlin.math.abs(memory.id), memory.content)
+                } else if (memory.id < 0) {
+                    // Fallback for negative IDs if type is not set correctly
+                    memoryRepository.updateSegmentContent(kotlin.math.abs(memory.id), memory.content)
+                } else {
+                    memoryRepository.updateContent(memory.id, memory.content)
+                }
+            }.onFailure { e ->
+                Log.e(TAG, "Failed to update memory ${memory.id}", e)
             }
         }
     }

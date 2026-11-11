@@ -40,7 +40,35 @@ jobs:
       - name: Gradle Build
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          # 只构建 app 模块：不带模块限定的 assembleRelease 会把所有 library 模块的 bundleReleaseAar 也跑一遍，
+          # 因 :common 直接依赖本地 libwebrtc.aar 而失败
+          ./gradlew :app:assembleRelease
+
+      - name: Verify APK signatures
+        run: |
+          APK_DIR="app/build/outputs/apk/release"
+          shopt -s nullglob
+          APK_FILES=("$APK_DIR"/*.apk)
+          shopt -u nullglob
+          if [ ${#APK_FILES[@]} -eq 0 ]; then
+            echo "::error::未找到 APK 产物: $APK_DIR"
+            exit 1
+          fi
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          APKSIGNER=$(find "$SDK_ROOT/build-tools" -name apksigner -type f 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::未找到 apksigner 工具"
+            exit 1
+          fi
+          FAILED=0
+          for apk in "${APK_FILES[@]}"; do
+            echo "校验签名: $apk"
+            if ! "$APKSIGNER" verify --verbose --print-certs "$apk"; then
+              echo "::error::签名校验不通过（未签名或签名无效，禁止分发）: $apk"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

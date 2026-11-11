@@ -363,12 +363,16 @@ class GenerationHandler(
                             val relevant = memoryRepo.retrieveRelevantMemoriesWithScores(
                                 assistantId = assistant.id.toString(),
                                 query = content,
-                                limit = 1,
+                                limit = 3,
                                 similarityThreshold = 0.8f,
                                 mode = assistant.memoryRetrievalMode
                             )
 
-                            val existing = relevant.firstOrNull()
+                            // 检索候选同时包含 core 记忆与 L1 segment，只有 core 记忆可被
+                            // create_memory 的相似合并路径更新；直接拿 segment id 查 memories 表
+                            // 会得到 null（IllegalStateException: Memory not found），
+                            // 或与 core 记忆 id 撞号时静默覆盖错误记忆
+                            val existing = relevant.firstOrNull { it.first.type == MemoryType.CORE }
                             if (existing != null) {
                                 val score = existing.second
                                 val memory = existing.first

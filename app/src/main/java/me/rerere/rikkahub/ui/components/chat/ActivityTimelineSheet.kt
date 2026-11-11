@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.components.chat
 
 import android.net.Uri
+import android.util.Log
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -76,6 +77,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.common.JsonInstantPretty
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
+import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -139,13 +141,39 @@ enum class MemoryOperation {
 
 private data class MemoryEditTarget(
     val id: Int,
-    val content: String
+    val content: String,
+    val memoryType: Int? = null
 )
 
 private data class MemoryDeleteTarget(
     val id: Int,
-    val content: String?
+    val content: String?,
+    val memoryType: Int? = null
 )
+
+private const val TAG = "ActivityTimelineSheet"
+
+/**
+ * 时间线条目携带的 id 可能来自不同记忆层（core=memories 表 / segment=chat_segments 表，
+ * 两表 id 空间独立），编辑/删除必须按 memoryType 路由到对应表，否则按 segment id 查
+ * memories 表会得到 null（IllegalStateException: Memory not found）或覆盖错误记忆。
+ * memoryType 为 null 的历史条目按 core 处理（与旧行为兼容）。
+ */
+private suspend fun MemoryRepository.updateRoutedMemoryContent(id: Int, memoryType: Int?, content: String) {
+    if (memoryType == MemoryType.SEGMENT) {
+        updateSegmentContent(id, content)
+    } else {
+        updateContent(id, content)
+    }
+}
+
+private suspend fun MemoryRepository.deleteRoutedMemory(id: Int, memoryType: Int?) {
+    if (memoryType == MemoryType.SEGMENT) {
+        deleteSegment(id)
+    } else {
+        deleteMemory(id)
+    }
+}
 
 /**
  * Get icon for a timeline entry type.
@@ -240,12 +268,22 @@ fun ActivityTimelineSheet(
     var deletedMemoryIds by remember { mutableStateOf(setOf<Int>()) }
 
     LaunchedEffect(entries, initialExpandedType) {
-        val memoryIds = entries.filterIsInstance<TimelineEntry.MemoryAction>()
-            .mapNotNull { it.memoryId }
-            .distinct()
-        deletedMemoryIds = if (memoryIds.isNotEmpty()) {
+        val memoryActions = entries.filterIsInstance<TimelineEntry.MemoryAction>()
+            .filter { it.memoryId != null }
+        deletedMemoryIds = if (memoryActions.isNotEmpty()) {
             withContext(Dispatchers.IO) {
-                memoryIds.filter { id -> memoryRepo.getMemoryById(id) == null }.toSet()
+                memoryActions
+                    .mapNotNull { action ->
+                        val id = action.memoryId ?: return@mapNotNull null
+                        // 与 updateRoutedMemoryContent 同规则：segment 条目查 chat_segments 表
+                        val exists = if (action.memoryType == MemoryType.SEGMENT) {
+                            memoryRepo.getSegmentById(id) != null
+                        } else {
+                            memoryRepo.getMemoryById(id) != null
+                        }
+                        if (exists) null else id
+                    }
+                    .toSet()
             }
         } else {
             emptySet()
@@ -334,13 +372,13 @@ fun ActivityTimelineSheet(
                             isLocallyDeleted = entry is TimelineEntry.MemoryAction &&
                                 entry.memoryId != null &&
                                 deletedMemoryIds.contains(entry.memoryId),
-                            onEditMemory = { id, content ->
+                            onEditMemory = { id, content, type ->
                                 haptics.perform(HapticPattern.Pop)
-                                editTarget = MemoryEditTarget(id, content)
+                                editTarget = MemoryEditTarget(id, content, type)
                             },
-                            onDeleteMemory = { id, content ->
+                            onDeleteMemory = { id, content, type ->
                                 haptics.perform(HapticPattern.Thud)
-                                deleteTarget = MemoryDeleteTarget(id, content)
+                                deleteTarget = MemoryDeleteTarget(id, content, type)
                             },
                             onRestoreMemory = { content ->
                                 if (assistantId == null) return@TimelineEntryItem
@@ -351,11 +389,19 @@ fun ActivityTimelineSheet(
                                     }
                                 }
                             },
-                            onRevertMemory = { id, content ->
+                            onRevertMemory = { id, content, type ->
                                 haptics.perform(HapticPattern.Pop)
                                 scope.launch {
-                                    withContext(Dispatchers.IO) {
-                                        memoryRepo.updateContent(id, content)
+                                    val result = withContext(Dispatchers.IO) {
+                                        // runCatching：记忆可能已被并发删除/清理，避免
+                                        // updateContent 的 error() 直接崩溃（#13044）
+                                        runCatching {
+                                            memoryRepo.updateRoutedMemoryContent(id, type, content)
+                                        }
+                                    }
+                                    result.onFailure {
+                                        Log.e(TAG, "Failed to revert memory $id", it)
+                                        deletedMemoryIds = deletedMemoryIds + id
                                     }
                                 }
                             },
@@ -375,8 +421,16 @@ fun ActivityTimelineSheet(
                 val trimmed = text.trim()
                 if (trimmed.isNotEmpty()) {
                     scope.launch {
-                        withContext(Dispatchers.IO) {
-                            memoryRepo.updateContent(target.id, trimmed)
+                        val result = withContext(Dispatchers.IO) {
+                            // runCatching：记忆可能已被并发删除/清理，避免
+                            // updateContent 的 error() 直接崩溃（#13044）
+                            runCatching {
+                                memoryRepo.updateRoutedMemoryContent(target.id, target.memoryType, trimmed)
+                            }
+                        }
+                        result.onFailure {
+                            Log.e(TAG, "Failed to update memory ${target.id}", it)
+                            deletedMemoryIds = deletedMemoryIds + target.id
                         }
                         editTarget = null
                     }
@@ -395,8 +449,14 @@ fun ActivityTimelineSheet(
             onDismissRequest = { deleteTarget = null },
             onConfirm = {
                 scope.launch {
-                    withContext(Dispatchers.IO) {
-                        memoryRepo.deleteMemory(target.id)
+                    val result = withContext(Dispatchers.IO) {
+                        // runCatching：记忆可能已被并发删除/清理，避免崩溃
+                        runCatching {
+                            memoryRepo.deleteRoutedMemory(target.id, target.memoryType)
+                        }
+                    }
+                    result.onFailure {
+                        Log.e(TAG, "Failed to delete memory ${target.id}", it)
                     }
                     deletedMemoryIds = deletedMemoryIds + target.id
                     deleteTarget = null
@@ -422,10 +482,10 @@ private fun TimelineEntryItem(
     onToggleExpanded: () -> Unit,
     isLast: Boolean,
     isLocallyDeleted: Boolean,
-    onEditMemory: (Int, String) -> Unit,
-    onDeleteMemory: (Int, String?) -> Unit,
+    onEditMemory: (Int, String, Int?) -> Unit,
+    onDeleteMemory: (Int, String?, Int?) -> Unit,
     onRestoreMemory: (String) -> Unit,
-    onRevertMemory: (Int, String) -> Unit,
+    onRevertMemory: (Int, String, Int?) -> Unit,
     canRestore: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -638,10 +698,10 @@ private fun ToolCallDetails(entry: TimelineEntry.ToolCall) {
 private fun TimelineExpandedContent(
     entry: TimelineEntry,
     isDeleted: Boolean,
-    onEditMemory: (Int, String) -> Unit,
-    onDeleteMemory: (Int, String?) -> Unit,
+    onEditMemory: (Int, String, Int?) -> Unit,
+    onDeleteMemory: (Int, String?, Int?) -> Unit,
     onRestoreMemory: (String) -> Unit,
-    onRevertMemory: (Int, String) -> Unit,
+    onRevertMemory: (Int, String, Int?) -> Unit,
     canRestore: Boolean
 ) {
     when (entry) {
@@ -861,10 +921,10 @@ private fun GenericToolDetails(entry: TimelineEntry.ToolCall) {
 private fun MemoryDetails(
     entry: TimelineEntry.MemoryAction,
     isDeleted: Boolean,
-    onEditMemory: (Int, String) -> Unit,
-    onDeleteMemory: (Int, String?) -> Unit,
+    onEditMemory: (Int, String, Int?) -> Unit,
+    onDeleteMemory: (Int, String?, Int?) -> Unit,
     onRestoreMemory: (String) -> Unit,
-    onRevertMemory: (Int, String) -> Unit,
+    onRevertMemory: (Int, String, Int?) -> Unit,
     canRestore: Boolean
 ) {
     val memoryTypeLabel = when (entry.memoryType) {
@@ -937,12 +997,12 @@ private fun MemoryDetails(
                     TimelineActionButton(
                         label = stringResource(R.string.chat_timeline_action_edit),
                         icon = Icons.Rounded.Edit,
-                        onClick = { onEditMemory(entry.memoryId, entry.content) }
+                        onClick = { onEditMemory(entry.memoryId, entry.content, entry.memoryType) }
                     )
                     TimelineActionButton(
                         label = stringResource(R.string.chat_timeline_action_delete),
                         icon = Icons.Rounded.Delete,
-                        onClick = { onDeleteMemory(entry.memoryId, entry.content) }
+                        onClick = { onDeleteMemory(entry.memoryId, entry.content, entry.memoryType) }
                     )
                 }
             }
@@ -951,14 +1011,14 @@ private fun MemoryDetails(
                     TimelineActionButton(
                         label = stringResource(R.string.chat_timeline_action_edit),
                         icon = Icons.Rounded.Edit,
-                        onClick = { onEditMemory(entry.memoryId, entry.content) }
+                        onClick = { onEditMemory(entry.memoryId, entry.content, entry.memoryType) }
                     )
                 }
                 if (entry.memoryId != null && entry.previousContent != null) {
                     TimelineActionButton(
                         label = stringResource(R.string.chat_timeline_action_refresh),
                         icon = Icons.Rounded.Refresh,
-                        onClick = { onRevertMemory(entry.memoryId, entry.previousContent) }
+                        onClick = { onRevertMemory(entry.memoryId, entry.previousContent, entry.memoryType) }
                     )
                 }
             }
