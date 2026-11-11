@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.components.crop
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.PointF
 import android.net.Uri
 import android.util.Log
@@ -95,16 +94,15 @@ fun FourCornerCropScreen(
     // 四个角点位置（基于容器坐标系，顺序：左上、右上、右下、左下）
     var corners by remember { mutableStateOf<List<Offset>?>(null) }
 
-    // 加载原图（含 EXIF 方向校正）
+    // 加载原图（降采样 + EXIF 方向校正）
+    // 高分辨率原图全尺寸解码会超过 Canvas 100MB 单张 bitmap 绘制上限导致崩溃
     LaunchedEffect(sourceUri) {
         Log.d(TAG, "LaunchedEffect: start loading bitmap, uri=$sourceUri")
         withContext(Dispatchers.IO) {
             runCatching {
-                val stream = context.contentResolver.openInputStream(sourceUri)
-                val rawBitmap = BitmapFactory.decodeStream(stream)
-                stream?.close()
-                Log.d(TAG, "decodeStream result: ${if (rawBitmap != null) "${rawBitmap.width}x${rawBitmap.height}" else "null"}")
-                rawBitmap?.let { ImageUtils.correctImageOrientation(context, sourceUri, it) }
+                val bitmap = ImageUtils.loadDownsampledBitmap(context, sourceUri)
+                Log.d(TAG, "loadDownsampledBitmap result: ${if (bitmap != null) "${bitmap.width}x${bitmap.height}" else "null"}")
+                bitmap
             }.onSuccess { bitmap ->
                 Log.d(TAG, "bitmap load success: ${if (bitmap != null) "${bitmap.width}x${bitmap.height}" else "null"}")
                 if (bitmap != null) originalBitmap = bitmap

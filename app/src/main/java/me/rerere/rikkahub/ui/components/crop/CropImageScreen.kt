@@ -2,7 +2,7 @@ package me.rerere.rikkahub.ui.components.crop
 
 import me.rerere.rikkahub.ui.theme.AppShapes
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import me.rerere.rikkahub.utils.ImageUtils
 import android.graphics.Matrix
 import android.net.Uri
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -101,18 +101,17 @@ fun CropImageScreen(
     var rotationCount by remember { mutableIntStateOf(0) }
     
     // Load the original bitmap with EXIF orientation correction
+    // 降采样解码：相机 40/50MP 原图全尺寸解码会超过 Canvas 100MB 单张 bitmap 绘制上限导致崩溃
     LaunchedEffect(sourceUri) {
         withContext(Dispatchers.IO) {
             try {
-                context.contentResolver.openInputStream(sourceUri)?.use { stream ->
-                    val rawBitmap = BitmapFactory.decodeStream(stream)
-                    // Apply EXIF orientation correction to handle camera rotation
-                    val bitmap = me.rerere.rikkahub.utils.ImageUtils.correctImageOrientation(
-                        context, sourceUri, rawBitmap
-                    )
+                val bitmap = ImageUtils.loadDownsampledBitmap(context, sourceUri)
+                if (bitmap != null) {
                     originalBitmap = bitmap
                     displayBitmap = bitmap
                     aspectRatio = bitmap.width.toFloat() / bitmap.height
+                } else {
+                    onCancel()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()

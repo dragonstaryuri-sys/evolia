@@ -2,7 +2,7 @@ package me.rerere.rikkahub.ui.components.crop
 
 import me.rerere.rikkahub.ui.theme.AppShapes
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import me.rerere.rikkahub.utils.ImageUtils
 import android.net.Uri
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -85,13 +85,16 @@ fun SquareCropImageScreen(
     var aspectRatio by remember { mutableFloatStateOf(1f) }
     
     // Load the bitmap
+    // 降采样解码：高分辨率原图全尺寸解码会超过 Canvas 100MB 单张 bitmap 绘制上限导致崩溃（含 EXIF 方向修正）
     LaunchedEffect(sourceUri) {
         withContext(Dispatchers.IO) {
             try {
-                context.contentResolver.openInputStream(sourceUri)?.use { stream ->
-                    val loadedBitmap = BitmapFactory.decodeStream(stream)
+                val loadedBitmap = ImageUtils.loadDownsampledBitmap(context, sourceUri)
+                if (loadedBitmap != null) {
                     bitmap = loadedBitmap
                     aspectRatio = loadedBitmap.width.toFloat() / loadedBitmap.height
+                } else {
+                    onCancel()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()

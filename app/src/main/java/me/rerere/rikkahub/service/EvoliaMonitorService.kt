@@ -7,7 +7,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
@@ -15,6 +14,7 @@ import android.location.Geocoder
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
@@ -48,6 +48,7 @@ import me.rerere.rikkahub.core.data.repository.UserDeviceStateRepository
 import me.rerere.rikkahub.core.data.repository.AppLockRepository
 
 import me.rerere.rikkahub.data.ai.tools.DeviceCommandHub
+import me.rerere.rikkahub.utils.ImageUtils
 import org.koin.android.ext.android.inject
 import java.text.SimpleDateFormat
 import java.util.*
@@ -458,7 +459,10 @@ class EvoliaMonitorService : AccessibilityService() {
             if (!imagePath.isNullOrBlank()) {
                 val file = java.io.File(imagePath)
                 if (file.exists()) {
-                    setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
+                    // 降采样解码：高分辨率图片全尺寸解码会超过 Canvas 100MB 单张 bitmap 绘制上限导致崩溃
+                    setImageBitmap(
+                        ImageUtils.loadDownsampledBitmap(this@EvoliaMonitorService, Uri.fromFile(file))
+                    )
                 }
             }
         }

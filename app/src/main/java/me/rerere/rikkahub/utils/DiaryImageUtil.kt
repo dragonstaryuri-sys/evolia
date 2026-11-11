@@ -2,7 +2,6 @@ package me.rerere.rikkahub.utils
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.PointF
 import android.net.Uri
 import android.os.Build
@@ -167,15 +166,13 @@ object DiaryImageUtil {
 
     /**
      * 从 URI 加载图片为 Bitmap，用于后续裁剪/校正处理。
+     *
+     * 降采样解码（最长边 ≤ 2048px）：高分辨率原图（相机 40/50MP 照片等）
+     * 全尺寸解码会超过 Canvas 100MB 单张 bitmap 绘制上限导致崩溃。
      * 会修正 EXIF 方向。
      */
     suspend fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? = withContext(Dispatchers.IO) {
-        runCatching {
-            val inputStream = context.contentResolver.openInputStream(uri) ?: return@runCatching null
-            val bitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream.close()
-            bitmap?.let { ImageUtils.correctImageOrientation(context, uri, it) }
-        }.getOrNull()
+        ImageUtils.loadDownsampledBitmap(context, uri)
     }
 
     /**

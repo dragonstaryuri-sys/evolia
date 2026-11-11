@@ -2,7 +2,7 @@ package me.rerere.rikkahub.ui.components.camera
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import me.rerere.rikkahub.utils.ImageUtils
 import android.os.Build
 import android.util.Log
 import androidx.camera.core.CameraSelector
@@ -326,11 +326,13 @@ private fun captureAndDeliver(
 
 /**
  * 把拍下来的图压缩为 WebP，保证长边不超过 maxLongEdge 且文件体积合理。
- * 原始 JPEG 先解码再重编码为 WebP（质量 quality）。
+ * 原始 JPEG 先降采样解码（200MP 级原图全尺寸解码会直接 OOM）再重编码为 WebP（质量 quality）。
  */
 private fun compressToWebp(sourceFile: File, maxLongEdge: Int, quality: Int): File {
     val originalBytes = sourceFile.readBytes()
-    val bitmap = BitmapFactory.decodeByteArray(originalBytes, 0, originalBytes.size)
+    // 上限取 maxLongEdge * 2：保证 2 的幂采样不会把长边降到 maxLongEdge 以下，
+    // 后续精确缩放仍能得到 maxLongEdge 的输出
+    val bitmap = ImageUtils.decodeDownsampledBitmap(originalBytes, maxDimension = maxLongEdge * 2)
         ?: return sourceFile // 解码失败则原样返回
 
     // 等比缩放

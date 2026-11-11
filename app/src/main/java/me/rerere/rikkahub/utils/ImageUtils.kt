@@ -70,6 +70,103 @@ object ImageUtils {
     }
 
     /**
+     * 降采样加载图片（用于裁剪页等需要直接绘制 Bitmap 的场景）
+     *
+     * 高分辨率原图（如相机 40/50MP 模式照片）全尺寸解码后内存可达 100MB 以上，
+     * 超过 RecordingCanvas 单张 bitmap 100MB 的绘制上限会直接抛
+     * "Canvas: trying to draw too large bitmap" 崩溃。本方法先量边界，
+     * 再按 2 的幂采样使最长边不超过 maxDimension，最后修正 EXIF 方向。
+     *
+     * @param context Android上下文
+     * @param uri 图片URI
+     * @param maxDimension 最长边上限（px），默认 2048（ARGB_8888 下最多约 16MB 内存）
+     * @return 降采样后的Bitmap，失败返回null
+     */
+    fun loadDownsampledBitmap(
+        context: Context,
+        uri: Uri,
+        maxDimension: Int = 2048
+    ): Bitmap? {
+        return runCatching {
+            // 第一步：仅读取图片尺寸，不加载像素到内存
+            val bounds = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                BitmapFactory.decodeStream(inputStream, null, bounds)
+            }
+
+            // 第二步：采样解码（保留 ARGB_8888，保证裁剪输出质量）
+            val sampleSize = calculateDownSampleSize(bounds.outWidth, bounds.outHeight, maxDimension)
+            val bitmap = if (sampleSize != null) {
+                val loadOptions = BitmapFactory.Options().apply {
+                    inSampleSize = sampleSize
+                }
+                context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    BitmapFactory.decodeStream(inputStream, null, loadOptions)
+                }
+            } else {
+                null
+            }
+
+            // 第三步：修正 EXIF 方向
+            if (bitmap != null) correctImageOrientation(context, uri, bitmap) else null
+        }.onFailure {
+            it.printStackTrace()
+        }.getOrNull()
+    }
+
+    /**
+     * 从字节数组降采样解码 Bitmap（用于相机拍照等数据已在内存中的场景）。
+     *
+     * 200MP 级相机原图全尺寸解码需要数百 MB 内存，会直接 OOM；
+     * 先量边界再按 2 的幂采样使最长边不超过 maxDimension。
+     *
+     * @param data 图片文件字节
+     * @param maxDimension 最长边上限（px）
+     * @return 降采样后的Bitmap，失败返回null
+     */
+    fun decodeDownsampledBitmap(data: ByteArray, maxDimension: Int = 2048): Bitmap? {
+        return runCatching {
+            // 第一步：仅读取图片尺寸，不加载像素到内存
+            val bounds = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
+
+            // 第二步：采样解码（保留 ARGB_8888）
+            val sampleSize = calculateDownSampleSize(bounds.outWidth, bounds.outHeight, maxDimension)
+            if (sampleSize == null) {
+                null
+            } else {
+                val loadOptions = BitmapFactory.Options().apply {
+                    inSampleSize = sampleSize
+                }
+                BitmapFactory.decodeByteArray(data, 0, data.size, loadOptions)
+            }
+        }.onFailure {
+            it.printStackTrace()
+        }.getOrNull()
+    }
+
+    /**
+     * 计算 inSampleSize（2 的幂），使最长边降到 maxDimension 以内。
+     *
+     * @return 采样率；尺寸无效（解码失败或非图片）时返回 null
+     */
+    private fun calculateDownSampleSize(outWidth: Int, outHeight: Int, maxDimension: Int): Int? {
+        val hasValidSize = outWidth > 0 && outHeight > 0
+        if (!hasValidSize) return null
+
+        val longestEdge = maxOf(outWidth, outHeight)
+        var sampleSize = 1
+        while (longestEdge / sampleSize > maxDimension) {
+            sampleSize *= 2
+        }
+        return sampleSize
+    }
+
+    /**
      * 计算合适的采样率
      *
      * @param options BitmapFactory.Options包含原始图片尺寸信息

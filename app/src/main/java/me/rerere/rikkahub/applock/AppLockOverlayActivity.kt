@@ -2,12 +2,13 @@ package me.rerere.rikkahub.applock
 
 import android.app.Activity
 import android.content.Intent
-import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
 import java.io.File
+import me.rerere.rikkahub.utils.ImageUtils
 
 /**
  * 应用锁定全屏遮罩 Activity。
@@ -42,7 +43,8 @@ class AppLockOverlayActivity : Activity() {
         if (!imagePath.isNullOrBlank()) {
             val file = File(imagePath)
             if (file.exists()) {
-                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                // 降采样解码：高分辨率图片全尺寸解码会超过 Canvas 100MB 单张 bitmap 绘制上限导致崩溃
+                val bitmap = ImageUtils.loadDownsampledBitmap(this, Uri.fromFile(file))
                 imageView.setImageBitmap(bitmap)
             }
         }
@@ -61,7 +63,9 @@ class AppLockOverlayActivity : Activity() {
             if (!newImage.isNullOrBlank()) {
                 val file = File(newImage)
                 if (file.exists()) {
-                    setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
+                    setImageBitmap(
+                        ImageUtils.loadDownsampledBitmap(this@AppLockOverlayActivity, Uri.fromFile(file))
+                    )
                 }
             }
         }
