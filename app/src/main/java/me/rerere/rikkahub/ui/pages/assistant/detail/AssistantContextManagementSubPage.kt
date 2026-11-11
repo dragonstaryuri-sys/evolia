@@ -18,6 +18,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.groupContainerColor
@@ -62,6 +63,41 @@ fun AssistantContextManagementSubPage(
                 },
                 onClick = {
                     onUpdate(assistant.copy(includeUserProfile = !assistant.includeUserProfile))
+                }
+            )
+
+            // 时间观念
+            SettingGroupItem(
+                title = stringResource(R.string.local_tool_time_sense),
+                subtitle = stringResource(R.string.local_tool_time_sense_desc),
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Schedule,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.TimeSense),
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.TimeSense
+                            } else {
+                                assistant.localTools - LocalToolOption.TimeSense
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                },
+                onClick = {
+                    val enabled = !assistant.localTools.contains(LocalToolOption.TimeSense)
+                    val newLocalTools = if (enabled) {
+                        assistant.localTools + LocalToolOption.TimeSense
+                    } else {
+                        assistant.localTools - LocalToolOption.TimeSense
+                    }
+                    onUpdate(assistant.copy(localTools = newLocalTools))
                 }
             )
         }
