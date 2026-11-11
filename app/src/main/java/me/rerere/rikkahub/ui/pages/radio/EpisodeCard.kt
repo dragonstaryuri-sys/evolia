@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeStatus
+import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeVisibility
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
@@ -43,6 +44,22 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 
 /** 节目标题在列表卡片中的最大字符数（超出省略；详情页展示完整名）。 */
 private const val EPISODE_TITLE_MAX_CHARS = 13
+
+/**
+ * 节目可见性 Tag（列表卡片与详情页共用，DB v47）：
+ * 公开 = 所有 Agent 均可查询（中性色）；私密 = 仅创作 Agent 与 user 可查询（警示色）。
+ * user 始终可见全部节目，该标注描述的是 Agent 侧查询范围。
+ */
+@Composable
+fun EpisodeVisibilityTag(visibility: String) {
+    val isPrivate = visibility == RadioEpisodeVisibility.PRIVATE
+    Tag(type = if (isPrivate) TagType.WARNING else TagType.DEFAULT) {
+        Text(
+            text = if (isPrivate) "私密" else "公开",
+            style = MaterialTheme.typography.labelSmall
+        )
+    }
+}
 
 /**
  * 电台节目列表卡片（首页全部节目/栏目节目列表/喜欢/草稿箱共用）：
@@ -99,7 +116,6 @@ fun EpisodeCard(
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                // 已发布是常态不标注；仅草稿显示 Tag
                 if (episode.status == RadioEpisodeStatus.DRAFT) {
                     Tag(type = TagType.INFO) {
                         Text(
@@ -107,6 +123,9 @@ fun EpisodeCard(
                             style = MaterialTheme.typography.labelSmall
                         )
                     }
+                } else {
+                    // 已发布节目标注可见性：公开（所有 Agent 可查询）/ 私密（仅创作 Agent 与 user 可查询）
+                    EpisodeVisibilityTag(visibility = episode.visibility)
                 }
                 if (onOpenActions != null) {
                     // 播放/暂停（与详情页播放器一致）：在播显示暂停，暂停/未播显示播放；

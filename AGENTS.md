@@ -375,10 +375,17 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - 并发：RadioService 以 per-episode `Mutex` 串行化「文字稿更新 vs 音频生成/发布」。
 
 ### 12.4 Radio Agent LocalTools（按需 Schema，复刻 MCP 模式）
-- `data/ai/tools/RadioAgentTools.kt`：常驻仅两个固定工具 `get_radio_tool_schema`（查参数定义）与 `call_radio_tool`（执行，先经 `validateAgainstSchema` 校验）；工具目录（10 个业务工具名+描述）由 `buildRadioCatalogPrompt`（纯函数，有单测）注入 systemPrompt。工具清单：get_channels / manage_channel / save_episode（创建+更新未发布文字稿，已吸收 update_episode）/ update_episode_title / query_episodes / get_episode_content / delete_episode / generate_episode_audio（**异步后台任务**：立即返回 task_id 不阻塞对话，chunk 断点续传 + 50min 总时限 + completion_policy 回传，见第 13 节；不返回音色信息）/ restore_episode_audio / publish_episode（成功提示引导调用 share_episode；自动化回调轮次的发布需机器授权，见 13.5）/ share_episode（发送电台分享卡片消息，autoplay=1 自动播放；无 delete_episode_audio——音频删除不向 Agent 开放）。
+- `data/ai/tools/RadioAgentTools.kt`：常驻仅两个固定工具 `get_radio_tool_schema`（查参数定义）与 `call_radio_tool`（执行，先经 `validateAgainstSchema` 校验）；工具目录（13 个业务工具名+描述）由 `buildRadioCatalogPrompt`（纯函数，有单测）注入 systemPrompt。工具清单：get_channels / manage_channel / save_episode（创建+更新未发布文字稿，已吸收 update_episode）/ update_episode_title / query_episodes（**创作者按名字过滤**（`creator_name`，Agent 不知道自身/他人 ID；同名 Agent 全部命中，由 `RadioEpisodeRules.resolveCreatorIdsByName` 纯函数解析；EpisodeQuery 用 `creatorAgentIds` 集合承载，分页前过滤）/ get_episode_content / delete_episode / generate_episode_audio（**异步后台任务**：立即返回 task_id 不阻塞对话，chunk 断点续传 + 50min 总时限 + completion_policy 回传，见第 13 节；不返回音色信息）/ restore_episode_audio / publish_episode（**visibility 必填**（public/private），成功提示引导调用 share_episode；自动化回调轮次的发布需机器授权，见 13.5）/ update_episode_visibility（修改已发布节目可见性，草稿不可单独改）/ share_episode（发送电台分享卡片消息，autoplay=1 自动播放；无 delete_episode_audio——音频删除不向 Agent 开放）。
 - 工具开关：`LocalToolOption.RadioStation`（按助手 opt-in，默认关），在 ChatService 工具装配处与 LocalTools 同路径追加。
 - 全部工具调用走 RadioService（参数校验/状态校验/音频资产管理/删除审计共用），禁止工具内直连 DAO。
 - `manage_channel`(create) 与 `publish_episode` 的授权要求（需用户明确授权）是**行为约束**，写在工具描述中；自动发布权不随功能默认获得。
+
+### 12.4a 节目可见性（DB v47，`radio_episodes.visibility`）
+- 取值 `PUBLIC`/`PRIVATE`（`RadioEpisodeVisibility` 常量；工具入参大小写不敏感，经 `RadioEpisodeRules.normalizeVisibility` 规范化，非法值报参数错误）。迁移默认 PUBLIC（历史节目全部公开）。
+- **语义**：只约束 Agent 侧查询（`query_episodes` / `get_episode_content` 等**读取**操作）；user 与创作 Agent 恒可见，UI 永不过滤。过滤入口：`RadioService.queryEpisodes(query, viewerAgentId)` 与 `getEpisodeForAgent(id, viewerAgentId)`（PRIVATE 非创作 Agent 一律按「节目不存在」处理，不泄露存在性）；**禁止**在 UI 查询路径传 viewerAgentId 或自行实现过滤。
+- **发布时指定**：`publishEpisode` 必带 visibility（UI 发布按钮缺省 PUBLIC）；已发布节目经 `updateEpisodeVisibility` 修改（仅 PUBLISHED，草稿的可见性随 publish_episode 指定，不单独修改）。
+- UI：已发布节目在卡片/详情页标注「公开/私密」Tag（共用 `EpisodeVisibilityTag`），草稿仍标「草稿」。
+- 音频重生成音色：详情页手动「重新生成」按节目 `creatorAgentId` 解析创作助手当前专属音色（`voiceProviderId + voiceSettings`，`TtsVoiceResolver` 统一回退），与 Agent 工具生成同规则；禁止回退为传 null（全局默认）。
 
 ### 12.5 Agent 独立语音配置（统一语音选择）
 - `Assistant.voiceProviderId + voiceId`（可空；null = 用全局默认）；引用必须是 **provider_id + voice_id**，不能只存音色名。

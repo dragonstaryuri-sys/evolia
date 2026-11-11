@@ -15,7 +15,11 @@ import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeEntity
  */
 data class EpisodeQuery(
     val channelId: String? = null,
-    val creatorAgentId: String? = null,
+    /**
+     * 按创作者（助手）ID 集合过滤。Agent 查询按名字（creator_name）过滤时，
+     * 由 RadioService 解析成同名助手的 ID 集合填充（同名 Agent 全部命中）。
+     */
+    val creatorAgentIds: List<String>? = null,
     val status: String? = null,
     val titleQuery: String? = null,
     val sortBy: EpisodeSort = EpisodeSort.CREATED_DESC,
@@ -62,8 +66,11 @@ class RadioRepository(
     suspend fun updateEpisodeContent(id: String, content: String, updatedAt: Long) =
         episodeDao.updateContent(id, content, updatedAt)
 
-    suspend fun publishEpisode(id: String, publishedAt: Long, updatedAt: Long) =
-        episodeDao.publish(id, publishedAt, updatedAt)
+    suspend fun publishEpisode(id: String, publishedAt: Long, updatedAt: Long, visibility: String) =
+        episodeDao.publish(id, publishedAt, updatedAt, visibility)
+
+    suspend fun updateEpisodeVisibility(id: String, visibility: String, updatedAt: Long) =
+        episodeDao.updateVisibility(id, visibility, updatedAt)
 
     suspend fun updateEpisodeLiked(id: String, liked: Int) = episodeDao.updateLiked(id, liked)
 
@@ -87,7 +94,9 @@ class RadioRepository(
         } else {
             episodeDao.getAll()
         }
-        query.creatorAgentId?.let { agentId -> list = list.filter { it.creatorAgentId == agentId } }
+        query.creatorAgentIds?.takeIf { it.isNotEmpty() }?.let { ids ->
+            list = list.filter { it.creatorAgentId in ids }
+        }
         query.status?.let { status -> list = list.filter { it.status == status } }
         query.titleQuery?.takeIf { it.isNotBlank() }?.let { q ->
             list = list.filter { it.title.contains(q, ignoreCase = true) }

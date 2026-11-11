@@ -14,6 +14,7 @@ import me.rerere.rikkahub.core.data.db.entity.RadioChannelEntity
 import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeDeletionLogEntity
 import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeStatus
+import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeVisibility
 import me.rerere.rikkahub.core.data.db.entity.RadioOperatorType
 import me.rerere.rikkahub.data.ai.TtsVoiceResolver
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -418,8 +419,16 @@ class RadioService(
 
     /**
      * 发布节目：只校验不合成。缺有效音频时明确失败，要求先生成音频。
+     * [visibility] 由 Agent 在 publish_episode 时指定（UI 发布按钮缺省 PUBLIC）；
+     * PRIVATE 节目对其他 Agent 不可查询，user 与创作 Agent 恒可见。
      */
-    suspend fun publishEpisode(episodeId: String, now: Long = System.currentTimeMillis()): RadioEpisodeEntity {
+    suspend fun publishEpisode(
+        episodeId: String,
+        visibility: String = RadioEpisodeVisibility.PUBLIC,
+        now: Long = System.currentTimeMillis()
+    ): RadioEpisodeEntity {
+        val validVisibility = RadioEpisodeRules.normalizeVisibility(visibility)
+            ?: throw RadioServiceException("visibility 只支持 public / private")
         return lockFor(episodeId).withLock {
             val episode = repository.getEpisode(episodeId) ?: throw RadioServiceException("节目不存在: $episodeId")
             val current = repository.getCurrentAsset(episodeId)
@@ -434,12 +443,85 @@ class RadioService(
                 contentHash = RadioEpisodeRules.contentHash(episode.content)
             )
             if (blockReason != null) throw RadioServiceException(blockReason)
-            repository.publishEpisode(episodeId, now, now)
-            episode.copy(status = RadioEpisodeStatus.PUBLISHED, publishedAt = now, updatedAt = now)
+            repository.publishEpisode(episodeId, now, now, validVisibility)
+            episode.copy(
+                status = RadioEpisodeStatus.PUBLISHED,
+                visibility = validVisibility,
+                publishedAt = now,
+                updatedAt = now
+            )
         }
     }
 
-    suspend fun queryEpisodes(query: EpisodeQuery): List<RadioEpisodeEntity> = repository.queryEpisodes(query)
+    /**
+     * 修改节目可见性（仅已发布节目；草稿的可见性在 publish_episode 时指定）。
+     * Agent 工具入口，user 无 UI 入口。
+     */
+    suspend fun updateEpisodeVisibility(
+        episodeId: String,
+        visibility: String,
+        now: Long = System.currentTimeMillis()
+    ): RadioEpisodeEntity {
+        val validVisibility = RadioEpisodeRules.normalizeVisibility(visibility)
+            ?: throw RadioServiceException("visibility 只支持 public / private")
+        return lockFor(episodeId).withLock {
+            val existing = getEpisode(episodeId)
+            val canModify = RadioEpisodeRules.canModifyVisibility(existing.status)
+            if (!canModify) {
+                throw RadioServiceException("节目尚未发布，可见性在发布时通过 publish_episode 的 visibility 参数指定")
+            }
+            val changed = existing.visibility != validVisibility
+            if (changed) {
+                repository.updateEpisodeVisibility(episodeId, validVisibility, now)
+            }
+            existing.copy(visibility = validVisibility, updatedAt = now)
+        }
+    }
+
+    /**
+     * 查询节目列表。[viewerAgentId] 非空时按可见性过滤（Agent 工具入口）：
+     * PRIVATE 节目仅创作 Agent 本人可查询；null = user/UI 视角，不过滤。
+     */
+    suspend fun queryEpisodes(query: EpisodeQuery, viewerAgentId: String? = null): List<RadioEpisodeEntity> {
+        val list = repository.queryEpisodes(query)
+        val isHiddenByVisibility = { episode: RadioEpisodeEntity ->
+            !RadioEpisodeRules.isVisibleToAgent(episode.visibility, episode.creatorAgentId, viewerAgentId)
+        }
+        return if (viewerAgentId == null) list else list.filterNot(isHiddenByVisibility)
+    }
+
+    /**
+     * Agent 视角按创作助手名查询节目（Agent 不知道自身/他人 ID，只能按名字查）：
+     * 同名助手的节目全部返回（不区分具体是哪一个）；名字为空或无匹配返回空列表；
+     * 可见性过滤与 [queryEpisodes] 一致。
+     */
+    suspend fun queryEpisodesByCreatorName(
+        query: EpisodeQuery,
+        creatorName: String?,
+        viewerAgentId: String?
+    ): List<RadioEpisodeEntity> {
+        val assistants = settingsStore.settingsFlow.value.assistants
+        val matchedCreatorIds = RadioEpisodeRules.resolveCreatorIdsByName(
+            creatorName,
+            assistants.map { it.id.toString() to it.name }
+        )
+        val hasNoNameMatch = matchedCreatorIds.isEmpty()
+        if (hasNoNameMatch) return emptyList()
+        return queryEpisodes(query.copy(creatorAgentIds = matchedCreatorIds), viewerAgentId)
+    }
+
+    /**
+     * Agent 视角读取单个节目：PRIVATE 节目非创作 Agent 一律按「不存在」处理（不泄露存在性）。
+     * user / UI 侧读取仍走 [getEpisode]，不做可见性过滤。
+     */
+    suspend fun getEpisodeForAgent(episodeId: String, viewerAgentId: String): RadioEpisodeEntity {
+        val episode = repository.getEpisode(episodeId)
+            ?: throw RadioServiceException("节目不存在: $episodeId")
+        val isHiddenByVisibility =
+            !RadioEpisodeRules.isVisibleToAgent(episode.visibility, episode.creatorAgentId, viewerAgentId)
+        if (isHiddenByVisibility) throw RadioServiceException("节目不存在: $episodeId")
+        return episode
+    }
 
     /** 点赞/取消点赞节目（播放器点赞按钮）。 */
     suspend fun setEpisodeLiked(episodeId: String, liked: Boolean): RadioEpisodeEntity {

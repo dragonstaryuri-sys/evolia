@@ -32,6 +32,44 @@ class RadioAudioRulesTest {
         assertTrue(RadioEpisodeRules.canModifyTitle(RadioEpisodeStatus.PUBLISHED))
     }
 
+    // ==================== 按创作者名字解析（query_episodes creator_name） ====================
+
+    private val creators = listOf(
+        "id-a" to "小安",
+        "id-b" to "小安",
+        "id-c" to "Bella",
+        "id-d" to "user"
+    )
+
+    @Test
+    fun `creator name resolves to all same-named agents`() {
+        // 同名 Agent 全部命中，不区分具体是哪一个
+        assertEquals(listOf("id-a", "id-b"), RadioEpisodeRules.resolveCreatorIdsByName("小安", creators))
+        assertEquals(listOf("id-c"), RadioEpisodeRules.resolveCreatorIdsByName("bella", creators))
+    }
+
+    @Test
+    fun `creator name match trims and ignores case`() {
+        assertEquals(listOf("id-c"), RadioEpisodeRules.resolveCreatorIdsByName("  BELLA  ", creators))
+        assertEquals(listOf("id-a", "id-b"), RadioEpisodeRules.resolveCreatorIdsByName(" 小安 ", creators))
+    }
+
+    @Test
+    fun `creator name blank or unknown resolves to empty`() {
+        assertTrue(RadioEpisodeRules.resolveCreatorIdsByName(null, creators).isEmpty())
+        assertTrue(RadioEpisodeRules.resolveCreatorIdsByName("", creators).isEmpty())
+        assertTrue(RadioEpisodeRules.resolveCreatorIdsByName("   ", creators).isEmpty())
+        assertTrue(RadioEpisodeRules.resolveCreatorIdsByName("不存在", creators).isEmpty())
+        // 部分匹配不算命中（精确匹配）
+        assertTrue(RadioEpisodeRules.resolveCreatorIdsByName("小", creators).isEmpty())
+    }
+
+    @Test
+    fun `creator ids deduplicated`() {
+        val duplicated = listOf("id-a" to "小安", "id-a" to "小安", "id-b" to "小安")
+        assertEquals(listOf("id-a", "id-b"), RadioEpisodeRules.resolveCreatorIdsByName("小安", duplicated))
+    }
+
     @Test
     fun `content hash is stable md5 hex`() {
         val h1 = RadioEpisodeRules.contentHash("你好，世界")

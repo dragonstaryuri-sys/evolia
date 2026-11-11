@@ -67,6 +67,7 @@ import me.rerere.rikkahub.common.ui.components.EmptyPlaceholder
 import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import me.rerere.rikkahub.common.ui.components.InputDialog
 import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeStatus
+import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeVisibility
 import me.rerere.rikkahub.service.media.MediaPlaybackController
 import me.rerere.rikkahub.service.media.SleepTimerState
 import me.rerere.rikkahub.ui.components.chat.formatCallDuration
@@ -270,6 +271,11 @@ private fun StatusCard(episode: me.rerere.rikkahub.core.data.db.entity.RadioEpis
                     text = if (episode?.status == RadioEpisodeStatus.PUBLISHED) stringResource(R.string.radio_status_published) else stringResource(R.string.radio_status_draft),
                     style = MaterialTheme.typography.labelSmall
                 )
+            }
+            // 已发布节目在状态旁标注可见性（公开/私密）
+            if (episode?.status == RadioEpisodeStatus.PUBLISHED) {
+                Spacer(modifier = Modifier.width(8.dp))
+                EpisodeVisibilityTag(visibility = episode?.visibility ?: RadioEpisodeVisibility.PUBLIC)
             }
             Spacer(modifier = Modifier.width(10.dp))
             Text(

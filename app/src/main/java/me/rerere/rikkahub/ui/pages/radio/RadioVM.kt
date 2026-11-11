@@ -27,6 +27,7 @@ import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeStatus
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.radio.EpisodeQuery
 import me.rerere.rikkahub.data.radio.EpisodeSort
 import me.rerere.rikkahub.data.radio.RadioAudioExporter
@@ -515,13 +516,24 @@ class RadioEpisodeVM(
     /**
      * 请求后台生成音频（立即返回）：生成在 AppScope 进行，退出详情页不中断；
      * 生成态经 [generating] 观察，失败经 [generationError] 观察。
+     *
+     * 语音选择与 Agent 工具生成共用同一规则（AGENTS.md 12.5）：按节目的
+     * creatorAgentId 找到创作助手当前配置的专属音色（voiceProviderId + 声音副本），
+     * 未配置专属音色或助手已删除时由 TtsVoiceResolver 回退全局默认。
      */
     fun generateAudio() {
         if (generating.value) return
+        val creatorAgentId = episode.value?.creatorAgentId
+        val creatorAgent = creatorAgentId?.let { id ->
+            runCatching { kotlin.uuid.Uuid.parse(id) }.getOrNull()
+                ?.let { uuid -> settingsStore.settingsFlow.value.getAssistantById(uuid) }
+        }
+        val assistantProviderId = creatorAgent?.voiceProviderId
+        val assistantVoiceSettingJson = assistantProviderId?.let { pid -> creatorAgent.voiceSettings[pid.toString()] }
         radioService.requestAudioGeneration(
             episodeId = episodeId,
-            assistantProviderId = null,
-            assistantVoiceSettingJson = null
+            assistantProviderId = assistantProviderId,
+            assistantVoiceSettingJson = assistantVoiceSettingJson
         )
     }
 

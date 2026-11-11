@@ -48,7 +48,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         RadioEpisodeDeletionLogEntity::class,
         BackgroundTaskEntity::class
     ],
-    version = 46,
+    version = 47,
     exportSchema = true
 )
 @TypeConverters(
@@ -626,6 +626,20 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "ALTER TABLE `radio_audio_assets` ADD COLUMN `task_id` TEXT"
+                )
+            }
+        }
+
+        /**
+         * 46 → 47：radio_episodes 表新增可见性列 visibility。
+         * PUBLIC = 所有 Agent 均可查询；PRIVATE = 仅创作 Agent 与 user 可查询。
+         * 仅加列 + 非空默认值，历史节目全部视为 PUBLIC，不改动任何既有字段。
+         */
+        val MIGRATION_46_47 = object : Migration(46, 47) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 46->47 迁移：radio_episodes 新增可见性列 visibility")
+                db.execSQL(
+                    "ALTER TABLE `radio_episodes` ADD COLUMN `visibility` TEXT NOT NULL DEFAULT 'PUBLIC'"
                 )
             }
         }

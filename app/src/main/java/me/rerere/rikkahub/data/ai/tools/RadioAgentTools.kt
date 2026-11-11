@@ -15,6 +15,7 @@ import me.rerere.rikkahub.core.data.db.entity.RadioOperatorType
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.data.radio.EpisodeQuery
 import me.rerere.rikkahub.data.radio.EpisodeSort
+import me.rerere.rikkahub.data.radio.RadioEpisodeRules
 import me.rerere.rikkahub.data.radio.RadioService
 import me.rerere.rikkahub.data.radio.RadioServiceException
 import kotlin.uuid.Uuid
@@ -22,7 +23,7 @@ import kotlin.uuid.Uuid
 /**
  * Radio LocalTools 按需加载（复刻 MCP 双固定工具模式，见 AGENTS.md 12.4）。
  *
- * 上下文只常驻「工具目录」（12 个 Radio 工具名 + 描述，见 [getRadioCatalogSystemPrompt]），
+ * 上下文只常驻「工具目录」（13 个 Radio 工具名 + 描述，见 [getRadioCatalogSystemPrompt]），
  * 完整参数 Schema 不常驻；Agent 先通过 [TOOL_GET_RADIO_TOOL_SCHEMA] 查询参数定义，
  * 再通过 [TOOL_CALL_RADIO_TOOL] 执行（执行前按真实 Schema 校验参数）。
  */
@@ -293,7 +294,7 @@ internal fun validateAgainstSchema(args: JsonObject, schema: InputSchema.Obj): L
 }
 
 // ====================================================================
-// 工具定义注册表（12 个，全部经 RadioService 执行）
+// 工具定义注册表（13 个，全部经 RadioService 执行）
 // ====================================================================
 
 fun buildRadioToolDefs(
@@ -312,6 +313,7 @@ fun buildRadioToolDefs(
         defGenerateEpisodeAudio(service, backgroundTaskManager, ctx),
         defRestoreEpisodeAudio(service),
         defPublishEpisode(service, ctx),
+        defUpdateEpisodeVisibility(service),
         defShareEpisode(service)
     )
 }
@@ -324,7 +326,9 @@ private fun buildRadioToolUsageNotes(toolName: String): String = when (toolName)
     "delete_episode" -> "用户明确要求删除时传 initiated_by_user=true，无需反复确认；你自主删除时必须给出明确的删除依据(reason)，系统会记录删除审计。"
     "generate_episode_audio" -> "必须基于数据库中已保存的文字稿生成，不能使用对话中尚未保存的内容。" +
         "本工具为异步后台任务：立即返回 task_id 后继续对话，不要等待或轮询；进度可用 get_background_task 查询。"
-    "publish_episode" -> "发布前必须有有效音频；发布需要用户明确授权（自动化回调轮次仅限系统授权携带时）。"
+    "publish_episode" -> "发布前必须有有效音频；visibility 必填（public/private，草稿不能单独改可见性，发布时一并指定）；" +
+        "发布需要用户明确授权（自动化回调轮次仅限系统授权携带时）。"
+    "update_episode_visibility" -> "仅已发布节目可修改可见性；发布时未指定可见性的旧节目默认 public。"
     else -> ""
 }
 
@@ -461,6 +465,7 @@ private fun defSaveEpisode(service: RadioService): RadioToolDef = RadioToolDef(
                 put("episode_id", JsonPrimitive(episode.id))
                 put("title", JsonPrimitive(episode.title))
                 put("status", JsonPrimitive(episode.status))
+                put("visibility", JsonPrimitive(episode.visibility.lowercase()))
                 put(
                     "message",
                     JsonPrimitive(
@@ -498,18 +503,20 @@ private fun defUpdateEpisodeTitle(service: RadioService): RadioToolDef = RadioTo
 
 private fun defQueryEpisodes(service: RadioService): RadioToolDef = RadioToolDef(
     name = "query_episodes",
-    description = "查询节目列表（默认只返回元数据，不含文字稿正文；需要正文时调用 get_episode_content）。" +
-        "支持栏目 / 创作Agent / 状态 / 标题搜索 / 排序 / 分页。",
+    description = "查询你可见的节目列表（默认只返回元数据，不含文字稿正文；需要正文时调用 get_episode_content）。" +
+        "支持栏目 / 创作者名字 / 状态 / 标题搜索 / 排序 / 分页。创作者按名字（creator_name）筛选，" +
+        "你不知道任何 Agent 的 ID，请直接传名字；同名 Agent 的节目会全部返回。" +
+        "可见性为 private 的节目只有创作该节目的 Agent 能查到，public 节目所有 Agent 都能查询。",
     schema = schemaOf(
         "channel_id" to prop("string", "按栏目筛选"),
-        "creator_agent_id" to prop("string", "按创作 Agent 筛选"),
+        "creator_name" to prop("string", "按创作 Agent 名字筛选（如查询你自己创建的节目就传你的名字；同名 Agent 全部命中）"),
         "status" to prop("string", "按状态筛选：DRAFT / PUBLISHED"),
         "title_query" to prop("string", "标题关键词搜索"),
         "sort_by" to prop("string", "排序：created_desc(默认) / created_asc / published_desc / title_asc"),
         "page" to prop("integer", "页码，从 0 开始"),
         "page_size" to prop("integer", "每页数量，默认 20，最大 100")
     ),
-    execute = { args, _ ->
+    execute = { args, ctx ->
         val statusRaw = args.readString("status")
         val statusInvalid = statusRaw != null &&
             statusRaw != RadioEpisodeStatus.DRAFT && statusRaw != RadioEpisodeStatus.PUBLISHED
@@ -522,26 +529,36 @@ private fun defQueryEpisodes(service: RadioService): RadioToolDef = RadioToolDef
                 "title_asc" -> EpisodeSort.TITLE_ASC
                 else -> EpisodeSort.CREATED_DESC
             }
+            val creatorName = args.readString("creator_name")
             val query = EpisodeQuery(
                 channelId = args.readString("channel_id"),
-                creatorAgentId = args.readString("creator_agent_id"),
                 status = statusRaw,
                 titleQuery = args.readString("title_query"),
                 sortBy = sortBy,
                 page = args.readInt("page") ?: 0,
                 pageSize = args.readInt("page_size") ?: 20
             )
-            val episodes = service.queryEpisodes(query)
+            val viewerAgentId = ctx.assistantId.toString()
+            val episodes = service.queryEpisodesByCreatorName(query, creatorName, viewerAgentId)
             buildJsonObject {
                 put("count", JsonPrimitive(episodes.size))
+                val noNameMatch = episodes.isEmpty() && !creatorName.isNullOrBlank()
+                if (noNameMatch) {
+                    put(
+                        "message",
+                        JsonPrimitive("没有名字匹配「$creatorName」的创作助手，或其节目均不可见（private 仅创作 Agent 本人可查询）。")
+                    )
+                }
                 put("episodes", JsonArray(episodes.map { episode ->
                     val hasAudio = service.getCurrentAudioAsset(episode.id) != null
+                    val creatorDisplayName = service.resolveCreatorName(episode.creatorAgentId)
                     buildJsonObject {
                         put("episode_id", JsonPrimitive(episode.id))
                         put("title", JsonPrimitive(episode.title))
                         put("channel_id", JsonPrimitive(episode.channelId))
                         put("status", JsonPrimitive(episode.status))
-                        put("creator_agent_id", JsonPrimitive(episode.creatorAgentId))
+                        put("visibility", JsonPrimitive(episode.visibility.lowercase()))
+                        put("creator_name", JsonPrimitive(creatorDisplayName))
                         put("has_audio", JsonPrimitive(hasAudio))
                         put("created_at", JsonPrimitive(episode.createdAt))
                         put("published_at", JsonPrimitive(episode.publishedAt))
@@ -554,20 +571,21 @@ private fun defQueryEpisodes(service: RadioService): RadioToolDef = RadioToolDef
 
 private fun defGetEpisodeContent(service: RadioService): RadioToolDef = RadioToolDef(
     name = "get_episode_content",
-    description = "获取节目完整文字稿正文。",
+    description = "获取节目完整文字稿正文。可见性为 private 的节目该节目创作者能读取。",
     schema = schemaOf(
         "episode_id" to prop("string", "节目 ID")
     ),
-    execute = { args, _ ->
+    execute = { args, ctx ->
         val episodeId = args.readString("episode_id")
         if (episodeId.isNullOrBlank()) {
             buildJsonObject { put("error", JsonPrimitive("episode_id 为必填参数")) }
         } else {
-            val episode = service.getEpisode(episodeId)
+            val episode = service.getEpisodeForAgent(episodeId, ctx.assistantId.toString())
             buildJsonObject {
                 put("episode_id", JsonPrimitive(episode.id))
                 put("title", JsonPrimitive(episode.title))
                 put("status", JsonPrimitive(episode.status))
+                put("visibility", JsonPrimitive(episode.visibility.lowercase()))
                 put("content", JsonPrimitive(episode.content))
             }
         }
@@ -623,7 +641,7 @@ private fun defGenerateEpisodeAudio(
     name = "generate_episode_audio",
     description = "为节目生成音频（异步后台任务）。调用后立即返回 task_id，音频在后台生成，" +
         "期间可以继续与用户对话，不要等待或轮询；完成后按 completion_policy 回传结果或通知用户，" +
-        "也可随时用 get_background_task 查询进度。基于数据库中当前已保存的文字稿，使用你的语音配置；" +
+        "也可随时用 get_background_task 查询进度。" +
         "仅在用户确认稿子无需修改后才调用。同一文字稿重新生成时，旧音频自动转为备用音频（3 天有效）。",
     schema = schemaOf(
         "episode_id" to prop("string", "节目 ID"),
@@ -779,15 +797,33 @@ private fun defPublishEpisode(service: RadioService, ctx: RadioToolContext): Rad
     name = "publish_episode",
     description = "发布节目。发布前校验：节目存在、文字稿存在、当前音频有效且对应当前文字稿；" +
         "缺少有效音频时发布失败（本工具不负责自动生成音频，请先调用 generate_episode_audio）。" +
+        "必须指定可见性 visibility：public = 所有 Agent 都能查询到该节目；private = 只有你（创作 Agent）与 user 能查询。" +
         "发布属于有业务影响的动作：普通对话轮次下必须有用户明确授权；" +
         "后台任务回调唤起的自动化轮次仅当携带系统授权（continue_workflow 且用户原始指令明确授权）时才能自动发布。",
     schema = schemaOf(
-        "episode_id" to prop("string", "节目 ID")
+        "episode_id" to prop("string", "节目 ID"),
+        "visibility" to prop(
+            "string",
+            "必填：节目可见性。public = 所有人(包含user)均可查询；private = 仅创作者与user可查询（user 始终可见）"
+        )
     ),
     execute = { args, toolCtx ->
         val episodeId = args.readString("episode_id")
-        if (episodeId.isNullOrBlank()) {
-            buildJsonObject { put("error", JsonPrimitive("episode_id 为必填参数")) }
+        val visibilityRaw = args.readString("visibility")
+        val visibility = RadioEpisodeRules.normalizeVisibility(visibilityRaw)
+        val missingParam = episodeId.isNullOrBlank() || visibility == null
+        if (missingParam) {
+            buildJsonObject {
+                put(
+                    "error",
+                    JsonPrimitive(
+                        when {
+                            episodeId.isNullOrBlank() -> "episode_id 为必填参数"
+                            else -> "visibility 为必填参数，只支持 public / private"
+                        }
+                    )
+                )
+            }
         } else {
             // 工具层授权校验（AGENTS.md 通用后台任务章节）：
             // 仅自动化回调轮次强制机器授权；普通对话轮次保持"用户口头授权后调用"的既有行为
@@ -806,16 +842,70 @@ private fun defPublishEpisode(service: RadioService, ctx: RadioToolContext): Rad
                     )
                 }
             }
-            val episode = service.publishEpisode(episodeId)
+            val episode = service.publishEpisode(episodeId, visibility)
             buildJsonObject {
                 put("success", JsonPrimitive(true))
                 put("episode_id", JsonPrimitive(episode.id))
                 put("title", JsonPrimitive(episode.title))
                 put("status", JsonPrimitive(episode.status))
+                put("visibility", JsonPrimitive(episode.visibility.lowercase()))
                 put("published_at", JsonPrimitive(episode.publishedAt))
                 put(
                     "message",
-                    JsonPrimitive("节目发布成功，可以调用 share_episode 工具把节目分享给 user。")
+                    JsonPrimitive(
+                        "节目发布成功（可见性 ${episode.visibility.lowercase()}）。" +
+                            "可以调用 share_episode 工具把节目分享给 user。"
+                    )
+                )
+            }
+        }
+    }
+)
+
+private fun defUpdateEpisodeVisibility(service: RadioService): RadioToolDef = RadioToolDef(
+    name = "update_episode_visibility",
+    description = "修改已发布节目的可见性：public = 所有人(包含user)都能查询到该节目；private = 只有你和user 能查询。" +
+        "仅已发布节目可修改（草稿的可见性在发布时通过 publish_episode 的 visibility 参数指定）。",
+    schema = schemaOf(
+        "episode_id" to prop("string", "节目 ID"),
+        "visibility" to prop(
+            "string",
+            "必填：目标可见性。public = 所有人均可查询；private = 仅你和user可查询"
+        )
+    ),
+    execute = { args, _ ->
+        val episodeId = args.readString("episode_id")
+        val visibility = RadioEpisodeRules.normalizeVisibility(args.readString("visibility"))
+        val missingParam = episodeId.isNullOrBlank() || visibility == null
+        if (missingParam) {
+            buildJsonObject {
+                put(
+                    "error",
+                    JsonPrimitive(
+                        when {
+                            episodeId.isNullOrBlank() -> "episode_id 为必填参数"
+                            else -> "visibility 为必填参数，只支持 public / private"
+                        }
+                    )
+                )
+            }
+        } else {
+            val episode = service.updateEpisodeVisibility(episodeId, visibility)
+            buildJsonObject {
+                put("success", JsonPrimitive(true))
+                put("episode_id", JsonPrimitive(episode.id))
+                put("title", JsonPrimitive(episode.title))
+                put("status", JsonPrimitive(episode.status))
+                put("visibility", JsonPrimitive(episode.visibility.lowercase()))
+                put(
+                    "message",
+                    JsonPrimitive(
+                        if (episode.visibility == me.rerere.rikkahub.core.data.db.entity.RadioEpisodeVisibility.PRIVATE) {
+                            "节目已设为私密：仅你与 user 可查询该节目，其他人无法查询。"
+                        } else {
+                            "节目已设为公开：所有人均可查询该节目。"
+                        }
+                    )
                 )
             }
         }

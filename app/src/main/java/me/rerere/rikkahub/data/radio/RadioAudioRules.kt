@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.radio
 
 import me.rerere.rikkahub.core.data.db.entity.RadioAudioStatus
 import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeStatus
+import me.rerere.rikkahub.core.data.db.entity.RadioEpisodeVisibility
 import java.security.MessageDigest
 
 /**
@@ -23,6 +24,50 @@ object RadioEpisodeRules {
 
     /** 标题修改对草稿与已发布节目均允许。 */
     fun canModifyTitle(status: String): Boolean = true
+
+    /**
+     * 校验并规范化可见性输入（工具层传参）：大小写不敏感接受 public/private，
+     * 其余值返回 null（调用方转为参数错误）。
+     */
+    fun normalizeVisibility(input: String?): String? {
+        val value = input?.trim()?.uppercase() ?: return null
+        return when (value) {
+            RadioEpisodeVisibility.PUBLIC -> RadioEpisodeVisibility.PUBLIC
+            RadioEpisodeVisibility.PRIVATE -> RadioEpisodeVisibility.PRIVATE
+            else -> null
+        }
+    }
+
+    /**
+     * Agent 是否可查询该节目（DB v47 可见性规则）：
+     * - viewerAgentId == null：user / 无 Agent 上下文，恒可见（UI 不做可见性过滤）；
+     * - PUBLIC：所有 Agent 均可查询；
+     * - PRIVATE：仅创作 Agent 本人可查询，其他 Agent 不可见。
+     */
+    fun isVisibleToAgent(visibility: String, creatorAgentId: String, viewerAgentId: String?): Boolean {
+        if (viewerAgentId == null) return true
+        if (visibility != RadioEpisodeVisibility.PRIVATE) return true
+        return creatorAgentId == viewerAgentId
+    }
+
+    /** 已发布节目允许 Agent 修改可见性（草稿的可见性在 publish_episode 时指定，不单独修改）。 */
+    fun canModifyVisibility(status: String): Boolean = status == RadioEpisodeStatus.PUBLISHED
+
+    /**
+     * 按创作助手名解析 creator ID 集合（Agent 不知道自身/他人 ID，节目查询按名字过滤；
+     * 纯函数供单测）：trim + 忽略大小写的精确匹配，同名助手全部命中（不区分具体是哪一个）。
+     * [creators] 为 (助手 ID, 助手名) 快照；名字为空或无匹配返回空列表。
+     */
+    fun resolveCreatorIdsByName(
+        name: String?,
+        creators: List<Pair<String, String>>
+    ): List<String> {
+        val target = name?.trim()?.lowercase().orEmpty()
+        val isBlankQuery = target.isEmpty()
+        if (isBlankQuery) return emptyList()
+        val isNameMatch = { creatorName: String -> creatorName.trim().lowercase() == target }
+        return creators.filter { isNameMatch(it.second) }.map { it.first }.distinct()
+    }
 
     /** 文字稿内容哈希（MD5 hex，小写），用于音频与文字稿一致性判定。 */
     fun contentHash(content: String): String {

@@ -40,9 +40,16 @@ interface RadioEpisodeDao {
     @Query("UPDATE radio_episodes SET content = :content, updated_at = :updatedAt WHERE id = :id")
     suspend fun updateContent(id: String, content: String, updatedAt: Long)
 
-    /** 定向发布：置状态 + 发布时间。 */
-    @Query("UPDATE radio_episodes SET status = 'PUBLISHED', published_at = :publishedAt, updated_at = :updatedAt WHERE id = :id")
-    suspend fun publish(id: String, publishedAt: Long, updatedAt: Long)
+    /** 定向发布：置状态 + 发布时间 + 可见性（publish_episode 指定，缺省 PUBLIC）。 */
+    @Query(
+        "UPDATE radio_episodes SET status = 'PUBLISHED', published_at = :publishedAt, " +
+            "visibility = :visibility, updated_at = :updatedAt WHERE id = :id"
+    )
+    suspend fun publish(id: String, publishedAt: Long, updatedAt: Long, visibility: String)
+
+    /** 定向更新可见性列（仅已发布节目，调用方负责状态校验），并刷新 updated_at。 */
+    @Query("UPDATE radio_episodes SET visibility = :visibility, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updateVisibility(id: String, visibility: String, updatedAt: Long)
 
     /** 点赞标记（播放器点赞按钮），定向列更新。 */
     @Query("UPDATE radio_episodes SET liked = :liked WHERE id = :id")
