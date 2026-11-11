@@ -14,6 +14,7 @@ import me.rerere.rikkahub.core.data.repository.CallRecordRepository
 import me.rerere.rikkahub.core.data.repository.ProfileHistoryRepository
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.UserProfile
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.service.voice.CallRecorder
 import me.rerere.rikkahub.utils.IconStorageManager
@@ -48,6 +49,26 @@ class SettingVM(
     fun updateSettings(newSettings: Settings) {
         viewModelScope.launch {
             val oldSettings = settings.value
+
+            // 手动编辑用户档案：覆盖前把被改字段的旧值写入历史版本，
+            // 与 AI update_profile 工具行为一致（fieldKey 保持相同，UI 按字段渲染）
+            val profileChanges = ProfileHistoryRepository.diffFields(
+                oldValues = oldSettings.userProfile.toHistoryFieldMap(),
+                newValues = newSettings.userProfile.toHistoryFieldMap()
+            )
+            if (profileChanges.isNotEmpty()) {
+                launch(Dispatchers.IO) {
+                    runCatching {
+                        profileHistoryRepository.saveSnapshotBeforeUpdate(
+                            targetType = ProfileHistoryEntity.TARGET_USER,
+                            targetId = ProfileHistoryEntity.TARGET_USER,
+                            changes = profileChanges,
+                            batchId = System.currentTimeMillis()
+                        )
+                    }.onFailure { Log.w("SettingVM", "saveUserProfileHistory failed", it) }
+                }
+            }
+
             settingsStore.update(newSettings)
 
             // Check if providers were removed and trigger icon cleanup
@@ -123,3 +144,20 @@ class SettingVM(
         iconManager.cleanupUnusedIcons(usedKeys)
     }
 }
+
+/**
+ * 用户档案 -> 历史版本 fieldKey 映射。
+ * fieldKey 必须与 LocalTools.update_profile 工具使用的键保持一致，
+ * 否则手动保存产生的历史无法渲染到 UI 对应字段下方。
+ */
+fun UserProfile.toHistoryFieldMap(): Map<String, String> = mapOf(
+    "birthday" to birthday,
+    "appearance" to appearance,
+    "occupation" to occupation,
+    "preferences" to preferences,
+    "diet" to diet,
+    "health" to health,
+    "taboos" to taboos,
+    "interaction_preferences" to interactionPreferences,
+    "important_relationships" to importantRelationships
+)

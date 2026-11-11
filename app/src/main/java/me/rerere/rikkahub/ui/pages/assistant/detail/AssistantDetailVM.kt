@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -155,7 +156,25 @@ class AssistantDetailVM(
             .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun updateExtendedState(state: AssistantExtendedStateEntity) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            // 手动编辑助手档案：以数据库当前值为基准做 diff，无论旧值是 AI 写的
+            // 还是用户手写的，覆盖前都先写入历史版本（fieldKey 与 AI 工具一致）
+            val oldState = extendedStateRepository.getStateById(assistantId.toString())
+                ?: AssistantExtendedStateEntity(assistantId = assistantId.toString())
+            val changes = ProfileHistoryRepository.diffFields(
+                oldValues = oldState.toHistoryFieldMap(),
+                newValues = state.toHistoryFieldMap()
+            )
+            if (changes.isNotEmpty()) {
+                runCatching {
+                    profileHistoryRepository.saveSnapshotBeforeUpdate(
+                        targetType = ProfileHistoryEntity.TARGET_ASSISTANT,
+                        targetId = assistantId.toString(),
+                        changes = changes,
+                        batchId = System.currentTimeMillis()
+                    )
+                }.onFailure { Log.w(TAG, "saveAssistantProfileHistory failed", it) }
+            }
             extendedStateRepository.updateState(state)
         }
     }
@@ -1317,3 +1336,18 @@ class AssistantDetailVM(
 data class EmbeddingProgress(val current: Int, val total: Int, val isRunning: Boolean)
 data class OptimizeProgress(val current: Int, val total: Int)
 data class EpisodeStats(val totalEpisodes: Int, val averageSignificance: Double, val coreMemoryCount: Int)
+
+/**
+ * 助手扩展档案 -> 历史版本 fieldKey 映射。
+ * fieldKey 必须与 LocalTools.update_profile 工具使用的键保持一致，
+ * 否则手动保存产生的历史无法渲染到 UI 对应字段下方。
+ */
+fun AssistantExtendedStateEntity.toHistoryFieldMap(): Map<String, String> = mapOf(
+    "personality" to personality,
+    "appearance" to appearance,
+    "preferences" to preferences,
+    "diet" to diet,
+    "taboos" to taboos,
+    "interaction_habits" to interactionHabits,
+    "relationships" to relationships
+)

@@ -7,9 +7,10 @@ import me.rerere.rikkahub.core.data.db.entity.ProfileHistoryEntity
 /**
  * 档案历史版本仓库
  *
- * 用于缓解 AI 调用 update_profile 时把档案字段整体覆盖、导致旧值丢失的问题。
- * 工具侧在执行真正的覆盖更新之前，先调用 [saveSnapshotBeforeUpdate] 把被改字段的
- * 旧值写入历史表；之后才执行原本的更新。
+ * 用于缓解档案字段被整体覆盖、导致旧值丢失的问题。无论是 AI 调用 update_profile
+ * 工具，还是用户在设置页手动保存档案，都在执行真正的覆盖更新之前，先调用
+ * [saveSnapshotBeforeUpdate] 把被改字段的旧值写入历史表——历史记录的是"覆盖前的
+ * 旧值"，与旧值的作者（AI 或用户）无关。
  *
  * 保留策略：按"字段"维度独立保留最近 [ProfileHistoryEntity.MAX_KEEP_VERSIONS]
  * 个版本，不同字段之间互不影响（例如"偏好"更新频繁保留 3 条，"职业"很少更新也
@@ -61,5 +62,27 @@ class ProfileHistoryRepository(
 
     suspend fun deleteByTarget(targetType: String, targetId: String) {
         profileHistoryDAO.deleteByTarget(targetType, targetId)
+    }
+
+    companion object {
+        /**
+         * 对比旧/新字段值映射，返回发生变化的字段：fieldKey -> (oldValue, newValue)。
+         *
+         * 纯函数，供 VM 在手动保存档案前计算 diff；仅在 newValues 与 oldValues
+         * 中同时出现且值不相等的字段会被记录，两侧键由调用方保证一致。
+         */
+        fun diffFields(
+            oldValues: Map<String, String>,
+            newValues: Map<String, String>
+        ): Map<String, Pair<String, String>> {
+            val changes = mutableMapOf<String, Pair<String, String>>()
+            newValues.forEach { (key, newValue) ->
+                val oldValue = oldValues[key] ?: return@forEach
+                if (oldValue != newValue) {
+                    changes[key] = oldValue to newValue
+                }
+            }
+            return changes
+        }
     }
 }
