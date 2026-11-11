@@ -44,10 +44,6 @@ data class RadioToolContext(
     val conversationId: Uuid? = null,
     /** 来源轮次锚点消息 ID（仅作任务来源关联）。 */
     val sourceTurnId: String? = null,
-    /** 本轮是否为后台任务回调唤起的自动化轮次（continue_workflow 授权校验开关）。 */
-    val isAutomatedCallbackTurn: Boolean = false,
-    /** 自动化轮次的机器可验证授权动作（如 publish_episode:{episodeId}）；普通对话轮次恒为空。 */
-    val authorizedActions: Set<String> = emptySet(),
 )
 
 /**
@@ -72,8 +68,6 @@ fun buildRadioAgentTools(
     mediaPlaybackController: me.rerere.rikkahub.service.media.MediaPlaybackController? = null,
     conversationId: Uuid? = null,
     sourceTurnId: String? = null,
-    isAutomatedCallbackTurn: Boolean = false,
-    authorizedActions: Set<String> = emptySet(),
     backgroundTaskManager: me.rerere.rikkahub.data.backgroundtask.BackgroundTaskManager? = null,
 ): List<Tool> {
     val ctx = RadioToolContext(
@@ -83,8 +77,6 @@ fun buildRadioAgentTools(
         mediaPlaybackController = mediaPlaybackController,
         conversationId = conversationId,
         sourceTurnId = sourceTurnId,
-        isAutomatedCallbackTurn = isAutomatedCallbackTurn,
-        authorizedActions = authorizedActions,
     )
     val defs = buildRadioToolDefs(radioService, backgroundTaskManager, ctx)
     if (defs.isEmpty()) return emptyList()
@@ -312,7 +304,7 @@ fun buildRadioToolDefs(
         defDeleteEpisode(service),
         defGenerateEpisodeAudio(service, backgroundTaskManager, ctx),
         defRestoreEpisodeAudio(service),
-        defPublishEpisode(service, ctx),
+        defPublishEpisode(service),
         defUpdateEpisodeVisibility(service),
         defShareEpisode(service)
     )
@@ -326,8 +318,7 @@ private fun buildRadioToolUsageNotes(toolName: String): String = when (toolName)
     "delete_episode" -> "用户明确要求删除时传 initiated_by_user=true，无需反复确认；你自主删除时必须给出明确的删除依据(reason)，系统会记录删除审计。"
     "generate_episode_audio" -> "必须基于数据库中已保存的文字稿生成，不能使用对话中尚未保存的内容。" +
         "本工具为异步后台任务：立即返回 task_id 后继续对话，不要等待或轮询；进度可用 get_background_task 查询。"
-    "publish_episode" -> "发布前必须有有效音频；visibility 必填（public/private，草稿不能单独改可见性，发布时一并指定）；" +
-        "发布需要用户明确授权（自动化回调轮次仅限系统授权携带时）。"
+    "publish_episode" -> "发布前必须有有效音频；visibility 必填（public/private，草稿不能单独改可见性，发布时一并指定）。"
     "update_episode_visibility" -> "仅已发布节目可修改可见性；发布时未指定可见性的旧节目默认 public。"
     else -> ""
 }
@@ -510,7 +501,7 @@ private fun defQueryEpisodes(service: RadioService): RadioToolDef = RadioToolDef
     schema = schemaOf(
         "channel_id" to prop("string", "按栏目筛选"),
         "creator_name" to prop("string", "按创作 Agent 名字筛选（如查询你自己创建的节目就传你的名字；同名 Agent 全部命中）"),
-        "status" to prop("string", "按状态筛选：DRAFT / PUBLISHED"),
+        "status" to prop("string", "按状态筛选：DRAFT / PUBLISHED；不传时默认 PUBLISHED（查询草稿请显式传 DRAFT）"),
         "title_query" to prop("string", "标题关键词搜索"),
         "sort_by" to prop("string", "排序：created_desc(默认) / created_asc / published_desc / title_asc"),
         "page" to prop("integer", "页码，从 0 开始"),
@@ -530,9 +521,11 @@ private fun defQueryEpisodes(service: RadioService): RadioToolDef = RadioToolDef
                 else -> EpisodeSort.CREATED_DESC
             }
             val creatorName = args.readString("creator_name")
+            // 未传 status 时默认只查已发布节目（查草稿需显式传 DRAFT）
+            val effectiveStatus = statusRaw ?: RadioEpisodeStatus.PUBLISHED
             val query = EpisodeQuery(
                 channelId = args.readString("channel_id"),
-                status = statusRaw,
+                status = effectiveStatus,
                 titleQuery = args.readString("title_query"),
                 sortBy = sortBy,
                 page = args.readInt("page") ?: 0,
@@ -793,13 +786,11 @@ private fun defRestoreEpisodeAudio(service: RadioService): RadioToolDef = RadioT
     }
 )
 
-private fun defPublishEpisode(service: RadioService, ctx: RadioToolContext): RadioToolDef = RadioToolDef(
+private fun defPublishEpisode(service: RadioService): RadioToolDef = RadioToolDef(
     name = "publish_episode",
     description = "发布节目。发布前校验：节目存在、文字稿存在、当前音频有效且对应当前文字稿；" +
         "缺少有效音频时发布失败（本工具不负责自动生成音频，请先调用 generate_episode_audio）。" +
-        "必须指定可见性 visibility：public = 所有 Agent 都能查询到该节目；private = 只有你（创作 Agent）与 user 能查询。" +
-        "发布属于有业务影响的动作：普通对话轮次下必须有用户明确授权；" +
-        "后台任务回调唤起的自动化轮次仅当携带系统授权（continue_workflow 且用户原始指令明确授权）时才能自动发布。",
+        "必须指定可见性 visibility：public = 所有 Agent 都能查询到该节目；private = 只有你（创作 Agent）与 user 能查询。",
     schema = schemaOf(
         "episode_id" to prop("string", "节目 ID"),
         "visibility" to prop(
@@ -807,7 +798,7 @@ private fun defPublishEpisode(service: RadioService, ctx: RadioToolContext): Rad
             "必填：节目可见性。public = 所有人(包含user)均可查询；private = 仅创作者与user可查询（user 始终可见）"
         )
     ),
-    execute = { args, toolCtx ->
+    execute = { args, _ ->
         val episodeId = args.readString("episode_id")
         val visibilityRaw = args.readString("visibility")
         val visibility = RadioEpisodeRules.normalizeVisibility(visibilityRaw)
@@ -825,23 +816,6 @@ private fun defPublishEpisode(service: RadioService, ctx: RadioToolContext): Rad
                 )
             }
         } else {
-            // 工具层授权校验（AGENTS.md 通用后台任务章节）：
-            // 仅自动化回调轮次强制机器授权；普通对话轮次保持"用户口头授权后调用"的既有行为
-            val isAutomatedTurn = toolCtx.isAutomatedCallbackTurn
-            val authorized = "publish_episode:$episodeId" in toolCtx.authorizedActions
-            if (isAutomatedTurn && !authorized) {
-                return@RadioToolDef buildJsonObject {
-                    put("success", JsonPrimitive(false))
-                    put(
-                        "error",
-                        JsonPrimitive(
-                            "本次为后台任务自动化轮次，未携带该节目的发布授权" +
-                                "（continue_workflow 需用户原始指令明确授权）。" +
-                                "请向用户说明任务已完成并请求用户确认后再发布。"
-                        )
-                    )
-                }
-            }
             val episode = service.publishEpisode(episodeId, visibility)
             buildJsonObject {
                 put("success", JsonPrimitive(true))

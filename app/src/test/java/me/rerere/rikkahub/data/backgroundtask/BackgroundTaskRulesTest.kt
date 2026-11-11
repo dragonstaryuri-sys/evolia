@@ -9,7 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 通用后台任务纯决策规则（状态机 / deadline / 冲突 / 回调投递与恢复 / 授权解析）。
+ * 通用后台任务纯决策规则（状态机 / deadline / 冲突 / 回调投递与恢复 / 指令解析）。
  */
 class BackgroundTaskRulesTest {
 
@@ -170,7 +170,7 @@ class BackgroundTaskRulesTest {
     )
 
     @Test
-    fun `instruction round trip preserves context and authorization`() {
+    fun `instruction round trip preserves context`() {
         val text = buildInstruction()
         val parsed = BackgroundTaskRules.parseCallbackInstruction(text) ?: error("解析失败")
         assertEquals("task-1", parsed.taskId)
@@ -178,31 +178,15 @@ class BackgroundTaskRulesTest {
         assertEquals("radio_audio:ep-1", parsed.refKey)
         assertEquals("succeeded", parsed.status)
         assertEquals(CompletionPolicies.CONTINUE_WORKFLOW, parsed.completionPolicy)
-        assertEquals("publish_episode:ep-1", parsed.authorizedPublishEpisodeAction)
         // callbackId 与稳定派生 ID 一致
         assertEquals(BackgroundTaskRules.callbackMessageId("task-1").toString(), parsed.callbackId)
     }
 
     @Test
-    fun `no publish authorization without continue_workflow`() {
-        val text = buildInstruction(policy = CompletionPolicies.NOTIFY_AGENT)
-        val parsed = BackgroundTaskRules.parseCallbackInstruction(text) ?: error("解析失败")
-        assertNull(parsed.authorizedPublishEpisodeAction)
-    }
-
-    @Test
-    fun `no publish authorization with empty follow up`() {
-        val text = buildInstruction(followUp = null)
-        val parsed = BackgroundTaskRules.parseCallbackInstruction(text) ?: error("解析失败")
-        assertNull(parsed.authorizedPublishEpisodeAction)
-    }
-
-    @Test
-    fun `failed instruction carries error and no authorization without follow up`() {
+    fun `failed instruction carries error message`() {
         val text = buildInstruction(status = "failed", followUp = null)
         val parsed = BackgroundTaskRules.parseCallbackInstruction(text) ?: error("解析失败")
         assertEquals("failed", parsed.status)
-        assertNull(parsed.authorizedPublishEpisodeAction)
         assertTrue(text.contains("第 3/10 句语音合成失败"))
     }
 

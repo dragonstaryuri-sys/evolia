@@ -767,9 +767,6 @@ class ChatService(
      * 用户不可见〔ChatList 按 skipContext 过滤〕、上下文白名单完整带入不截断），
      * 消息 ID 由 task_id 确定性派生——幂等，同一任务事件永不重复注入。
      * resume 模式：进程崩溃后 INJECTED 恢复——不重复注入，以既有消息为锚直接续跑生成。
-     *
-     * 授权：continue_workflow 的机器授权（authorizedActions）从持久化指令/任务参数解析，
-     * 仅作用于自动化轮次（publish 等业务动作的工具层校验开关）。
      */
     suspend fun executeBackgroundTaskCallback(
         task: me.rerere.rikkahub.core.data.db.entity.BackgroundTaskEntity,
@@ -791,7 +788,6 @@ class ChatService(
         if (isConversationBusy(conversationId)) return CallbackDeliveryResult.Busy
 
         val callbackMessageId = me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.callbackMessageId(task.id)
-        var authorizedActions: Set<String> = emptySet()
 
         if (resume) {
             // resume：指令消息必须仍是会话末节点（双检；状态已变化则回 PENDING 重判）
@@ -805,7 +801,6 @@ class ChatService(
                 instructionMsg.toContentText()
             )
             if (parsed == null || parsed.taskId != task.id) return CallbackDeliveryResult.Busy
-            authorizedActions = listOfNotNull(parsed.authorizedPublishEpisodeAction).toSet()
         } else {
             // fresh：构造指令并注入（幂等——已存在的回调消息不重复插入）
             val payload = me.rerere.rikkahub.data.backgroundtask.RadioAudioTaskCodec.decodePayload(task.payloadJson)
@@ -819,13 +814,6 @@ class ChatService(
                 errorMessage = task.errorMessage,
                 followUpInstruction = payload?.followUpInstruction,
             )
-            authorizedActions = listOfNotNull(
-                me.rerere.rikkahub.data.backgroundtask.BackgroundTaskRules.authorizedPublishAction(
-                    completionPolicy = task.completionPolicy,
-                    followUpInstruction = payload?.followUpInstruction,
-                    refKey = task.refKey
-                )
-            ).toSet()
 
             initializeConversation(conversationId, targetAssistantId = agentId)
             updateConversation(conversationId, normalizeNodes = true) { old ->
@@ -858,9 +846,7 @@ class ChatService(
                 handleMessageComplete(
                     conversationId = conversationId,
                     includeSkipContextMessages = true,
-                    responseMessageSource = MessageSource.NORMAL,
-                    isAutomatedCallbackTurn = true,
-                    authorizedActions = authorizedActions
+                    responseMessageSource = MessageSource.NORMAL
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "后台任务回调生成失败: task=${task.id}", e)
@@ -1500,11 +1486,7 @@ class ChatService(
         responseMessageSource: MessageSource = MessageSource.NORMAL,
         callId: String? = null,
         requirement: String? = null,
-        targetMessageId: Uuid? = null,
-        /** 后台任务回调唤起的自动化轮次：publish 等有业务影响的动作仅在此类轮次强制机器授权 */
-        isAutomatedCallbackTurn: Boolean = false,
-        /** 自动化轮次的机器可验证授权动作（如 publish_episode:{episodeId}），由持久化的回调指令解析 */
-        authorizedActions: Set<String> = emptySet()
+        targetMessageId: Uuid? = null
     ) {
             val mutex = conversationMutexes.computeIfAbsent(conversationId) { Mutex() }
             mutex.withLock {
@@ -1771,7 +1753,7 @@ class ChatService(
 
                             // 小机电台工具按需加载（AGENTS.md 12.4）：同样只注册两个固定函数，
                             // 需助手开启 LocalToolOption.RadioStation。
-                            // 上下文透传：会话/锚点/授权信息供后台任务创建与自动化轮次授权校验使用
+                            // 上下文透传：会话/锚点信息供后台任务创建关联使用
                             if (targetOptions.contains(LocalToolOption.RadioStation)) {
                                 addAll(buildRadioAgentTools(
                                     radioService = radioService,
@@ -1779,8 +1761,6 @@ class ChatService(
                                     mediaPlaybackController = mediaPlaybackController,
                                     conversationId = currentConversation.id,
                                     sourceTurnId = currentConversation.currentMessages.lastOrNull()?.id?.toString(),
-                                    isAutomatedCallbackTurn = isAutomatedCallbackTurn,
-                                    authorizedActions = authorizedActions,
                                     backgroundTaskManager = backgroundTaskManager,
                                 ))
                             }

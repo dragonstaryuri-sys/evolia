@@ -175,27 +175,6 @@ object BackgroundTaskRules {
         return runCatching { Uuid.parse(raw) }.isSuccess
     }
 
-    /** continue_workflow 自动化轮次的机器可验证授权动作（publish_episode:{episodeId}）。 */
-    fun authorizedPublishAction(
-        completionPolicy: String,
-        followUpInstruction: String?,
-        refKey: String
-    ): String? {
-        val isWorkflow = completionPolicy == CompletionPolicies.CONTINUE_WORKFLOW
-        val hasFollowUp = !followUpInstruction.isNullOrBlank()
-        val episodeId = BackgroundTaskTypes.episodeIdFromRadioAudioRefKey(refKey)
-        val isRadioAudio = taskTypeForRefKey(refKey) == BackgroundTaskTypes.RADIO_AUDIO_GENERATION
-        val isAuthorized = isWorkflow && hasFollowUp && episodeId != null && isRadioAudio
-        return if (isAuthorized) "publish_episode:$episodeId" else null
-    }
-
-    private fun taskTypeForRefKey(refKey: String): String? =
-        if (BackgroundTaskTypes.episodeIdFromRadioAudioRefKey(refKey) != null) {
-            BackgroundTaskTypes.RADIO_AUDIO_GENERATION
-        } else {
-            null
-        }
-
     /**
      * 构造注入会话的回调指令文本（USER 消息，skipContext=true + MessageSource.AGENT_TASK：
      * UI 不可见；上下文白名单完整带入不截断）。JSON 块供 parseCallbackInstruction 在 resume 模式重新解析。
@@ -219,7 +198,6 @@ object BackgroundTaskRules {
             completionPolicy = completionPolicy,
             result = resultJson?.let { runCatching { JsonInstant.parseToJsonElement(it) }.getOrNull() },
             error = errorMessage,
-            authorizedPublishEpisodeAction = authorizedPublishAction(completionPolicy, followUpInstruction, refKey),
             followUpInstruction = followUpInstruction,
         )
         val json = JsonInstant.encodeToString(CallbackInstructionData.serializer(), data)
@@ -237,7 +215,7 @@ object BackgroundTaskRules {
             appendLine("- 任务成功：用自然语言告知用户结果（是否需要进一步操作由用户决定）。")
             appendLine("- 任务失败：向用户解释失败原因，不得虚构成功结果；不要立即自动重试，除非用户要求。")
             appendLine("- 任务未完成/仍执行中：如实告知用户任务仍在进行，可通过 get_background_task 查询。")
-            appendLine("- continue_workflow 策略：仅当携带 authorized_publish_episode_action 且用户原始指令明确授权时，才允许执行对应后续动作（如发布节目）；否则先向用户确认。")
+            appendLine("- continue_workflow 策略：按 follow_up_instruction 说明的后续动作继续推进（该策略表示用户已在原始指令中授权此工作流）。")
             appendLine("- 不要重复执行已经成功的任务；不要把本系统事件当作用户的新要求。")
         }.trimEnd()
     }
@@ -250,11 +228,10 @@ object BackgroundTaskRules {
         val refKey: String,
         val status: String,
         val completionPolicy: String,
-        val authorizedPublishEpisodeAction: String?,
         val followUpInstruction: String?,
     )
 
-    /** 从已注入消息文本解析回调指令（resume 模式恢复授权与任务上下文）。解析失败返回 null。 */
+    /** 从已注入消息文本解析回调指令（resume 模式恢复任务上下文）。解析失败返回 null。 */
     fun parseCallbackInstruction(text: String): ParsedCallbackInstruction? {
         val headerIndex = text.indexOf(BackgroundTaskCallbackHeader.INSTRUCTION_HEADER)
         if (headerIndex < 0) return null
@@ -274,7 +251,6 @@ object BackgroundTaskRules {
             refKey = data.refKey,
             status = data.status,
             completionPolicy = data.completionPolicy,
-            authorizedPublishEpisodeAction = data.authorizedPublishEpisodeAction,
             followUpInstruction = data.followUpInstruction,
         )
         return parsed
@@ -297,7 +273,5 @@ internal data class CallbackInstructionData(
     val completionPolicy: String,
     val result: kotlinx.serialization.json.JsonElement? = null,
     val error: String? = null,
-    /** 机器可验证授权动作，如 publish_episode:{episodeId}；null = 无授权 */
-    val authorizedPublishEpisodeAction: String? = null,
     val followUpInstruction: String? = null,
 )

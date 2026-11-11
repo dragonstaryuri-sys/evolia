@@ -492,14 +492,16 @@ class RadioService(
 
     /**
      * Agent 视角按创作助手名查询节目（Agent 不知道自身/他人 ID，只能按名字查）：
-     * 同名助手的节目全部返回（不区分具体是哪一个）；名字为空或无匹配返回空列表；
-     * 可见性过滤与 [queryEpisodes] 一致。
+     * 同名助手的节目全部返回（不区分具体是哪一个）；未传名字 = 不按创作者过滤，
+     * 传了名字但无匹配返回空列表；可见性过滤与 [queryEpisodes] 一致。
      */
     suspend fun queryEpisodesByCreatorName(
         query: EpisodeQuery,
         creatorName: String?,
         viewerAgentId: String?
     ): List<RadioEpisodeEntity> {
+        val isNameFilterRequested = !creatorName.isNullOrBlank()
+        if (!isNameFilterRequested) return queryEpisodes(query, viewerAgentId)
         val assistants = settingsStore.settingsFlow.value.assistants
         val matchedCreatorIds = RadioEpisodeRules.resolveCreatorIdsByName(
             creatorName,

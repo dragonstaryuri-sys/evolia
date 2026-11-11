@@ -375,10 +375,10 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - 并发：RadioService 以 per-episode `Mutex` 串行化「文字稿更新 vs 音频生成/发布」。
 
 ### 12.4 Radio Agent LocalTools（按需 Schema，复刻 MCP 模式）
-- `data/ai/tools/RadioAgentTools.kt`：常驻仅两个固定工具 `get_radio_tool_schema`（查参数定义）与 `call_radio_tool`（执行，先经 `validateAgainstSchema` 校验）；工具目录（13 个业务工具名+描述）由 `buildRadioCatalogPrompt`（纯函数，有单测）注入 systemPrompt。工具清单：get_channels / manage_channel / save_episode（创建+更新未发布文字稿，已吸收 update_episode）/ update_episode_title / query_episodes（**创作者按名字过滤**（`creator_name`，Agent 不知道自身/他人 ID；同名 Agent 全部命中，由 `RadioEpisodeRules.resolveCreatorIdsByName` 纯函数解析；EpisodeQuery 用 `creatorAgentIds` 集合承载，分页前过滤）/ get_episode_content / delete_episode / generate_episode_audio（**异步后台任务**：立即返回 task_id 不阻塞对话，chunk 断点续传 + 50min 总时限 + completion_policy 回传，见第 13 节；不返回音色信息）/ restore_episode_audio / publish_episode（**visibility 必填**（public/private），成功提示引导调用 share_episode；自动化回调轮次的发布需机器授权，见 13.5）/ update_episode_visibility（修改已发布节目可见性，草稿不可单独改）/ share_episode（发送电台分享卡片消息，autoplay=1 自动播放；无 delete_episode_audio——音频删除不向 Agent 开放）。
+- `data/ai/tools/RadioAgentTools.kt`：常驻仅两个固定工具 `get_radio_tool_schema`（查参数定义）与 `call_radio_tool`（执行，先经 `validateAgainstSchema` 校验）；工具目录（13 个业务工具名+描述）由 `buildRadioCatalogPrompt`（纯函数，有单测）注入 systemPrompt。工具清单：get_channels / manage_channel / save_episode（创建+更新未发布文字稿，已吸收 update_episode）/ update_episode_title / query_episodes（**创作者按名字过滤**（`creator_name`，Agent 不知道自身/他人 ID；同名 Agent 全部命中，由 `RadioEpisodeRules.resolveCreatorIdsByName` 纯函数解析；EpisodeQuery 用 `creatorAgentIds` 集合承载，分页前过滤）；**status 非必填，不传默认 PUBLISHED**（查草稿显式传 DRAFT））/ get_episode_content / delete_episode / generate_episode_audio（**异步后台任务**：立即返回 task_id 不阻塞对话，chunk 断点续传 + 50min 总时限 + completion_policy 回传，见第 13 节；不返回音色信息）/ restore_episode_audio / publish_episode（**visibility 必填**（public/private），成功提示引导调用 share_episode；**不要求用户授权**，音频就绪即可发布，见 13.5）/ update_episode_visibility（修改已发布节目可见性，草稿不可单独改）/ share_episode（发送电台分享卡片消息，autoplay=1 自动播放；无 delete_episode_audio——音频删除不向 Agent 开放）。
 - 工具开关：`LocalToolOption.RadioStation`（按助手 opt-in，默认关），在 ChatService 工具装配处与 LocalTools 同路径追加。
 - 全部工具调用走 RadioService（参数校验/状态校验/音频资产管理/删除审计共用），禁止工具内直连 DAO。
-- `manage_channel`(create) 与 `publish_episode` 的授权要求（需用户明确授权）是**行为约束**，写在工具描述中；自动发布权不随功能默认获得。
+- `manage_channel`(create) 的授权要求（需用户明确授权）是**行为约束**，写在工具描述中；`publish_episode` **不设授权门槛**（2026-11-12 按产品决策移除，音频就绪即可发布）。
 
 ### 12.4a 节目可见性（DB v47，`radio_episodes.visibility`）
 - 取值 `PUBLIC`/`PRIVATE`（`RadioEpisodeVisibility` 常量；工具入参大小写不敏感，经 `RadioEpisodeRules.normalizeVisibility` 规范化，非法值报参数错误）。迁移默认 PUBLIC（历史节目全部公开）。
@@ -432,12 +432,12 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 ### 13.4 任务结果回传与 Agent 后台唤起
 - 回调状态机与任务状态**互相独立**：`NONE → PENDING → DELIVERING → INJECTED → COMPLETED`（ABANDONED 旁路）。**任务 succeeded ≠ 回调已送达**：回调失败不改任务状态、不丢结果（Agent 可随时 get_background_task 查询，卡片仍显示成功）；ABANDONED 仅表示唤起不可达，走 ai_messages 兜底通知（gate notificationAiReplyEnabled），任务结果保留。
 - 投递时机三处：任务终态即时 / ChatService 生成结束钩子（消化会话忙延后的 PENDING + INJECTED 恢复）/ App 启动扫描。会话忙（generationJob/aiTyping）→ 保持 PENDING 延后，**不无条件打断用户当前对话**；同会话多回调按 created_at 串行。
-- **注入幂等（永不重复注入）**：回调指令消息 ID = `BackgroundTaskRules.callbackMessageId(taskId)`（MD5 确定性派生，注入前查库判重）。**INJECTED 恢复按会话内容判定、不按时间租约**（生成轮可能长于任何合理租约）：回调消息后已有 ASSISTANT 响应 → COMPLETED；无响应且消息为末节点 → **resume 模式**（不重复注入，以既有消息为锚直接续跑生成，授权从持久化指令重新解析）；用户已继续对话 → 保守 COMPLETED（结果可查询）。DELIVERING 认领租约 10min 仅覆盖 claim→注入窗口。
-- 指令消息：`【系统自动化指令 - 后台任务完成】` + 结构化 JSON（task_id/task_type/status/result/error/授权动作），`skipContext=true + MessageSource.AGENT_TASK`——用户不可见（ChatList 按 skipContext 过滤）、上下文白名单完整带入不截断（GenerationHandler isContextWhitelistedSource）。新轮次经 `executeBackgroundTaskCallback` → `handleMessageComplete(isAutomatedCallbackTurn=true)` 独立执行，不伪装原 Turn。L1/L2 摘要是否把该类消息当用户表达【待验证，若纳入需在摘要选材过滤 USER 角色 AGENT_TASK 消息】。
+- **注入幂等（永不重复注入）**：回调指令消息 ID = `BackgroundTaskRules.callbackMessageId(taskId)`（MD5 确定性派生，注入前查库判重）。**INJECTED 恢复按会话内容判定、不按时间租约**（生成轮可能长于任何合理租约）：回调消息后已有 ASSISTANT 响应 → COMPLETED；无响应且消息为末节点 → **resume 模式**（不重复注入，以既有消息为锚直接续跑生成，任务上下文从持久化指令重新解析）；用户已继续对话 → 保守 COMPLETED（结果可查询）。DELIVERING 认领租约 10min 仅覆盖 claim→注入窗口。
+- 指令消息：`【系统自动化指令 - 后台任务完成】` + 结构化 JSON（task_id/task_type/status/result/error/follow_up_instruction），`skipContext=true + MessageSource.AGENT_TASK`——用户不可见（ChatList 按 skipContext 过滤）、上下文白名单完整带入不截断（GenerationHandler isContextWhitelistedSource）。新轮次经 `executeBackgroundTaskCallback` → `handleMessageComplete` 独立执行，不伪装原 Turn。L1/L2 摘要是否把该类消息当用户表达【待验证，若纳入需在摘要选材过滤 USER 角色 AGENT_TASK 消息】。
 
-### 13.5 completion_policy 与授权
-- `notify_user`：仅更新任务状态+UI+通知，不唤起 Agent；`notify_agent`（默认）：完成后唤起 Agent 决定告知/后续；`continue_workflow`：唤起 Agent 推进**已授权**工作流——`follow_up_instruction` 必填，**Agent 自填 follow_up 不构成授权**。
-- **publish 工具层强制（机器可验证）**：自动化回调轮次（`RadioToolContext.isAutomatedCallbackTurn`）必须携带授权 `publish_episode:{episodeId}`（由持久化指令解析进 authorizedActions），无授权返回结构化错误引导 Agent 向用户确认；普通对话轮次保持「用户口头授权后调用」既有行为不变。删除类操作不进入 continue_workflow 范围。
+### 13.5 completion_policy 与后续动作边界（2026-11-12 修订：publish 去授权门槛）
+- `notify_user`：仅更新任务状态+UI+通知，不唤起 Agent；`notify_agent`（默认）：完成后唤起 Agent 决定告知/后续；`continue_workflow`：唤起 Agent 按 `follow_up_instruction` 推进后续动作（必填）。
+- **publish_episode 不设授权门槛（2026-11-12 按产品决策移除）**：普通对话轮次与自动化回调轮次均可直接发布。原机器授权链路（`RadioToolContext.isAutomatedCallbackTurn` / `authorizedActions` → `BackgroundTaskRules.authorizedPublishAction` → 持久化指令 `authorized_publish_episode_action` 字段）已整体删除；历史已注入指令中的旧字段靠 JsonInstant 忽略未知 key 兼容，resume 解析不依赖它。删除类操作不进入 continue_workflow 范围（删除仍要求用户点名或 Agent 给出明确依据）。
 
 ### 13.6 通用任务工具与 UI
 - `get_background_task`（task_id 缺省 = 当前会话最近 10 条，解决上下文裁剪后找不到 task_id；所有权校验 agent_id）/ `cancel_background_task`（所有权+状态校验；committing/终态明确拒绝）。**主动查询是回调的兜底能力，不是替代品**。
