@@ -24,6 +24,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import coil3.imageLoader
 import coil3.request.ImageRequest
+import coil3.request.allowHardware
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Avatar
 
@@ -235,11 +236,15 @@ class CallMiniOverlayWindow(private val context: Context) {
     }
 
     private fun buildLayoutParams(): WindowManager.LayoutParams {
+        // WindowManager 添加的窗口不会像 Activity 那样默认硬件加速：缺 FLAG_HARDWARE_ACCELERATED
+        // 时整窗走软件渲染，Coil 默认解码的 HARDWARE 位图会在 ImageView.onDraw 抛
+        // 「Software rendering doesn't support hardware bitmaps」，必须显式开启。
         return WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
@@ -284,6 +289,9 @@ class CallMiniOverlayWindow(private val context: Context) {
     private fun loadAvatarImage(view: ImageView, data: Any) {
         val request = ImageRequest.Builder(context)
             .data(data)
+            // 兜底：悬浮窗禁用 HARDWARE 位图（44dp 头像内存开销可忽略），
+            // 防个别 ROM 硬件加速 flag 不生效时软件渲染仍会崩溃
+            .allowHardware(false)
             .target(coil3.target.ImageViewTarget(view))
             .build()
         context.imageLoader.enqueue(request)

@@ -502,11 +502,14 @@ class EvoliaMonitorService : AccessibilityService() {
 
         // FLAG_NOT_TOUCH_MODAL: 触摸不会穿透到下面的应用
         // 但退出按钮可以接收点击
+        // FLAG_HARDWARE_ACCELERATED: WindowManager 窗口不像 Activity 默认硬件加速，
+        // 缺失时整窗软件渲染（背景图虽是 BitmapFactory 软件位图不触发崩溃，仍显式开启保持一致）
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.RGBA_8888
         )
