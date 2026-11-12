@@ -115,6 +115,7 @@ import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
@@ -185,6 +186,10 @@ fun MinimalChatInput(
     voiceMode: Boolean = false,
     onVoiceModeChange: (Boolean) -> Unit = {},
     onVoiceMessageReady: (VoiceRecorderResult?, showTranscription: Boolean) -> Unit = { _, _ -> },
+    /** 临时会话模式：picker 隐藏通话/整合/上下文刷新/助手配置修改类菜单项（能力在业务层同样被拦截） */
+    temporaryMode: Boolean = false,
+    /** 临时会话内存态模型切换：仅覆盖选择器展示与本次生成，不写回助手配置 */
+    overrideChatModelId: Uuid? = null,
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -500,7 +505,8 @@ fun MinimalChatInput(
                                                 }
                                                 "picker" -> {
                                                     ModelSelector(
-                                                        modelId = assistant.chatModelId ?: settings.chatModelId,
+                                                        modelId = overrideChatModelId
+                                                            ?: assistant.chatModelId ?: settings.chatModelId,
                                                         providers = settings.providers,
                                                         onSelect = { onUpdateChatModel(it) },
                                                         type = me.rerere.ai.provider.ModelType.CHAT,
@@ -549,6 +555,8 @@ fun MinimalChatInput(
                 onRefreshContext = onRefreshContext,
                 onDeleteFile = onDeleteFile,
                 onConsolidate = onConsolidate,
+                temporaryMode = temporaryMode,
+                overrideChatModelId = overrideChatModelId,
                 onDismiss = { showPicker = false }
             )
         }
@@ -574,6 +582,8 @@ private fun MinimalPickerContent(
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult,
     onDeleteFile: (Uri) -> Unit,
     onConsolidate: () -> Unit,
+    temporaryMode: Boolean,
+    overrideChatModelId: Uuid?,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -803,25 +813,27 @@ private fun MinimalPickerContent(
             // Files button - icon only, no label
             MinimalFileButtonGroupedIconOnly(
                 icon = Icons.Rounded.FolderOpen,
-                shape = if (BuildConfig.DEBUG) middleButtonShape else rightButtonShape,
+                shape = if (!temporaryMode && BuildConfig.DEBUG) middleButtonShape else rightButtonShape,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
                     filePickerLauncher.launch("*/*")
                 }
             )
 
-            // Voice Call button
-            MinimalFileButtonGroupedIconOnly(
-                icon = Icons.Rounded.Call,
-                shape = rightButtonShape,
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                onClick = {
-                    haptics.perform(HapticPattern.Pop)
-                    // 不再强制关闭深度思考（Reasoning）：通话保持用户原有设置不变
-                    onStartCall()
-                    onDismiss()
-                }
-            )
+            // Voice Call button（临时会话隐藏）
+            if (!temporaryMode) {
+                MinimalFileButtonGroupedIconOnly(
+                    icon = Icons.Rounded.Call,
+                    shape = rightButtonShape,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        // 不再强制关闭深度思考（Reasoning）：通话保持用户原有设置不变
+                        onStartCall()
+                        onDismiss()
+                    }
+                )
+            }
 
         }
 
@@ -832,7 +844,10 @@ private fun MinimalPickerContent(
         )
 
         // Model picker - uses actual model icon, full-width clickable
-        val currentModel = settings.getCurrentChatModel()
+        // 临时会话展示内存态 override 模型（不写回助手配置）
+        val currentModel = settings.findModelById(
+            overrideChatModelId ?: assistant.chatModelId ?: settings.chatModelId
+        )
         val provider = currentModel?.findProvider(providers = settings.providers)
         MinimalPickerItem(
             icon = {
@@ -861,6 +876,7 @@ private fun MinimalPickerContent(
         )
 
         // Reasoning picker - only show if model has reasoning ability (same as floating toolbar)
+        // 临时会话可用：思考预算写入会话内助手覆盖，不落正式配置
         if (currentModel?.abilities?.contains(me.rerere.ai.provider.ModelAbility.REASONING) == true) {
             val reasoningLevel = ReasoningLevel.fromBudgetTokens(assistant.thinkingBudget)
             val reasoningSubtitle = stringResource(when (reasoningLevel) {
@@ -886,7 +902,7 @@ private fun MinimalPickerContent(
             )
         }
 
-        // UI Mode Toggle
+        // UI Mode Toggle（临时会话可用：微信模式切换写入会话内助手覆盖）
         MinimalPickerItem(
             icon = {
                 Icon(
@@ -915,6 +931,7 @@ private fun MinimalPickerContent(
         } else null
 
         // Show provider icon when search is enabled and a provider is configured
+        // 临时会话可用：搜索开关/服务商写入会话内助手覆盖
         MinimalPickerItem(
             icon = {
                 // Only show provider icon when search is actually enabled
@@ -946,6 +963,7 @@ private fun MinimalPickerContent(
             settings.modes.count { it.defaultEnabled }
         }
         val modesActive = activeModesCount > 0
+        // 临时会话可用：模式启停写入内存态会话（enabledModeIds 随会话销毁）
         MinimalPickerItem(
             icon = {
                 Icon(
@@ -963,6 +981,7 @@ private fun MinimalPickerContent(
         )
 
         // Lorebooks - show active count and blue icon when enabled
+        // 临时会话可用：世界书启停写入会话内助手覆盖
         val activeLorebooksCount = assistant.enabledLorebookIds.size
         val lorebooksActive = activeLorebooksCount > 0
         MinimalPickerItem(
@@ -982,8 +1001,8 @@ private fun MinimalPickerContent(
             }
         )
 
-        // Consolidate Memory
-        MinimalPickerItem(
+        // Consolidate Memory（临时会话隐藏：立即整合在临时会话被业务层禁止）
+        if (!temporaryMode) MinimalPickerItem(
             icon = {
                 Icon(
                     imageVector = Icons.Rounded.Summarize,
@@ -1048,7 +1067,7 @@ private fun MinimalPickerContent(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 ModelList(
-                    currentModel = assistant.chatModelId ?: settings.chatModelId,
+                    currentModel = overrideChatModelId ?: assistant.chatModelId ?: settings.chatModelId,
                     providers = filteredProviders,
                     modelType = me.rerere.ai.provider.ModelType.CHAT,
                     onSelect = { selectedModel: Model ->

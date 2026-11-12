@@ -212,6 +212,10 @@ fun ChatInput(
     voiceMode: Boolean = false,
     onVoiceModeChange: (Boolean) -> Unit = {},
     onVoiceMessageReady: (VoiceRecorderResult?, showTranscription: Boolean) -> Unit = { _, _ -> },
+    /** 临时会话模式：隐藏整合/上下文刷新/助手配置修改类菜单项（能力在业务层同样被拦截） */
+    temporaryMode: Boolean = false,
+    /** 临时会话内存态模型切换：仅覆盖选择器展示与本次生成，不写回助手配置 */
+    overrideChatModelId: Uuid? = null,
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -661,9 +665,10 @@ fun ChatInput(
                                                             }
                                                         }
                                                     } else {
-                                                        // Model Selector
+                                                        // Model Selector（临时会话下可切换，仅作用于本会话内存态）
                                                         ModelSelector(
-                                                            modelId = assistant.chatModelId ?: settings.chatModelId,
+                                                            modelId = overrideChatModelId
+                                                                ?: assistant.chatModelId ?: settings.chatModelId,
                                                             providers = settings.providers,
                                                             onSelect = {
                                                                 onUpdateChatModel(it)
@@ -711,6 +716,7 @@ fun ChatInput(
                             assistant = assistant,
                             settings = settings,
                             isAiTyping = isAiTyping,
+                            temporaryMode = temporaryMode,
                             onClearContext = onClearContext,
                             onUpdateAssistant = onUpdateAssistant,
                             onUpdateConversation = onUpdateConversation,
@@ -1336,6 +1342,7 @@ internal fun FilesPicker(
     state: ChatInputState,
     settings: Settings,
     isAiTyping: Boolean = false,
+    temporaryMode: Boolean = false,
     onClearContext: () -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateConversation: (Conversation) -> Unit,
@@ -1394,6 +1401,7 @@ internal fun FilesPicker(
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         // Row 1: Take Photo, Pick Image, Pick File, Start Call
+        // 临时会话：仅保留媒体输入能力，隐藏通话按钮并使用完整圆角
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1403,7 +1411,7 @@ internal fun FilesPicker(
             Box(modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()) {
-                TakePicButton(shape = topLeftShape) {
+                TakePicButton(shape = if (temporaryMode) RoundedCornerShape(24.dp) else topLeftShape) {
                     state.addImages(it)
                     onDismiss()
                 }
@@ -1411,7 +1419,7 @@ internal fun FilesPicker(
             Box(modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()) {
-                ImagePickButton(shape = topMiddleShape) {
+                ImagePickButton(shape = if (temporaryMode) AppShapes.ListItemSmall else topMiddleShape) {
                     state.addImages(it)
                     onDismiss()
                 }
@@ -1421,7 +1429,11 @@ internal fun FilesPicker(
                 .fillMaxHeight()) {
                 val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
                 FilePickButton(
-                    shape = if (BuildConfig.DEBUG) topMiddleShape else topRightShape,
+                    shape = when {
+                        temporaryMode -> RoundedCornerShape(topStart = 10.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 24.dp)
+                        BuildConfig.DEBUG -> topMiddleShape
+                        else -> topRightShape
+                    },
                     allowAllTypes = isPythonEnabled
                 ) {
                     state.addFiles(it)
@@ -1429,16 +1441,17 @@ internal fun FilesPicker(
                 }
             }
 
-            // 通话按钮仅在 Debug 版本显示，Release 版本隐藏
-
-            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                VoiceCallButton(
-                    assistant = assistant,
-                    onUpdateAssistant = onUpdateAssistant,
-                    shape = topRightShape,
-                    onStartCall = onStartCall
-                ) {
-                    onDismiss()
+            // 通话按钮仅在 Debug 版本显示，Release 版本隐藏；临时会话一律隐藏
+            if (!temporaryMode && BuildConfig.DEBUG) {
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    VoiceCallButton(
+                        assistant = assistant,
+                        onUpdateAssistant = onUpdateAssistant,
+                        shape = topRightShape,
+                        onStartCall = onStartCall
+                    ) {
+                        onDismiss()
+                    }
                 }
             }
 
@@ -1446,6 +1459,7 @@ internal fun FilesPicker(
         }
 
         // Row 2: Modes and Lorebooks
+        // 临时会话可用：模式启停写内存态会话、世界书启停写会话内助手覆盖，均不落正式配置
         if (!isKeyboardVisible) {
             val activeModeCount = settings.modes.count { mode ->
                 if (conversation.enabledModeIds.isEmpty()) mode.defaultEnabled else conversation.enabledModeIds.contains(mode.id)
@@ -1508,7 +1522,7 @@ internal fun FilesPicker(
                 }
             }
 
-            // Row 3: ReasoningTokens and UI Mode Switcher
+            // Row 3: ReasoningTokens and UI Mode Switcher（临时会话可用：写入会话内助手覆盖）
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1614,8 +1628,8 @@ internal fun FilesPicker(
                 }
             }
 
-            // Row 4: Consolidation Button
-            CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
+            // Row 4: Consolidation Button（临时会话不展示：整合在业务层被禁止）
+            if (!temporaryMode) CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                 Surface(
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     shape = if (showContextRefresh) middleLeftShape else fullBottomShape,
@@ -1638,8 +1652,8 @@ internal fun FilesPicker(
                 }
             }
 
-            // Row 5: Context Refresh
-            if (showContextRefresh) {
+            // Row 5: Context Refresh（临时会话不展示：上下文刷新/总结在业务层被禁止）
+            if (showContextRefresh && !temporaryMode) {
                 CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                     Surface(
                         modifier = Modifier.fillMaxWidth().height(56.dp),

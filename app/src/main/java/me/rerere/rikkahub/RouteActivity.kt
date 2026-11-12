@@ -88,6 +88,7 @@ import me.rerere.rikkahub.ui.pages.assistant.AssistantImportDoubaoPage
 import me.rerere.rikkahub.ui.pages.assistant.AssistantImportMemoryPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
+import me.rerere.rikkahub.ui.pages.chat.TemporaryChatPage
 import me.rerere.rikkahub.ui.pages.call.CallDetailPage
 import me.rerere.rikkahub.ui.pages.call.HistoryCallPage
 import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
@@ -392,6 +393,14 @@ class RouteActivity : AppCompatActivity() {
                             searchQuery = route.searchQuery,
                             targetMessageId = route.targetMessageId
                         )
+                    }
+
+                    composable<Screen.TemporaryChat>(
+                        enterTransition = { fadeIn() },
+                        exitTransition = { fadeOut() },
+                    ) { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.TemporaryChat>()
+                        TemporaryChatPage(assistantId = Uuid.parse(route.assistantId))
                     }
 
                     composable<Screen.ShareHandler> { backStackEntry ->

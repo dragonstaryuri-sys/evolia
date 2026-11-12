@@ -12,6 +12,7 @@ import me.rerere.rikkahub.ui.pages.radio.RadioEpisodeVM
 import me.rerere.rikkahub.ui.pages.radio.RadioHomeVM
 import me.rerere.rikkahub.ui.pages.call.HistoryCallVM
 import me.rerere.rikkahub.ui.pages.chat.ChatVM
+import me.rerere.rikkahub.ui.pages.chat.TemporaryChatVM
 import me.rerere.rikkahub.ui.pages.chat.ChatListVM
 import me.rerere.rikkahub.ui.pages.chat.ChatHistorySearchVM
 import me.rerere.rikkahub.ui.pages.developer.DeveloperVM
@@ -54,6 +55,18 @@ val viewModelModule = module {
             customTtsState = get(),
             callRecordRepository = get(),
             radioService = get()
+        )
+    }
+    viewModel<TemporaryChatVM> { params ->
+        TemporaryChatVM(
+            assistantId = params.get(),
+            context = get(),
+            settingsStore = get(),
+            chatService = get(),
+            memoryRepo = get(),
+            asrManager = get(),
+            voiceMessagePlayer = get(),
+            appScope = get()
         )
     }
     viewModel<SettingVM> {

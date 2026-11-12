@@ -720,6 +720,10 @@
   <string name="setting_model_page_embedding_model_desc">用于文本嵌入的模型（所有记忆相关的功能都需要此模型）。</string>
   <string name="temporary_chat_title">临时对话</string>
   <string name="temporary_chat_description">助手不会记住此对话，一旦关闭将无法再次访问。</string>
+  <string name="temporary_chat_exit_title">退出临时会话？</string>
+  <string name="temporary_chat_exit_message">退出后，本次临时会话的所有消息和相关数据都将被清空，且无法恢复。确定退出吗？</string>
+  <string name="temporary_chat_exit_confirm">退出并清空</string>
+  <string name="temporary_chat_exit_cancel">继续聊天</string>
   <string name="delete_memory_confirmation">确定要删除这条记忆吗？此操作无法撤销。</string>
   <string name="done">完成</string>
   <string name="loading">加载中...</string>

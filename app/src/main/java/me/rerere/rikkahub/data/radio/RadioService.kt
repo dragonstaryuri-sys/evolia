@@ -601,11 +601,25 @@ class RadioService(
         val targetFile = File(RadioAudioGenerator.audioDir(context), "$audioId.m4a")
         targetFile.parentFile?.mkdirs()
 
+        // 流式生成分句（逐句落盘 + 流式编码）：与后台任务同一条 generateChunked 路径。
+        // 禁止回退整段载入内存的合成方式——长稿 PCM 全量驻留（50 分钟 ≈ 144MB）叠加
+        // 拼接/WAV 降级的多重复制，峰值可耗尽 Java 堆（历史 OOM 根因之一）。
+        val workDir = File(RadioAudioGenerator.audioDir(context), "tmp/sync_$audioId")
         val result = try {
-            audioGenerator.generate(content, providerSetting, targetFile)
+            audioGenerator.generateChunked(
+                content = content,
+                providerSetting = providerSetting,
+                providerId = providerSetting.id.toString(),
+                workDir = workDir,
+                outFile = targetFile
+            )
         } catch (e: kotlinx.coroutines.CancellationException) {
             targetFile.delete()
             throw e
+        } finally {
+            // 成功时 generateChunked 已自清工作目录；失败路径会保留 chunk 供后台任务续传，
+            // 同步调用无任务可续传，这里统一兜底清理（幂等）。
+            runCatching { audioGenerator.cleanupWorkDir(workDir) }
         }
         when (result) {
             is RadioAudioGenerator.Result.Failure -> {

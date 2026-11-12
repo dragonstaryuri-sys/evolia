@@ -107,30 +107,6 @@ fun AssistantMemoryConsolidationSubPage(
                             }
                         )
                     }
-
-                    if (assistant.enableMemory) {
-                        // Consolidation Delay
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = "Consolidation Delay: ${assistant.consolidationDelayMinutes} minutes",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "Wait time after a chat ends before consolidating it.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            androidx.compose.material3.Slider(
-                                value = assistant.consolidationDelayMinutes.toFloat(),
-                                onValueChange = {
-                                    onUpdate(assistant.copy(consolidationDelayMinutes = it.toInt()))
-                                },
-                                valueRange = 0f..240f, // 0 to 4 hours
-                                steps = 23 // 10 min steps approx
-                            )
-                        }
-                    }
                 }
             }
         }

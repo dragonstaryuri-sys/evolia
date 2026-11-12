@@ -96,7 +96,6 @@ data class Assistant(
     val maxTemporarySummariesToInclude: Int = 3,
     val enableScheduleAccess: Boolean = true,
     val uiSettings: AssistantUISettings = AssistantUISettings(),
-    val consolidationDelayMinutes: Int = 30,
     val lastConsolidationTime: Long = 0L,
     val lastConsolidationResult: String = "",
 

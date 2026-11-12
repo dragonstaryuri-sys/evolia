@@ -796,7 +796,7 @@ class ChatVM(
         }
     }
 
-    fun handleMessageSend(content: List<UIMessagePart>, answer: Boolean = true, isTemporaryChat: Boolean = false) {
+    fun handleMessageSend(content: List<UIMessagePart>, answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
         viewModelScope.launch {
             val targetId = _currentActiveId.value
@@ -825,7 +825,6 @@ class ChatVM(
                 conversationId = targetId,
                 content = processedContent,
                 answer = answer,
-                isTemporaryChat = isTemporaryChat,
                 includeSkipContextMessages = true
             )
             // 注入新发送的节点到窗口

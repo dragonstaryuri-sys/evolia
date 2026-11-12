@@ -47,6 +47,7 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
+import me.rerere.rikkahub.data.ai.tools.TemporarySessionToolRules
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
@@ -287,6 +288,13 @@ class GenerationHandler(
          */
         private val CALL_BLOCKED_TOOLS = setOf("generate_image", "eval_python", "eval_javascript")
 
+        /**
+         * 临时会话禁止执行的工具名黑名单（TemporarySessionToolRules 唯一事实源）：
+         * 装配层已按白名单过滤不注册这些工具，此处为执行层兜底拦截，
+         * 防止模型幻觉调用已下线工具产生正式数据或现实副作用（含记忆写入类）。
+         */
+        private val TEMPORARY_BLOCKED_TOOLS = TemporarySessionToolRules.blockedToolNames
+
         /** 瞬态断线自动重试前的等待间隔，给网络栈（如 Wi-Fi 重连）留出恢复时间 */
         private const val TRANSIENT_NETWORK_RETRY_DELAY_MS = 1000L
     }
@@ -317,6 +325,7 @@ class GenerationHandler(
         responseMessageSource: MessageSource = MessageSource.NORMAL,
         conversationId: Uuid? = null,
         isCallMode: () -> Boolean = { false },
+        isTemporarySession: () -> Boolean = { false },
         callId: String? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
@@ -357,43 +366,47 @@ class GenerationHandler(
         val toolsInternal = buildList {
                 Log.d(TAG, "generateInternal: build tools($assistant)")
                 if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) {
-                    buildMemoryTools(
-                        assistantId = assistant.id.toString(),
-                        onCreation = { content ->
-                            val relevant = memoryRepo.retrieveRelevantMemoriesWithScores(
-                                assistantId = assistant.id.toString(),
-                                query = content,
-                                limit = 3,
-                                similarityThreshold = 0.8f,
-                                mode = assistant.memoryRetrievalMode
-                            )
+                    // 临时会话记忆只读：不注册 create/edit/delete_memory 写工具，
+                    // 即使模型幻觉调用也会被下方 TEMPORARY_BLOCKED_TOOLS 执行层拦截
+                    if (!isTemporarySession()) {
+                        buildMemoryTools(
+                            assistantId = assistant.id.toString(),
+                            onCreation = { content ->
+                                val relevant = memoryRepo.retrieveRelevantMemoriesWithScores(
+                                    assistantId = assistant.id.toString(),
+                                    query = content,
+                                    limit = 3,
+                                    similarityThreshold = 0.8f,
+                                    mode = assistant.memoryRetrievalMode
+                                )
 
-                            // 检索候选同时包含 core 记忆与 L1 segment，只有 core 记忆可被
-                            // create_memory 的相似合并路径更新；直接拿 segment id 查 memories 表
-                            // 会得到 null（IllegalStateException: Memory not found），
-                            // 或与 core 记忆 id 撞号时静默覆盖错误记忆
-                            val existing = relevant.firstOrNull { it.first.type == MemoryType.CORE }
-                            if (existing != null) {
-                                val score = existing.second
-                                val memory = existing.first
-                                if (score > 0.98f) {
-                                    Log.i(TAG, "Near-identical memory (score: $score), skipping creation.")
-                                    memory
+                                // 检索候选同时包含 core 记忆与 L1 segment，只有 core 记忆可被
+                                // create_memory 的相似合并路径更新；直接拿 segment id 查 memories 表
+                                // 会得到 null（IllegalStateException: Memory not found），
+                                // 或与 core 记忆 id 撞号时静默覆盖错误记忆
+                                val existing = relevant.firstOrNull { it.first.type == MemoryType.CORE }
+                                if (existing != null) {
+                                    val score = existing.second
+                                    val memory = existing.first
+                                    if (score > 0.98f) {
+                                        Log.i(TAG, "Near-identical memory (score: $score), skipping creation.")
+                                        memory
+                                    } else {
+                                        Log.i(TAG, "High-similarity memory (score: $score), updating existing entry.")
+                                        memoryRepo.updateContent(memory.id, content)
+                                    }
                                 } else {
-                                    Log.i(TAG, "High-similarity memory (score: $score), updating existing entry.")
-                                    memoryRepo.updateContent(memory.id, content)
+                                    memoryRepo.addMemory(assistant.id.toString(), content)
                                 }
-                            } else {
-                                memoryRepo.addMemory(assistant.id.toString(), content)
+                            },
+                            onUpdate = { id, content ->
+                                memoryRepo.updateContent(id, content)
+                            },
+                            onDelete = { id ->
+                                memoryRepo.deleteMemory(id)
                             }
-                        },
-                        onUpdate = { id, content ->
-                            memoryRepo.updateContent(id, content)
-                        },
-                        onDelete = { id ->
-                            memoryRepo.deleteMemory(id)
-                        }
-                    ).let(this::addAll)
+                        ).let(this::addAll)
+                    }
 
                     add(
                         Tool(
@@ -770,6 +783,27 @@ class GenerationHandler(
                         toolCallId = toolCall.toolCallId,
                         content = buildJsonObject {
                             put("error", JsonPrimitive(decision.reason))
+                        },
+                        arguments = runCatching {
+                            json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
+                        }.getOrElse { buildJsonObject {} },
+                        metadata = toolCall.metadata
+                    )
+                    return@forEachIndexed
+                }
+
+                // 临时会话拦截记忆写入类工具（执行层兜底）：临时会话记忆只读，
+                // 返回明确错误让 AI 改为口头说明，绝不产生正式记忆数据。
+                if (isTemporarySession() && toolCall.toolName in TEMPORARY_BLOCKED_TOOLS) {
+                    Log.i(TAG, "[$requestTag] ToolCall round=$toolRound blocked memory-write tool '${toolCall.toolName}' in temporary session")
+                    results += UIMessagePart.ToolResult(
+                        toolName = toolCall.toolName,
+                        toolCallId = toolCall.toolCallId,
+                        content = buildJsonObject {
+                            put(
+                                "error",
+                                JsonPrimitive("当前为临时会话（记忆只读），不能创建/修改/删除记忆。本次对话内容不会保存，请直接用文字回复用户。")
+                            )
                         },
                         arguments = runCatching {
                             json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })

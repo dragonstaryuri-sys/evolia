@@ -288,22 +288,26 @@ class MemoryConsolidationWorker(
         val currentSettings = settingsStore.settingsFlow.first()
         val currentAssistant = currentSettings.assistants.find { it.id == assistant.id } ?: assistant
 
-        val conversations = conversationRepository.getConversationsOfAssistant(currentAssistant.id).first()
+        // 轻量元数据列表（不含任何消息内容）——3:00 AM 定时同步会遍历全部会话做计数/排序，
+        // 禁止全量水合（历史 OOM 根因：全部会话×节点行×消息解码一次性载入内存）
+        val conversationMetas = conversationRepository.getConversationMetasOfAssistant(currentAssistant.id)
 
-        val toConsolidateEpisodes = conversations.filter { conv ->
-            if (!currentAssistant.enableMemoryConsolidation) return@filter false
-            val existingEpisode = kotlinx.coroutines.runBlocking {
-                chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
+        // L2 候选筛选：逐会话查 DB（锚点后的增量消息数），按需拉取，不整批驻留。
+        // 本循环唯一调用方是手动「整合记忆」按钮（3AM 的 INCREMENTAL_MASTER 跳过 L2、
+        // 单会话手动走 manualConsolidate）——用户显式要求"现在整合"，不判断静置时长：
+        // 切换归档仅在「切到新会话」时触发（返回主页/详情页不归档），刚聊完直接来按
+        // 按钮的会话静置 <30min，恰是最需要被本次捞起的目标，静置条件会把它们挡在门外。
+        // 并发写入安全由归档锚点保证（归到当前锚点，剩余消息下轮再归）。
+        // 保留 ≥4 阈值：避免碎片化的小增量归档（1-3 条单独跑一次 LLM 摘要性价比低）。
+        val toConsolidateEpisodes = mutableListOf<Conversation>()
+        if (currentAssistant.enableMemoryConsolidation) {
+            for (convMeta in conversationMetas) {
+                val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(convMeta.id.toString())
+                val anchorTime = existingEpisode?.endTime ?: 0L
+                val increment = conversationRepository.countNewMessages(convMeta.id.toString(), anchorTime)
+                if (increment < 4) continue
+                toConsolidateEpisodes.add(convMeta)
             }
-            val anchorTime = existingEpisode?.endTime ?: 0L
-            val increment = kotlinx.coroutines.runBlocking {
-                conversationRepository.countNewMessages(conv.id.toString(), anchorTime)
-            }
-            // 自动扫描依然保持 4 条阈值
-            if (increment < 4) return@filter false
-            val delayMillis = currentAssistant.consolidationDelayMinutes * 60 * 1000L
-            val timeSinceUpdate = System.currentTimeMillis() - conv.updateAt.toEpochMilli()
-            timeSinceUpdate >= delayMillis
         }
 
         // 1. 解析情节记忆 (L2) 模型
@@ -330,18 +334,20 @@ class MemoryConsolidationWorker(
                 try {
                     val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(convIdString)
 
+                    // 按需拉取完整会话（元数据列表不含消息内容）；会话已被删除则跳过
+                    val fullConv = conversationRepository.getConversationById(conv.id) ?: continue
+
                     val summary = generateRollingSummary(
                         handler = summarizer.handler,
                         providerSetting = summarizer.provider,
                         model = summarizer.model,
                         assistant = currentAssistant,
-                        conv = conv,
+                        conv = fullConv,
                         existingEpisode = existingEpisode,
                         timeoutMs = currentSettings.chatGenerationTimeoutMinutes * 60 * 1000L
                     )
 
                     if (summary.isNotBlank()) {
-                        val fullConv = conversationRepository.getConversationById(conv.id) ?: conv
                         val anchorTime = existingEpisode?.endTime ?: 0L
                         val newMessages = fullConv.currentMessages.filter {
                             it.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds() > anchorTime
@@ -380,10 +386,14 @@ class MemoryConsolidationWorker(
         var masterError: String? = null
         // 仅在明确传入指令且开启了功能时更新
         if ((forceMaster || incrementalMaster) && currentAssistant.enableMasterMemory) {
-            // 不管手动还是自动触发，都只取最新的 5 个会话作为素材
-            val targetConversations = conversations
-                .filter { it.currentMessages.size >= 2 }
+            // 不管手动还是自动触发，都只取最新的 5 个会话作为素材。
+            // 元数据排序取前 10 个候选，再按需拉取完整会话过滤（currentMessages.size >= 2）——
+            // 避免为了选 5 个会话把全部会话载入内存。
+            val targetConversations = conversationMetas
                 .sortedByDescending { it.updateAt.toEpochMilli() }
+                .take(10)
+                .mapNotNull { conversationRepository.getConversationById(it.id) }
+                .filter { it.currentMessages.size >= 2 }
                 .take(5)
                 .reversed() // 恢复时间正序排列，利于 AI 理解
 
@@ -489,9 +499,9 @@ class MemoryConsolidationWorker(
         existingEpisode: ChatEpisodeEntity?,
         timeoutMs: Long
     ): String {
+        // conv 由调用方按需加载（完整会话），此处不再重复拉取
         val anchorTime = existingEpisode?.endTime ?: 0L
-        val fullConv = conversationRepository.getConversationById(conv.id) ?: conv
-        val newMessages = fullConv.currentMessages.filter {
+        val newMessages = conv.currentMessages.filter {
             it.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds() > anchorTime
         }
 

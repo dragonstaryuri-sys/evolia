@@ -16,6 +16,14 @@ sealed interface Screen {
         val targetMessageId: String? = null
     ) : Screen
 
+    /**
+     * 临时会话独立页面：固定 assistantId 的短生命周期聊天房间。
+     * 会话身份由 ChatService.TemporaryChatSessionRegistry 管理，不写任何正式数据库表，
+     * 退出（经确认）即销毁全部临时数据。
+     */
+    @Serializable
+    data class TemporaryChat(val assistantId: String) : Screen
+
     @Serializable
     data class ShareHandler(val text: String, val streamUri: String? = null) : Screen
 

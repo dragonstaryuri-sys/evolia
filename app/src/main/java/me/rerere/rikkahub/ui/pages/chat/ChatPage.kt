@@ -586,7 +586,6 @@ private fun ChatPageContent(
     // Combined typing status
     val effectiveTypingIndicator = isAiTyping || isAnyMessageAnimating
     var previewMode by rememberSaveable { mutableStateOf(false) }
-    var isTemporaryChat by rememberSaveable { mutableStateOf(false) }
 
     // 通话激活状态：仅用于「返回键优先缩小通话」；通话 UI 已上移到 RouteActivity 全局遮罩
     val isCallActive by vm.isCallActive.collectAsStateWithLifecycle()
@@ -671,7 +670,6 @@ private fun ChatPageContent(
                         },
                         bigScreen = bigScreen,
                         previewMode = previewMode,
-                        isTemporaryChat = isTemporaryChat,
                         onBack = handleBack,
                         onNewChat = {
                             vm.startNewTopic()
@@ -682,8 +680,11 @@ private fun ChatPageContent(
                         onUpdateSettings = { newSettings ->
                             vm.updateSettings(newSettings)
                         },
-                        onToggleTemporaryChat = {
-                            isTemporaryChat = !isTemporaryChat
+                        onEnterTemporaryChat = {
+                            // 临时会话独立页面：固定当前助手，创建独立临时 Session
+                            navController.navigate(
+                                Screen.TemporaryChat(assistantId = currentAssistant.id.toString())
+                            )
                         },
                         isLoading = effectiveTypingIndicator,
                         isReadOnly = !targetMessageId.isNullOrBlank()
@@ -835,44 +836,12 @@ private fun ChatPageContent(
                     val hasAnyPresetMessages = currentAssistant.presetMessages.isNotEmpty()
                     val effectiveDisplaySetting = setting.getEffectiveDisplaySetting(currentAssistant)
 
-                    AnimatedVisibility(
-                        visible = isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && targetMessageId.isNullOrBlank(),
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                        modifier = Modifier.align(Alignment.Center)
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                            modifier = Modifier.padding(32.dp)
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(16.dp),
-                                modifier = Modifier.padding(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.HistoryToggleOff,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(64.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                                Text(
-                                    text = stringResource(R.string.temporary_chat_description),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                )
-                            }
-                        }
-                    }
-
                     val isKeyboardOpen = WindowInsets.isImeVisible
                     val hasTextInput =
                         inputState.textContent.text.isNotEmpty() || inputState.messageContent.isNotEmpty()
 
                     val shouldShowNewChatContent =
-                        isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && !hasTextInput && !isKeyboardOpen
+                        isConversationLoaded && !hasUserSentMessages && !hasAnyPresetMessages && !hasTextInput && !isKeyboardOpen
                     val errorSelectModelText = stringResource(R.string.error_select_model_first)
 
                     if (showRegenerateConfirmDialog && pendingRegenerateMessage != null) {
@@ -945,7 +914,7 @@ private fun ChatPageContent(
                     }
 
                     AnimatedVisibility(
-                        visible = (hasUserSentMessages || hasAnyPresetMessages || isTemporaryChat || !shouldShowNewChatContent) && targetMessageId.isNullOrBlank(),
+                        visible = (hasUserSentMessages || hasAnyPresetMessages || !shouldShowNewChatContent) && targetMessageId.isNullOrBlank(),
                         enter = fadeIn(),
                         exit = fadeOut(),
                         modifier = Modifier.align(Alignment.BottomCenter)
@@ -997,8 +966,7 @@ private fun ChatPageContent(
                                     onClickSuggestion = { suggestion ->
                                         if (currentChatModel != null) {
                                             vm.handleMessageSend(
-                                                listOf(UIMessagePart.Text(suggestion)),
-                                                isTemporaryChat = isTemporaryChat
+                                                listOf(UIMessagePart.Text(suggestion))
                                             )
                                         } else {
                                             toaster.show(errorSelectModelText, type = ToastType.Error)
@@ -1030,8 +998,7 @@ private fun ChatPageContent(
                                                 ); return@MinimalChatInput
                                             }
                                             vm.handleMessageSend(
-                                                inputState.getSendContents(),
-                                                isTemporaryChat = isTemporaryChat
+                                                inputState.getSendContents()
                                             )
                                         }
                                         inputState.clearInput()
@@ -1050,8 +1017,7 @@ private fun ChatPageContent(
                                             }
                                             vm.handleMessageSend(
                                                 content = inputState.getSendContents(),
-                                                answer = false,
-                                                isTemporaryChat = isTemporaryChat
+                                                answer = false
                                             )
                                         }
                                         inputState.clearInput()
@@ -1109,8 +1075,7 @@ private fun ChatPageContent(
                                     onClickSuggestion = { suggestion ->
                                         if (currentChatModel != null) {
                                             vm.handleMessageSend(
-                                                listOf(UIMessagePart.Text(suggestion)),
-                                                isTemporaryChat = isTemporaryChat
+                                                listOf(UIMessagePart.Text(suggestion))
                                             )
                                         } else {
                                             toaster.show(errorSelectModelText, type = ToastType.Error)
@@ -1139,8 +1104,7 @@ private fun ChatPageContent(
                                                 toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput
                                             }
                                             vm.handleMessageSend(
-                                                inputState.getSendContents(),
-                                                isTemporaryChat = isTemporaryChat
+                                                inputState.getSendContents()
                                             )
                                         }
                                         inputState.clearInput()
@@ -1156,8 +1120,7 @@ private fun ChatPageContent(
                                             }
                                             vm.handleMessageSend(
                                                 content = inputState.getSendContents(),
-                                                answer = false,
-                                                isTemporaryChat = isTemporaryChat
+                                                answer = false
                                             )
                                         }
                                         inputState.clearInput()
@@ -1235,7 +1198,6 @@ private fun ChatPageContent(
 
 private data class TopBarActionState(
     val isEmpty: Boolean,
-    val isTemporaryChat: Boolean,
     val shouldUseCompactTemporaryToggle: Boolean,
     val assistantId: Uuid,
     val conversationId: Uuid,
@@ -1249,12 +1211,11 @@ private fun TopBar(
     hasUserMessages: Boolean,
     bigScreen: Boolean,
     previewMode: Boolean,
-    isTemporaryChat: Boolean,
     onBack: () -> Unit,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
     onUpdateSettings: (Settings) -> Unit,
-    onToggleTemporaryChat: () -> Unit,
+    onEnterTemporaryChat: () -> Unit,
     isLoading: Boolean,
     isReadOnly: Boolean = false
 ) {
@@ -1380,7 +1341,6 @@ private fun TopBar(
                 AnimatedContent(
                     targetState = TopBarActionState(
                         isEmpty = isEmpty,
-                        isTemporaryChat = isTemporaryChat,
                         shouldUseCompactTemporaryToggle = run {
                             val hasPresetMessages = currentAssistant.presetMessages.isNotEmpty()
                             !hasPresetMessages
@@ -1424,7 +1384,6 @@ private fun TopBar(
                     label = "topbar_actions"
                 ) { actionState ->
                     val isEmptyState = actionState.isEmpty
-                    val isTempChat = actionState.isTemporaryChat
                     val hideTopRightAvatar = actionState.shouldUseCompactTemporaryToggle
 
                     if (actionState.isReadOnly) {
@@ -1435,13 +1394,13 @@ private fun TopBar(
                         }
                     } else {
                         when {
-                            isEmptyState && !isTempChat && hideTopRightAvatar -> {
+                            isEmptyState && hideTopRightAvatar -> {
                                 Row(
                                     modifier = Modifier.height(topPillSize),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     IconButton(
-                                        onClick = { onToggleTemporaryChat() },
+                                        onClick = { onEnterTemporaryChat() },
                                         modifier = Modifier.size(topPillSize)
                                     ) {
                                         Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
@@ -1454,9 +1413,9 @@ private fun TopBar(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 when {
-                                    isEmptyState && !isTempChat -> {
+                                    isEmptyState -> {
                                         IconButton(
-                                            onClick = { onToggleTemporaryChat() },
+                                            onClick = { onEnterTemporaryChat() },
                                             modifier = Modifier.size(topPillSize)
                                         ) {
                                             Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
@@ -1470,23 +1429,15 @@ private fun TopBar(
                                         }
                                     }
 
-                                    isEmptyState && isTempChat -> {
+                                    else -> {
+                                        // 临时会话入口：普通对话中同样可用（随时切入临时房间，
+                                        // 退出后 popBackStack 回到原会话，内容/草稿不丢）
                                         IconButton(
-                                            onClick = { onToggleTemporaryChat() },
+                                            onClick = { onEnterTemporaryChat() },
                                             modifier = Modifier.size(topPillSize)
                                         ) {
-                                            Icon(Icons.Rounded.History, "Make Normal Chat")
+                                            Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
                                         }
-                                        Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
-                                            me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                                                name = currentAssistant.name.ifBlank { "Character" },
-                                                value = currentAssistant.avatar,
-                                                modifier = Modifier.size(30.dp),
-                                                onClick = { showAssistantPicker = true })
-                                        }
-                                    }
-
-                                    else -> {
                                         IconButton(
                                             onClick = {
                                                 navController.navigate(Screen.ChatHistorySearch(assistantId = currentAssistant.id.toString()))

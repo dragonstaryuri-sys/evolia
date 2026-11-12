@@ -193,6 +193,33 @@ class ConversationRepository(
             .map { list -> fetchFullConversations(list) }
     }
 
+    /**
+     * 获取助手最新会话 ID（按更新时间，忽略置顶）。
+     * 供定时任务/后台回调等自动化路径定位会话——禁止再用 getAllConversations/getConversationsOfAssistant
+     * 全量水合只为了取一条 ID（历史 OOM 根因之一：全库会话+旧版 nodes 列整串载入内存）。
+     */
+    suspend fun getLatestConversationIdOfAssistant(assistantId: Uuid): Uuid? = withContext(Dispatchers.IO) {
+        conversationDAO.getLatestConversationIdOfAssistant(assistantId.toString())
+            ?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+    }
+
+    /**
+     * 助手全部会话的轻量元数据列表（不含任何消息内容、不加载节点行）。
+     * 供 MemoryConsolidationWorker 等需要遍历全部会话做计数/排序的批量扫描场景；
+     * 需要消息内容时再按会话调用 [getConversationById]，避免一次性把全部会话载入内存。
+     */
+    suspend fun getConversationMetasOfAssistant(assistantId: Uuid): List<Conversation> = withContext(Dispatchers.IO) {
+        conversationDAO.getConversationMetasOfAssistant(assistantId.toString()).map { conversationSummaryToConversation(it) }
+    }
+
+    /**
+     * 助手默认会话 ID（置顶优先，与 [getConversationsOfAssistant] 列表序一致）的轻量版。
+     */
+    suspend fun getFirstConversationMetaIdOfAssistant(assistantId: Uuid): Uuid? = withContext(Dispatchers.IO) {
+        conversationDAO.getFirstConversationMetaOfAssistant(assistantId.toString())
+            ?.let { runCatching { Uuid.parse(it.id) }.getOrNull() }
+    }
+
     fun getConversationsOfAssistantAnyMode(assistantId: Uuid): Flow<List<Conversation>> {
         return conversationDAO
             .getConversationsOfAssistantAnyMode(assistantId.toString())
@@ -275,7 +302,8 @@ class ConversationRepository(
     private suspend fun fetchFullConversations(
         entities: List<ConversationEntity>,
         targetMessageId: String? = null, // ✨ 新增参数
-        loadAllMessages: Boolean = false // 日记生成等场景：加载给定会话的全部节点消息，不做全局 200 条深度限制
+        loadAllMessages: Boolean = false, // 日记生成等场景：加载给定会话的全部节点消息，不做全局 200 条深度限制
+        hydrateMessages: Boolean = true // false = 只装载节点占位（元数据扫描场景），不解码任何消息内容
     ): List<Conversation> = withContext(Dispatchers.IO) {
         if (entities.isEmpty()) return@withContext emptyList()
         // 1. 确定我们要加载哪个智能体
@@ -287,7 +315,10 @@ class ConversationRepository(
             chatMessageDAO.getNodesByConversationIds(batch)
         }.groupBy { it.conversationId }
         // 2. 计算出“待加载消息内容的节点 ID 集合”
-        val nodeIdsToLoad = if (loadAllMessages) {
+        val nodeIdsToLoad = if (!hydrateMessages) {
+            // 元数据扫描：不加载任何消息内容
+            emptySet()
+        } else if (loadAllMessages) {
             // 日记生成等场景：加载给定会话的全部节点消息，不做全局深度限制
             allNodesRaw.values.flatten().map { it.id }
         } else if (!targetMessageId.isNullOrBlank()) {
@@ -328,12 +359,17 @@ class ConversationRepository(
                 )
             }
 
-            // 兼容旧版本字段
-            val oldNodes = try {
-                if (entity.nodes.isNotBlank() && entity.nodes != "[]") {
-                    JsonInstant.decodeFromString<List<MessageNode>>(entity.nodes).takeLast(200)
-                } else emptyList()
-            } catch (e: Exception) { emptyList() }
+            // 兼容旧版本字段：仅在会话没有任何节点行（未拆表迁移）且需要内容时才解码。
+            // 旧 nodes 列是整会话 JSON，单行可达数 MB——拆表迁移按会话原子完成（全有或全无），
+            // 有节点行的会话其节点表必为完整数据，此处整串反序列化纯属浪费（恢复旧备份后的
+            // 残留行会让每次批量加载都付出多 MB 的解码代价）。
+            val oldNodes = if (hydrateMessages && nodesFromDb.isEmpty()) {
+                try {
+                    if (entity.nodes.isNotBlank() && entity.nodes != "[]") {
+                        JsonInstant.decodeFromString<List<MessageNode>>(entity.nodes).takeLast(200)
+                    } else emptyList()
+                } catch (e: Exception) { emptyList() }
+            } else emptyList()
 
             val finalNodes = if (oldNodes.isEmpty()) messageNodes
             else if (messageNodes.isEmpty()) oldNodes

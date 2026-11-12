@@ -120,6 +120,7 @@ fun ModelSelector(
     modifier: Modifier = Modifier,
     onlyIcon: Boolean = false,
     allowClear: Boolean = false,
+    enabled: Boolean = true,
     onSelect: (Model) -> Unit
 ) {
     var popup by remember { mutableStateOf(false) }
@@ -132,8 +133,9 @@ fun ModelSelector(
         ) {
             TextButton(
                 onClick = {
-                    popup = true
+                    if (enabled) popup = true
                 },
+                enabled = enabled,
                 modifier = modifier
             ) {
                 model?.let { m ->
@@ -170,7 +172,7 @@ fun ModelSelector(
         Box(
             modifier = modifier
                 .clip(CircleShape)
-                .clickable { popup = true },
+                .clickable(enabled = enabled) { popup = true },
             contentAlignment = Alignment.Center
         ) {
             if (model != null) {

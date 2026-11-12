@@ -97,10 +97,9 @@ fun AssistantSearchPage() {
                         onClick = {
                             scope.launch {
                                 chatVm.selectAssistant(assistant.id)
-                                val lastConv = repo.getConversationsOfAssistant(assistant.id)
-                                    .firstOrNull()
-                                    ?.firstOrNull()
-                                val chatId = lastConv?.id ?: Uuid.random()
+                                // 轻量取默认会话 ID（置顶优先），避免点击时全量水合该助手全部会话
+                                val chatId = repo.getFirstConversationMetaIdOfAssistant(assistant.id)
+                                    ?: Uuid.random()
                                 navController.navigate(Screen.Chat(id = chatId.toString()))
                             }
                         }

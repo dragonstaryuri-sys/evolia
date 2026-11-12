@@ -83,6 +83,20 @@ interface ConversationDAO {
     @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId ORDER BY update_at DESC, create_at DESC LIMIT :limit")
     suspend fun getLatestConversationsOfAssistant(assistantId: String, limit: Int): List<ConversationEntity>
 
+    // 仅取最新会话 ID（按更新时间，忽略置顶）。供定时任务/后台回调等自动化路径定位会话，
+    // 避免为找一条 ID 而全量加载会话（含旧版 nodes 列整串 JSON）。
+    @Query("SELECT id FROM conversationentity WHERE assistant_id = :assistantId ORDER BY update_at DESC, create_at DESC LIMIT 1")
+    suspend fun getLatestConversationIdOfAssistant(assistantId: String): String?
+
+    // 轻量会话元数据（仅基本列，不触消息与旧 nodes 列）。供记忆整合等需要遍历全部会话
+    // 做计数/排序的批量扫描场景；需要消息内容时再按会话用 getConversationById 拉取。
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC")
+    suspend fun getConversationMetasOfAssistant(assistantId: String): List<LightConversationEntity>
+
+    // 轻量取单个会话元数据（置顶优先，与 getConversationsOfAssistant 列表序一致）
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC LIMIT 1")
+    suspend fun getFirstConversationMetaOfAssistant(assistantId: String): LightConversationEntity?
+
     // 获取助手最近的会话（不分模式）
     @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId ORDER BY update_at DESC, create_at DESC LIMIT :limit")
     suspend fun getRecentConversationsOfAssistantAnyMode(assistantId: String, limit: Int): List<ConversationEntity>

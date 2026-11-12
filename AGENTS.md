@@ -110,12 +110,11 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 # 6.2 Episodic Memory (L2 – Archived Summary)
 - **Purpose**: Long-running conversation archiving, designed to compress context and enable memory transfer across sessions (within the same day).
 - **Relationship**: Maintains a **strict 1:1 binding** with `Conversation`.
-- **Trigger Mechanism**:
-  - **Background Asynchronous**: Periodic scanning by `MemoryConsolidationWorker`.
-  - **Automatic Trigger**: Triggered upon session switching logic (e.g., leaving the current conversation), or via `ChatService.checkAndAutoSummarize` when the L2 threshold is met.
-- **Trigger Conditions**:
-  - **Automatic / Asynchronous**: Incremental messages ≥ 4, and the time elapsed since the last dialogue exceeds `consolidationDelayMinutes` (archiving delay, default: 30 minutes).
-  - **Manual Execution**: Must satisfy `(total unarchived messages − 10) ≥ 10`, meaning at least 10 messages will be archived while retaining the latest 10 messages.
+- **Trigger Mechanism**（2026-11 核实代码后修正，与旧描述差异见括注）:
+  - **Automatic（唯一自动路径）**: 会话切换钩子 `ChatService.initializeConversation`（检测到 lastConversationId 变化）→ `archiveConversation(oldId, force = true)`。`force = true` **绕过全部阈值检查**（增量 ≥4 / 静置时长均不判断），立即归档该会话锚点之后的增量消息。**进程内直接执行，不走 WorkManager，无重试**——LLM 调用失败或进程被杀即漏网，只能靠手动兜底捞起。
+  - **Manual Full Scan（手动全扫）**: 助手详情页「整合记忆」按钮 → `MemoryConsolidationWorker`（`FULL_SCAN`，不带 FORCE/INCREMENTAL 标志）→ 扫描循环逐会话筛选：**未归档增量 ≥ 4** 即归档（2026-11 移除静置 ≥30min 判断：本循环唯一调用方是手动按钮，用户显式要求立即整合；且切换归档仅在「切到新会话」时触发，返回主页/详情页不归档——刚聊完直接来按按钮的会话静置 <30min，旧条件会把最该捞的目标挡在门外。`consolidationDelayMinutes` 字段与 UI 滑条已一并删除；旧 Settings/备份中的该键靠 JsonInstant 忽略未知 key 安全兼容，无需迁移）。
+  - **Manual Single Conversation（手动单会话）**: ChatVM 长按归档 → Worker `manualConsolidate`（`FORCE_CONVERSATION_ID + IS_MANUAL`）: Must satisfy `(total unarchived messages − 10) ≥ 10`, meaning at least 10 messages will be archived while retaining the latest 10 messages.
+  - **易混淆澄清**：① 3:00 AM 的 Worker 调度（`INCREMENTAL_MASTER=true`）**跳过 L2 循环，只做 L3**；② `ChatService.checkAndAutoSummarize` 只负责 L1 片段记忆（`summarizeAndRefresh(skipArchive = true)` 显式不做 L2）。旧文档写的「Worker 周期扫描触发 L2」「checkAndAutoSummarize 达阈值触发 L2」与实际代码不符，已删除。
 - **Injection Logic**: The system automatically queries **all other L2 summaries generated on the current day** and injects them as cross-window context for the day. L2 memory does **not** participate in RAG retrieval.
 
 ### 6.3 Master Memory (L3 - Master Archive)
@@ -261,6 +260,12 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **ChatCompletionsAPI**：`buildMessages` 内置配对校验（assistant 的全部 toolCallId 必须有 Tool 结果，否则剥离 tool_calls 保文本防 DeepSeek 400）；TOOL 消息按 toolCallId 逐条序列化为 `role=tool`。
 - 历史裁剪必须走 `limitContext`（保持 TOOL→assistant(toolcall) 配对并丢弃开头孤立 TOOL），禁止裸 subList。
 
+### 8.7 会话批量加载的内存红线（2026-11，#20026 OOM 修复）
+- **禁止为取一条会话 ID 而全量水合**：定位「助手最新会话」一律用 `ConversationRepository.getLatestConversationIdOfAssistant`（单列 SQL），`getFirstConversationMetaIdOfAssistant`（置顶优先）。禁止 `getAllConversations()` / `getConversationsOfAssistant().first()` + `maxByOrNull` 的写法——那会把**全库/全助手会话**（含旧版 `nodes` 列残留整串 JSON）一次性载入内存；历史根因：夜间定时任务/后台回调每触发一次就全库扫一遍，叠加 3:00 AM 记忆同步把 512MB 堆耗尽。
+- **MemoryConsolidationWorker 用轻量元数据**：遍历全部会话做 L2 候选计数/L3 top-5 选择时，用 `getConversationMetasOfAssistant`（仅基本列，零消息加载）；完整会话一律按会话按需 `getConversationById`（L2 循环逐个取，L3 只取 top-10 候选再过滤）。禁止恢复「先全量水合再 filter」。
+- **旧版 `nodes` 列解码门槛**：`fetchFullConversations` 仅在「会话没有任何节点行且需要内容」时才兜底解码旧 `nodes` JSON（拆表迁移按会话原子完成，有节点行的会话节点表必完整）。整串解码单行可达数 MB，恢复过旧备份的库残留此列时是所有加载路径的放大器。
+- 残留风险（未修，另行处理）：DiaryWorker `loadAllMessages=true` 一次载入游标后全部消息（日记多日未跑时巨大）；AI 生成图以 `data:image;base64` 内联落库 `chat_messages.content_json`（每张 1-5MB 永久放大所有加载路径）；`estimateTokens` 不计图像 part（图像条数不受上下文预算约束）。
+
 ## 9. 会话加载与 UI 同步逻辑 (Chat Loading & UI Sync)
 
 ### 9.1 混合消息流 (Hybrid Message Flow)
@@ -368,7 +373,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ### 12.3 音频资产生命周期
 - 存储：`filesDir/radio_audio/{audioId}.m4a`（AAC 32kbps 单声道，采样率随 Provider；编码失败降级 WAV）。**不得放进 TTS 临时缓存**；不参与通话录音 7 天清理；「清理缓存」只清 upload/、images/，天然不影响。
-- 生成：TextChunker 分句 → 逐句 TTS 合成（16-bit LE mono PCM）→ 拼接（句间 200ms 静音）→ 校验成功后才写资产记录；**任一分句失败即中止并删半成品**，不得先删旧音频。
+- 生成：TextChunker 分句 → 逐句 TTS 合成（16-bit LE mono PCM）→ 拼接（句间 200ms 静音）→ 校验成功后才写资产记录；**任一分句失败即中止并删半成品**，不得先删旧音频。**全链路只允许流式合成**（`generateChunked` 逐句落盘 + 流式编码）：UI「重新生成」（`requestAudioGeneration`）与 Agent 工具兜底同步路径 2026-11 起同样走 `generateChunked`；**整段 PCM 驻留内存的 `generate()` 已删除**（长稿多重复制后峰值可耗尽 Java 堆，#20026 OOM 根因之一），禁止以任何形式回退。
 - **同一文字稿重新生成**：新音频成为 current，原 current 转 backup（3 天过期），原 backup 直接删除；**恢复备用音频**：backup↔current 互换，新 backup 重算 3 天。策略只适用于文字稿未变（`content_hash` 判定）。
 - 备用音频过期与孤儿文件（DB 无引用且 >24h）由 `RadioAudioCleanupWorker` 每日清理。
 - `radio_audio_assets` 必须记录**实际使用**的 provider_id + voice_id（回退后记录回退结果）。
@@ -451,3 +456,47 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **生成期增量持久化（禁止回退到「整轮结束才写库」）**：普通模式 collect 内——新节点出现（ToolCall/ToolResult 边界，anyNewMessages 判定）立即 `launchIncrementalNodeSave`；纯流式文本 ≥2s 节流（`INCREMENTAL_SAVE_INTERVAL_MS`）。保存走 per-conversation persistenceMutex **锁内重新读取最新快照**后差量 upsert（`ConversationRepository.saveNodesForConversation`，仅 upsert 指定节点行+消息行，orderIndex 取全列表位置，**不删除任何行**——分页窗口外数据安全）。整轮结束全量保存保留；微信模式逐句落库保留。
 - **中断语义（硬约束）**：stopGeneration 只取消生成 Job——不删除 Turn/消息/ToolCall/ToolResult、不取消已创建的后台任务、不清内存。取消兜底保存**同步捕获**局部 currentConversation 快照（Conversation/UIMessage 均不可变 data class，捕获引用即冻结）后直存 `conversationRepo.saveConversation(捕获对象)`——**禁止**经 mutateConversationAndSave/ensureConversationLoaded 从 DB 重载（中断后 500ms 内存逐出竞态会用无 partial 的 DB 快照覆盖丢失已流式内容）。最后一条流式 ASSISTANT 消息标记 `interrupted=true`（UIMessage 字段，随 JSON 持久化；UI 显示「已停止，以上内容已保留」；「生成中」判定走内存态 generationJobs，重进会话不会把已中断消息误判为生成中）。
 - **重进页面窗口重建顺序（禁止回退）**：ChatVM 的会话节点同步 collector 必须在 `initPaginationManager`（loadInitial 完成）之后启动——loadInitial 以 DB 清空重建窗口，与内存同步并发执行顺序不定时 partial 被抹掉且 TTS 阻塞期间无新发射无法自动补回。节点合并沿用 syncConversationNodes 既有规则（内存新版本按 id 替换、空壳不覆盖、缺节点追加、窗口外不受影响）。
+
+## 15. 临时会话（Temporary Chat，2026-11-12 独立化改造）
+
+### 15.1 架构定位（硬约束）
+
+- **临时会话是独立运行模式，不是正式会话上的开关**。入口为正式聊天页 TopBar 的临时会话按钮（空会话与**普通对话中均可用**，普通对话中点击即随时切入临时房间，退出 `popBackStack` 回到原会话，内容/草稿/滚动由导航栈保留）→ `Screen.TemporaryChat(assistantId)` 独立 Navigation Destination（`ui/pages/chat/TemporaryChatPage.kt` + `TemporaryChatVM.kt`），禁止再在 ChatPage 上以 `if (isTemporaryChat)` 分叉实现。
+- **身份唯一权威是 `service/TemporaryChatSessionRegistry.kt`**（Koin single，注入 ChatService 构造参数 `temporarySessions`）：sessionId 为运行期 UUID，**创建时即注册**（`ChatService.createTemporarySession(assistantId)`），发送/生成/总结/记忆等链路统一查 `isTemporary(id)`，**禁止**依赖调用方逐个传临时标记（`sendMessage` 的 `isTemporaryChat` 参数已删除）。
+- **临时消息绝不落库**：仅存在于 ChatService `conversations` 内存 StateFlow；不创建 Conversation 记录、不写 ChatMessage、不更新 lastConversationId / 当前助手 / lastSummarizedMessageTime 等任何正式状态。进程死亡即自然销毁，无持久化恢复。
+
+### 15.2 ChatService 守卫清单（禁止遗漏，新增写库路径必须同步检查）
+
+| 位置 | 守卫 |
+|---|---|
+| `sendMessage` | 入口检查 `isDestroying` → 拒绝销毁中的会话写入 |
+| `ensureConversationLoaded` | 临时会话：注册表确认 + 内存流存在即返回 true（否则所有 mutate 路径被 DB miss 静默丢弃） |
+| `launchIncrementalNodeSave` | 临时会话直接 return（流式增量落库禁用） |
+| 中断/异常兜底保存（handleMessageComplete failure 分支） | 临时会话跳过 `saveConversation` |
+| `mutateConversationAndSave` / `replaceConversationMessages` | 临时会话只更新内存 + 删文件，不落库 |
+| `checkAndAutoSummarize` / `summarizeAndRefresh` / `archiveConversation` | 执行层守卫：临时会话直接 return（覆盖自动总结、立即整合、刷新上下文全部入口） |
+| `recordDailyActivity` | 临时会话跳过（不计入每日活跃） |
+| `getConversationFlow` LRU 淘汰 | 跳过临时会话 |
+| `checkAllConversationsReferences` | 跳过临时会话（历史 bug：生成结束 500ms 后的无引用清理把临时消息缓存逐出，下一条消息被写进 `computeIfAbsent` 重建的空会话——UI 看不到消息、AI 上下文清空；与 LRU 淘汰必须同步排除，两处缺一不可） |
+| `initializeConversation` | 临时会话：跳过 lastConversationId 追踪、离场归档、DB 重载；仅确保内存会话存在 |
+
+**引用持有（双保险）**：`TemporaryChatVM` init 时 `addConversationReference(sessionId)`、`onCleared` 时 remove（与正式 ChatVM.trackConversation 同机制）；`destroyTemporarySession` 一并清 `conversationReferences`。任何新增的「无引用清理/逐出」路径都必须同时排除临时会话。
+
+### 15.3 记忆只读（双层拦截）
+
+- **读取保留**：生成链路 `retrievedMemories` 检索对临时会话照常执行（基于角色已有记忆对话）；`retrieve_memory` 工具保留；记忆详情查看（`getFullMemoryContent`）保留。
+- **写入双层拦截**（`GenerationHandler.kt`）：① 工具构建层——`isTemporarySession()` 为 true 时不注册 `create_memory`/`edit_memory`/`delete_memory`；② 执行层——`TEMPORARY_BLOCKED_TOOLS` 集合在工具循环中以错误 ToolResult 拒绝（防模型幻觉调用）。不生成 Segments、不生成会话总结、不触发自动记忆整合。
+
+### 15.3a 工具白名单（2026-11-12 与用户逐项确认，规则唯一事实源 `data/ai/tools/TemporarySessionToolRules.kt`，有单测）
+
+- **两层拦截**：① 装配层——`ChatService.handleMessageComplete` 组装 `targetOptions` 后按 `TemporarySessionToolRules.filterOptions` 过滤（Release 强制注入的 coreTools 与记忆联动的 MilestoneManagement 先组装完再统一过滤；RadioAgentTools 注入以 targetOptions 判定，过滤后自然跳过）；② 执行层——`GenerationHandler.TEMPORARY_BLOCKED_TOOLS` 引用 `TemporarySessionToolRules.blockedToolNames`，模型幻觉调用已下线工具时返回明确错误 ToolResult（助手人设引导调用被禁工具时会收到「不可用」提示，属预期行为）。
+- **禁用清单**（写正式数据或现实副作用）：`CallControl`（call_records + 录音）、`AgentAutomation`（agent_task 落库 + 定时唤起）、`ScheduleManagement`（schedule_events + 联动提醒）、`UpdateProfile`（settingsStore 持久化档案）、`MilestoneManagement`（关系档案落库）、`RadioStation`（radio_* 表 + 音频）、`PeekUser`（agent_monitor_tasks 落库，**add/pause 是写不是读**）、`EmailService`（发真实邮件）、`DeviceControl`（锁屏/开 App/静默设系统闹钟）+ `CameraCapture`（已废弃，运行时等同 DeviceControl，getTools 同一开关连带注册设备工具组，必须同禁）。
+- **保留清单**（经用户确认）：沙盒计算（eval_python/eval_javascript + 沙盒文件四件套 + import_attachment）、`fetch_url_content`、`search_web`（开关为会话级内存态）、`generate_image`（写 GenMediaEntity 媒体库——用户接受残留）、`print_content`（opt-in）、MCP 双固定工具、`get/cancel_background_task`、`retrieve_memory`、TimeSense（systemPrompt 注入非工具）。
+
+### 15.4 页面与 UI 约束
+
+- TemporaryChatPage：顶部仅返回 + 临时会话标识 + 只读头像（不可点击切换角色）；无新建话题入口。输入区**跟随用户的 chatInputStyle 设置分支渲染**（MINIMAL → `MinimalChatInput` / 其他 → `ChatInput`，均传 `temporaryMode = true`）。加号菜单与正式会话的**唯一 UI 差异**：隐藏立即整合、上下文刷新（= summarizeAndRefresh，记忆写入族，业务层本就禁止）与通话按钮（拨号即写正式 call_records，会话销毁后成悬挂记录）；模式/世界书/推理/UI模式/搜索全部保留且可用。`ModelSelector` 在临时会话**可点击切换**：选择写入 `TemporaryChatVM.overrideChatModelId`（内存态 StateFlow），经 `sendMessage(chatModelOverrideId=…)` → `triggerAIResponse` → `handleMessageComplete` 只影响本次生成，**绝不写回 Assistant.chatModelId 或全局设置**，退出即失效。`settingsForInput` 以会话助手覆盖 `settings.assistantId` 并把内存态覆盖助手拼接进助手列表，防全局当前助手漂移且会话内配置修改实时反映。
+- **退出统一确认**：返回键/手势/左上角返回 → `hasUserContent()`（存在 USER 消息，预置消息不算）为 true 时弹 `ConfirmDialog`（继续聊天 / 退出并清空）；空会话直接退出。确认后顺序：`tts.stop()` → `vm.requestDestroy()`（= `chatService.destroyTemporarySession`：markDestroying → 取消生成 Job → 取消微信 debounce → 删除会话引用的附件文件 → remove 注册 → cleanupConversation）→ `popBackStack()`。
+- **兜底销毁**：`TemporaryChatVM.onCleared()` 再次调用 destroy（幂等 no-op），覆盖通知跳转等绕过确认弹窗的离开路径，保证不遗留活跃生成任务与注册表条目。
+- TemporaryChatVM 复用 ChatService 全部生成链路（sendMessage/triggerAIResponse/工具/MCP），不复制 Agent 实现；语音为紧凑实现（录音→ASR→trigger，SystemASR 自动 fallback EvoliaASR/OnlineASR），**不含**正式页的录音期并行流式 SystemASR 优化；不启动 autoRead（避免 clobber 正式页 CustomTtsState 单例订阅），手动 TTS 播放保留，退出销毁时 `tts.stop()`。
+- 注册表逻辑有单测固化：`app/src/test/.../service/TemporaryChatSessionRegistryTest.kt`。

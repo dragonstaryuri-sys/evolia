@@ -85,6 +85,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE
 import me.rerere.rikkahub.data.ai.tools.LocalTools
+import me.rerere.rikkahub.data.ai.tools.TemporarySessionToolRules
 import me.rerere.rikkahub.data.ai.tools.buildBackgroundTaskTools
 import me.rerere.rikkahub.data.ai.tools.buildMcpAgentTools
 import me.rerere.rikkahub.data.ai.tools.buildRadioAgentTools
@@ -370,6 +371,7 @@ class ChatService(
     private val radioService: RadioService,
     private val mediaPlaybackController: me.rerere.rikkahub.service.media.MediaPlaybackController,
     private val backgroundTaskManager: me.rerere.rikkahub.data.backgroundtask.BackgroundTaskManager,
+    private val temporarySessions: TemporaryChatSessionRegistry,
     ) {
     data class ContextRefreshResult(
         val success: Boolean,
@@ -381,9 +383,11 @@ class ChatService(
 
     private val conversations = ConcurrentHashMap<Uuid, MutableStateFlow<Conversation>>()
     private val conversationReferences = ConcurrentHashMap<Uuid, Int>()
-    private val temporaryConversations = ConcurrentHashMap.newKeySet<Uuid>()
     // 通话中的会话集合：标记后跳过主路径的 L1 自动摘要, 改由 VoiceCallManager 的 25 分钟定时器驱动
     private val callModeConversations = ConcurrentHashMap.newKeySet<Uuid>()
+    // 已销毁的临时会话墓碑：销毁后到达的异步残留（ASR 回调、流式增量保存等）不得
+    // 在该 UUID 上重建会话或落库（remove 后 isTemporary 已为 false，需要墓碑兜底）
+    private val destroyedTemporaryIds = ConcurrentHashMap.newKeySet<Uuid>()
     // 通话中会话 → 通话 callId 注册表：由 VoiceCallManager 接通时注册、挂断收尾时注销。
     // 自动化任务（executeAgentTask）据此判断目标会话是否在通话中，
     // 命中时回复打标 MessageSource.CALL + callId，作为通话转写的一部分存储。
@@ -565,11 +569,8 @@ class ChatService(
         val conversationId = if (activeConvId != null) {
             activeConvId
         } else {
-            val lastDbId =
-                conversationRepo.getAllConversations().first().filter { it.assistantId == originalAssistantId }
-                    .maxByOrNull { it.updateAt }?.id
-
-            lastDbId ?: Uuid.random()
+            // 轻量查询最新会话 ID（禁止为找一条 ID 而 getAllConversations 全量水合——历史 OOM 根因之一）
+            conversationRepo.getLatestConversationIdOfAssistant(originalAssistantId) ?: Uuid.random()
         }
 
         val monitorMsg = buildString {
@@ -780,8 +781,7 @@ class ChatService(
 
         // 2. 目标会话解析（任务记录的会话 → 助手最新会话兜底；不存在 → ABANDONED，不新建）
         val conversationId = task.conversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
-            ?: conversationRepo.getConversationsOfAssistant(agentId).first()
-                .maxByOrNull { it.updateAt }?.id
+            ?: conversationRepo.getLatestConversationIdOfAssistant(agentId)
             ?: return CallbackDeliveryResult.ConversationMissing
 
         // 3. 忙判定（竞态防护）：变忙则回 PENDING，由生成结束钩子重投（不强行打断）
@@ -886,7 +886,15 @@ class ChatService(
         conversationReferences.containsKey(conversationId) || _generationJobs.value.containsKey(conversationId)
 
     fun checkAllConversationsReferences() {
-        conversations.keys.forEach { if (!hasReference(it)) cleanupConversation(it) }
+        conversations.keys.forEach { id ->
+            val hasReference = hasReference(id)
+            val isTemporary = temporarySessions.isTemporary(id)
+            // 临时会话绝不清理缓存：消息仅存在于内存 StateFlow，被逐出后
+            // 下一次写入会经 getConversationFlow 的 computeIfAbsent 重建空会话，
+            // 用户消息"消失"、AI 上下文清空（历史 bug：第一条消息回复后 500ms 被清，
+            // 第二条消息起全部异常）。UI 持有的旧 StateFlow 仍在显示，问题不易察觉。
+            if (!hasReference && !isTemporary) cleanupConversation(id)
+        }
     }
 
     fun getConversationFlow(conversationId: Uuid): StateFlow<Conversation> {
@@ -894,7 +902,7 @@ class ChatService(
         val currentAssistant = settings.getCurrentAssistant()
 
         if (!conversations.containsKey(conversationId) && conversations.size >= 5) {
-            val toRemove = conversations.keys.firstOrNull { !hasReference(it) }
+            val toRemove = conversations.keys.firstOrNull { !hasReference(it) && !temporarySessions.isTemporary(it) }
             toRemove?.let { cleanupConversation(it) }
         }
 
@@ -941,6 +949,11 @@ class ChatService(
         ) {
             return true
         }
+        // 临时会话仅存在于内存（绝不写 DB）：注册表确认身份 + 内存流存在即为已加载，
+        // 否则下方 DB 查询返回 false 会导致 mutateConversationAndSave 等路径静默丢弃内存更新。
+        if (temporarySessions.isTemporary(conversationId)) {
+            return conversations.containsKey(conversationId)
+        }
         val fromDb = conversationRepo.getConversationById(conversationId) ?: return false
         val flow = conversations.computeIfAbsent(conversationId) { MutableStateFlow(fromDb) }
         flow.value = fromDb
@@ -976,6 +989,22 @@ class ChatService(
         skipAutoArchive: Boolean = false, // ✨ 新增：支持跳过离场归档逻辑
         skipMemoryReload: Boolean = false // 通话中传 true：禁止用 DB 快照覆盖内存会话（会抹掉未落库的流式节点并使通话朗读锚点失效）
     ) {
+        // 已销毁的临时会话：禁止以正式会话路径重建占位（防止孤儿会话缓存与后续落库）
+        if (destroyedTemporaryIds.contains(conversationId)) return
+        // 临时会话：不参与 lastConversationId 追踪、离场归档、DB 重载（无 DB 记录）。
+        // 仅确保内存会话存在（缓存被逐出时以注册表中的助手身份重建空会话）。
+        if (temporarySessions.isTemporary(conversationId)) {
+            if (!conversations.containsKey(conversationId)) {
+                val sessionAssistantId = targetAssistantId
+                    ?: temporarySessions.get(conversationId)?.assistantId
+                    ?: settingsStore.settingsFlow.value.getCurrentAssistant().id
+                conversations.computeIfAbsent(conversationId) {
+                    MutableStateFlow(Conversation.ofId(conversationId, sessionAssistantId))
+                }
+            }
+            initializedConversationIds += conversationId
+            return
+        }
         val currentConvInDb = conversationRepo.getConversationById(conversationId)
 
         val currentJob = currentCoroutineContext().job
@@ -1076,6 +1105,8 @@ class ChatService(
     suspend fun archiveConversation(
         conversationId: Uuid, force: Boolean = false, skipEmbedding: Boolean = false
     ): Long? {
+        // 临时会话禁止 episode 归档（执行层守卫）
+        if (temporarySessions.isTemporary(conversationId)) return null
         if (!archivingConversations.add(conversationId)) return null
 
         var archivedEndTime: Long? = null
@@ -1198,18 +1229,19 @@ class ChatService(
         conversationId: Uuid,
         content: List<UIMessagePart>,
         answer: Boolean = true,
-        isTemporaryChat: Boolean = false,
         predefinedUserNode: MessageNode? = null,
         skipContextForResponse: Boolean = false,
         includeSkipContextMessages: Boolean = true, // 普通对话也包含 skipContext 消息，由 messageSource 控制截断策略
         responseMessageSource: MessageSource = MessageSource.NORMAL, // AI 回复的消息来源标识
-        callId: String? = null
+        callId: String? = null,
+        chatModelOverrideId: Uuid? = null, // 临时会话内存态模型切换（不写回助手配置）
+        assistantOverride: Assistant? = null // 临时会话内存态助手配置覆盖（世界书/推理/搜索/UI模式等，不持久化）
     ) {
-        if (isTemporaryChat) {
-            temporaryConversations.add(conversationId)
-        } else {
-            // ✨ 如果用户显式切换回正常模式，从临时集合中移除
-            temporaryConversations.remove(conversationId)
+        // 临时会话身份由 TemporaryChatSessionRegistry 在会话创建时统一注册，
+        // 不再依赖调用方逐个传递 isTemporary 标记；销毁中/已销毁的会话拒绝接收新消息。
+        if (temporarySessions.isDestroying(conversationId) || destroyedTemporaryIds.contains(conversationId)) {
+            Log.w(TAG, "sendMessage ignored: temporary session is destroying/destroyed conv=$conversationId")
+            return
         }
 
         val oldJob = _generationJobs.value[conversationId]
@@ -1234,7 +1266,10 @@ class ChatService(
             // Capture the latest state only after entering the serialized persistence path.
             // A previously captured snapshot can otherwise erase the first streamed chunk.
             mutateConversationAndSave(conversationId) { current -> current }
-            conversationRepo.recordDailyActivity()
+            // 临时会话不计入每日活跃统计（避免污染正式数据）
+            if (!temporarySessions.isTemporary(conversationId)) {
+                conversationRepo.recordDailyActivity()
+            }
         }
 
         if (answer) {
@@ -1243,7 +1278,9 @@ class ChatService(
                 skipContextForResponse = skipContextForResponse,
                 includeSkipContextMessages = includeSkipContextMessages,
                 responseMessageSource = responseMessageSource,
-                callId = callId
+                callId = callId,
+                chatModelOverrideId = chatModelOverrideId,
+                assistantOverride = assistantOverride
             )
         }
     }
@@ -1259,12 +1296,16 @@ class ChatService(
         skipContextForResponse: Boolean = false,
         includeSkipContextMessages: Boolean = true,
         responseMessageSource: MessageSource = MessageSource.NORMAL,
-        callId: String? = null
+        callId: String? = null,
+        chatModelOverrideId: Uuid? = null,
+        assistantOverride: Assistant? = null
     ) {
         // 取消已存在的生成任务，防止出现孤儿任务继续流式存储未保存的分句。
         // sendMessage 已取消一次，但 maybeTriggerAIAfterAsr 等调用方可能未取消，
         // 两次 triggerAIResponse 调用会导致第一个任务成为孤儿（不在任何 Map 中），
         // 继续持有 mutex 流式写入分句，用户发新消息时无法被打断。
+        // 已销毁/销毁中的临时会话拒绝触发：防止异步残留回调在空会话上白白生成并重建会话
+        if (destroyedTemporaryIds.contains(conversationId) || temporarySessions.isDestroying(conversationId)) return
         _generationJobs.value[conversationId]?.cancel()
         wechatDebounceJobs[conversationId]?.cancel()
 
@@ -1296,7 +1337,9 @@ class ChatService(
                     skipContextForResponse = skipContextForResponse,
                     includeSkipContextMessages = includeSkipContextMessages,
                     responseMessageSource = responseMessageSource,
-                    callId = callId
+                    callId = callId,
+                    chatModelOverrideId = chatModelOverrideId,
+                    assistantOverride = assistantOverride
                 )
                 _generationDoneFlow.emit(conversationId)
             } catch (e: Exception) {
@@ -1486,7 +1529,8 @@ class ChatService(
         responseMessageSource: MessageSource = MessageSource.NORMAL,
         callId: String? = null,
         requirement: String? = null,
-        targetMessageId: Uuid? = null
+        targetMessageId: Uuid? = null,
+        chatModelOverrideId: Uuid? = null // 临时会话内存态模型切换，null = 按助手/全局配置解析
     ) {
             val mutex = conversationMutexes.computeIfAbsent(conversationId) { Mutex() }
             mutex.withLock {
@@ -1539,7 +1583,7 @@ class ChatService(
                 }
                 val assistant = assistantOverride ?: settings.getAssistantById(currentConversation.assistantId)
                 ?: settings.getCurrentAssistant()
-                val modelId = assistant.chatModelId ?: settings.chatModelId
+                val modelId = chatModelOverrideId ?: assistant.chatModelId ?: settings.chatModelId
                 val model = settings.findModelById(modelId) ?: settings.getCurrentChatModel() ?: return@runCatching
                 var firstTokenTime: Long? = null
                 // 增量节流落库计时（新节点/工具边界立即落库，纯文本流按间隔节流）
@@ -1556,9 +1600,8 @@ class ChatService(
                 checkInvalidMessages(conversationId)
                 currentConversation = getConversationFlow(conversationId).value
                 val retrievedMemories = withContext(Dispatchers.IO) {
-                    if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF && !temporaryConversations.contains(
-                            conversationId
-                        )
+                    // 临时会话允许【读取】已有记忆（基于角色记忆对话），仅禁止写入（工具层拦截）
+                    if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF
                     ) {
                         withTimeoutOrNull(4000) {
                             if (assistant.useRagMemoryRetrieval) {
@@ -1670,6 +1713,7 @@ class ChatService(
                         inputTransformers = buildList { addAll(inputTransformers); add(templateTransformer) },
                         outputTransformers = outputTransformers,
                         isCallMode = { callModeConversations.contains(conversationId) },
+                        isTemporarySession = { temporarySessions.isTemporary(conversationId) },
                         tools = buildList {
                             val isMain = assistant.isMain
 
@@ -1688,7 +1732,7 @@ class ChatService(
                                     ))
                             }
 
-                            val targetOptions = if (isMain) {
+                            val rawOptions = if (isMain) {
                                 // 1. 获取当前数据库里的工具配置
                                 val list = assistant.localTools.toMutableList()
 
@@ -1733,6 +1777,14 @@ class ChatService(
                                         @Suppress("DEPRECATION") it is LocalToolOption.CameraCapture
                                 }
                             }
+
+                            // 临时会话工具白名单（TemporarySessionToolRules，有单测）：
+                            // 过滤写正式数据/现实副作用的选项——Release 强制注入的 coreTools
+                            // 与记忆联动的 MilestoneManagement 都先组装完再统一过滤，
+                            // RadioAgentTools 注入以 targetOptions 判定，过滤后自然跳过
+                            val targetOptions = if (temporarySessions.isTemporary(conversationId)) {
+                                TemporarySessionToolRules.filterOptions(rawOptions)
+                            } else rawOptions
 
                             addAll(
                                 localTools.getTools(
@@ -2299,10 +2351,13 @@ class ChatService(
                     val mutex = persistenceMutexes.computeIfAbsent(conversationId) { Mutex() }
                     mutex.withLock {
                         // 保存同步捕获的快照（异常路径 interrupted 标记已更新在快照内）
-                        runCatching { conversationRepo.saveConversation(interruptedNodesChanged) }
-                            .onFailure { Log.e(TAG, "中断/异常兜底保存失败: conv=$conversationId", it) }
+                        // 临时会话禁止落库（此兜底路径原实现无守卫，会把临时消息写入正式会话）
+                        if (!temporarySessions.isTemporary(conversationId)) {
+                            runCatching { conversationRepo.saveConversation(interruptedNodesChanged) }
+                                .onFailure { Log.e(TAG, "中断/异常兜底保存失败: conv=$conversationId", it) }
+                        }
                     }
-                    if (!temporaryConversations.contains(conversationId)) {
+                    if (!temporarySessions.isTemporary(conversationId)) {
                         val currentSettings = settingsStore.settingsFlow.value
                         val updatedAssistants = currentSettings.assistants.map {
                             if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
@@ -2330,7 +2385,7 @@ class ChatService(
                     }
                 }
                 appScope.launch {
-                    if (!temporaryConversations.contains(conversationId)) {
+                    if (!temporarySessions.isTemporary(conversationId)) {
                         val currentSettings = settingsStore.settingsFlow.value
                         val updatedAssistants = currentSettings.assistants.map {
                             if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
@@ -2670,6 +2725,8 @@ class ChatService(
      *    解决 tool 消息密集时"前 200 条 core 不足、阈值一直不触发"的卡滞问题。
      */
     private suspend fun checkAndAutoSummarize(id: Uuid, conv: Conversation, settings: Settings) {
+        // 临时会话禁止进入自动总结（执行层守卫：除调用入口外，真正执行处再次校验）
+        if (temporarySessions.isTemporary(id)) return
         val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
         if (!assistant.enableMemory || !assistant.enableDetailMemory) return
         // 熔断检查：连续失败次数达到阈值后，停止自动触发，避免无限重试循环。
@@ -2721,6 +2778,10 @@ class ChatService(
         id: Uuid, onlySegments: Boolean = false, skipArchive: Boolean = false,
         excludeLatestMessage: Boolean = false
     ): ContextRefreshResult = withContext(Dispatchers.IO) {
+        // 临时会话禁止总结/Segments（执行层守卫：同时覆盖「立即整合」「刷新上下文」等所有入口）
+        if (temporarySessions.isTemporary(id)) {
+            return@withContext ContextRefreshResult(false, errorMessage = "临时会话不支持整合操作")
+        }
         if (!summarizingConversations.add(id)) {
             return@withContext ContextRefreshResult(false, errorMessage = "正在总结中...请勿重复操作")
         }
@@ -2975,6 +3036,9 @@ class ChatService(
      */
     private fun launchIncrementalNodeSave(conversationId: Uuid, nodeIds: Set<Uuid>) {
         if (nodeIds.isEmpty()) return
+        // 临时会话禁止任何落库：消息仅存内存，销毁即消失；
+        // 已销毁（墓碑）的临时会话同样拒绝，防止残留流式回调把消息写入 DB
+        if (temporarySessions.isTemporary(conversationId) || destroyedTemporaryIds.contains(conversationId)) return
         appScope.launch(Dispatchers.IO) {
             val mutex = persistenceMutexes.computeIfAbsent(conversationId) { Mutex() }
             mutex.withLock {
@@ -3002,7 +3066,7 @@ class ChatService(
             )
             val filesToDelete = findRemovedFiles(previous, updated)
             updateConversation(id) { updated }
-            if (!temporaryConversations.contains(id)) {
+            if (!temporarySessions.isTemporary(id)) {
                 try {
                     conversationRepo.saveConversation(updated)
                     deleteFilesAsync(id, filesToDelete)
@@ -3034,7 +3098,7 @@ class ChatService(
             val normalizedReplacement = replacement.copy(conversation = safe)
             val filesToDelete = findRemovedFiles(previous, safe)
             updateConversation(conversationId) { safe }
-            if (temporaryConversations.contains(conversationId)) {
+            if (temporarySessions.isTemporary(conversationId)) {
                 deleteFilesAsync(conversationId, filesToDelete)
                 return@withLock normalizedReplacement
             }
@@ -3124,6 +3188,64 @@ class ChatService(
         _generationJobs.value[conversationId]?.cancel()
         removeGenerationJob(conversationId)
         _isAiTypingMap.update { it - conversationId }
+    }
+
+    // ===== 临时会话（Temporary Chat）生命周期管理 =====
+    // 身份判定统一走 temporarySessions 注册表；临时会话不写任何正式数据库表，
+    // 消息仅存在于 conversations 内存 StateFlow，进程死亡自然消失。
+
+    fun isTemporarySession(conversationId: Uuid): Boolean =
+        temporarySessions.isTemporary(conversationId)
+
+    /**
+     * 创建临时会话：生成运行期 UUID、注册身份、初始化仅存于内存的 Conversation。
+     * 不创建正式 Conversation 记录、不改动 lastConversationId / 当前助手等任何正式状态。
+     */
+    fun createTemporarySession(assistantId: Uuid): Uuid {
+        val sessionId = Uuid.random()
+        val settings = settingsStore.settingsFlow.value
+        val assistant = settings.getAssistantById(assistantId) ?: settings.getCurrentAssistant()
+        destroyedTemporaryIds.remove(sessionId)
+        temporarySessions.create(sessionId, assistant.id)
+        // 预置消息仅作展示（与正式新会话一致），不入库
+        val conversation = Conversation.ofId(
+            id = sessionId,
+            assistantId = assistant.id
+        ).updateCurrentMessages(assistant.presetMessages)
+        conversations[sessionId] = MutableStateFlow(conversation)
+        initializedConversationIds += sessionId
+        return sessionId
+    }
+
+    /**
+     * 销毁临时会话（退出确认后的统一出口）：
+     * 1. 标记销毁中，阻止新消息进入（sendMessage 入口检查 destroying）
+     * 2. 取消 AI 生成任务与微信模式 debounce 任务
+     * 3. 注销注册表身份 + 清理内存会话缓存（消息随内存消失）
+     * 4. 删除本次会话产生的临时附件文件（仅限该会话引用的文件）
+     *
+     * 幂等：会话不存在时为 no-op，可安全重复调用。
+     */
+    fun destroyTemporarySession(conversationId: Uuid) {
+        if (!temporarySessions.isTemporary(conversationId)) return
+        temporarySessions.markDestroying(conversationId)
+        destroyedTemporaryIds.add(conversationId)
+        stopGeneration(conversationId)
+        wechatDebounceJobs[conversationId]?.cancel()
+        wechatDebounceJobs.remove(conversationId)
+        // 释放临时页存续期间持有的引用（与 TemporaryChatVM.onCleared 的 remove 配对，幂等）
+        conversationReferences.remove(conversationId)
+        // 删除该临时会话引用的附件文件（会话内存对象即将移除，先取引用）
+        val tempConversation = conversations[conversationId]?.value
+        if (tempConversation?.files?.isNotEmpty() == true) {
+            appScope.launch(Dispatchers.IO) {
+                runCatching { context.deleteChatFiles(tempConversation.files) }
+                    .onFailure { Log.w(TAG, "清理临时会话附件失败: conv=$conversationId", it) }
+            }
+        }
+        temporarySessions.remove(conversationId)
+        cleanupConversation(conversationId)
+        Log.i(TAG, "Temporary session destroyed: conv=$conversationId")
     }
 
     /**

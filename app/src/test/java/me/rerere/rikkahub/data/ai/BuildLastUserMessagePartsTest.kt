@@ -158,8 +158,8 @@ class BuildLastUserMessagePartsTest {
             dynamicContext = "## 相关记忆片段",
         )
         val text = textOf(result)
-        // 原实现格式："]" 后直接接 "User:"（无换行）
-        assertTrue(text.startsWith("System:\n[## 相关记忆片段]User:"))
+        // 现行格式：用户转写文本在前，动态上下文后置（builtText 直接拼 "System:\n[...]"，无换行间隔）
+        assertTrue(text.startsWith("你好呀System:\n[## 相关记忆片段]"))
         assertTrue(text.contains("你好呀"))
         assertEquals(0, result.filterIsInstance<UIMessagePart.Audio>().size)
     }
@@ -171,8 +171,8 @@ class BuildLastUserMessagePartsTest {
             supportsAudioInput = true,
             dynamicContext = "## 相关记忆片段",
         )
-        // 动态上下文注入 + Audio 保留，两部分共存
-        assertTrue(textOf(result).startsWith("System:\n[## 相关记忆片段]User:"))
+        // 动态上下文注入 + Audio 保留，两部分共存（builtText 为空时文本以 System: 开头）
+        assertTrue(textOf(result).startsWith("System:\n[## 相关记忆片段]"))
         assertEquals(1, result.filterIsInstance<UIMessagePart.Audio>().size)
         assertTrue(!textOf(result).contains("你好呀"))
     }
