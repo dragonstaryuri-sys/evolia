@@ -2698,6 +2698,14 @@ class LocalTools(
                                 put("description", "图像纵横比：SQUARE (1:1), PORTRAIT (2:3), LANDSCAPE (3:2)")
                                 put("enum", JsonArray(listOf(JsonPrimitive("SQUARE"), JsonPrimitive("PORTRAIT"), JsonPrimitive("LANDSCAPE"))))
                             })
+                            put("width", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "可选的图像宽度（像素，256-4096）。必须与 height 同时提供才生效；提供后覆盖 aspect_ratio。部分模型仅支持固定尺寸档位，实际尺寸会就近映射。")
+                            })
+                            put("height", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "可选的图像高度（像素，256-4096）。必须与 width 同时提供才生效；提供后覆盖 aspect_ratio。部分模型仅支持固定尺寸档位，实际尺寸会就近映射。")
+                            })
                             if (supportsImageInput) {
                                 put("image_url", buildJsonObject {
                                     put("type", "string")
@@ -2714,6 +2722,12 @@ class LocalTools(
                     val aspectRatioStr = args.jsonObject["aspect_ratio"]?.jsonPrimitive?.contentOrNull ?: "SQUARE"
                     val aspectRatio = try { ImageAspectRatio.valueOf(aspectRatioStr) } catch (e: Exception) { ImageAspectRatio.SQUARE }
                     val imageUrl = args.jsonObject["image_url"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                    // 显式宽高：两者同时提供才生效（只传一个回落 aspect_ratio），范围收敛到 256-4096
+                    val requestedWidth = args.jsonObject["width"]?.jsonPrimitive?.intOrNull
+                    val requestedHeight = args.jsonObject["height"]?.jsonPrimitive?.intOrNull
+                    val hasExplicitSize = requestedWidth != null && requestedHeight != null
+                    val explicitWidth = requestedWidth?.coerceIn(256, 4096)
+                    val explicitHeight = requestedHeight?.coerceIn(256, 4096)
 
                     withContext(Dispatchers.IO) {
                         try {
@@ -2785,6 +2799,8 @@ class LocalTools(
                                         prompt = prompt,
                                         numOfImages = numImages,
                                         aspectRatio = aspectRatio,
+                                        width = if (hasExplicitSize) explicitWidth else null,
+                                        height = if (hasExplicitSize) explicitHeight else null,
                                         customHeaders = model.customHeaders,
                                         customBody = model.customBodies,
                                         image = imageUrl

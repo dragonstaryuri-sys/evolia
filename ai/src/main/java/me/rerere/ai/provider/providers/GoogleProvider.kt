@@ -38,6 +38,7 @@ import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.ImageGenerationResult
+import me.rerere.ai.ui.ImageSizeRules
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
@@ -712,6 +713,16 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             "Expected Google provider setting"
         }
 
+        // 显式宽高：predict API 没有 WxH 参数，映射为最近纵横比；未提供时走既有三档映射
+        val explicitWidth = params.width
+        val explicitHeight = params.height
+        val hasExplicitSize = explicitWidth != null && explicitHeight != null
+        val aspectRatioValue = if (hasExplicitSize) {
+            ImageSizeRules.deriveGoogleAspectRatio(explicitWidth, explicitHeight)
+        } else {
+            params.aspectRatio
+        }
+
         val requestBody = buildJsonObject {
             putJsonArray("instances") {
                 add(buildJsonObject {
@@ -720,7 +731,7 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             }
             putJsonObject("parameters") {
                 put("sampleCount", params.numOfImages)
-                put("aspectRatio", when(params.aspectRatio) {
+                put("aspectRatio", when(aspectRatioValue) {
                     ImageAspectRatio.SQUARE -> "1:1"
                     ImageAspectRatio.LANDSCAPE -> "16:9"
                     ImageAspectRatio.PORTRAIT -> "9:16"

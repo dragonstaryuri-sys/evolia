@@ -23,6 +23,7 @@ import me.rerere.ai.provider.providers.openai.ResponseAPI
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.ImageGenerationResult
+import me.rerere.ai.ui.ImageSizeRules
 import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.util.KeyRoulette
@@ -242,6 +243,11 @@ class OpenAIProvider(
         val isDalle3 = params.model.modelId.contains("dall-e-3", ignoreCase = true)
         val isQwenImageEdit = params.model.modelId.contains("Qwen-Image-Edit", ignoreCase = true)
 
+        // 显式宽高：两者同时提供才生效，优先于 aspectRatio
+        val explicitWidth = params.width
+        val explicitHeight = params.height
+        val hasExplicitSize = explicitWidth != null && explicitHeight != null
+
         val requestBody = buildJsonObject {
             put("model", params.model.modelId)
             put("prompt", params.prompt)
@@ -256,12 +262,17 @@ class OpenAIProvider(
                 params.image?.let { put("image", it) }
                 // image_size：Qwen-Image-Edit 系列不支持此字段
                 if (!isQwenImageEdit) {
-                    val isQwenImage = params.model.modelId.contains("Qwen-Image", ignoreCase = true)
-                    put("image_size", when (params.aspectRatio) {
-                        ImageAspectRatio.SQUARE -> if (isQwenImage) "1328x1328" else "1024x1024"
-                        ImageAspectRatio.LANDSCAPE -> if (isQwenImage) "1584x1056" else "1024x1024"
-                        ImageAspectRatio.PORTRAIT -> if (isQwenImage) "1056x1584" else "1024x1024"
-                    })
+                    if (hasExplicitSize) {
+                        // SiliconFlow 接受任意 WxH 字符串，直接透传
+                        put("image_size", "${explicitWidth}x${explicitHeight}")
+                    } else {
+                        val isQwenImage = params.model.modelId.contains("Qwen-Image", ignoreCase = true)
+                        put("image_size", when (params.aspectRatio) {
+                            ImageAspectRatio.SQUARE -> if (isQwenImage) "1328x1328" else "1024x1024"
+                            ImageAspectRatio.LANDSCAPE -> if (isQwenImage) "1584x1056" else "1024x1024"
+                            ImageAspectRatio.PORTRAIT -> if (isQwenImage) "1056x1584" else "1024x1024"
+                        })
+                    }
                 }
             } else {
                 // OpenAI DALL-E 格式
@@ -269,11 +280,17 @@ class OpenAIProvider(
                 put("response_format", "b64_json")
                 put(
                     "size", when {
+                        // DALL·E 3 只认固定尺寸档位，不支持的宽高按纵横比就近映射（透传必 400）
+                        isDalle3 && hasExplicitSize ->
+                            ImageSizeRules.snapToDalle3Size(explicitWidth, explicitHeight)
                         isDalle3 -> when (params.aspectRatio) {
                             ImageAspectRatio.SQUARE -> "1024x1024"
                             ImageAspectRatio.LANDSCAPE -> "1792x1024"
                             ImageAspectRatio.PORTRAIT -> "1024x1792"
                         }
+
+                        // 其他 OpenAI 兼容端点接受 WxH 字符串，直接透传；不支持时服务端报错回传
+                        hasExplicitSize -> "${explicitWidth}x${explicitHeight}"
 
                         else -> "1024x1024"
                     }

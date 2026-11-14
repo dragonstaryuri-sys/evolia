@@ -85,6 +85,13 @@ data class ImageGenerationParams(
     val prompt: String,
     val numOfImages: Int = 1,
     val aspectRatio: ImageAspectRatio = ImageAspectRatio.SQUARE,
+    /**
+     * 显式像素宽/高（两者同时提供才生效），优先于 aspectRatio。
+     * 仅支持任意宽高的后端会透传；只认固定尺寸档位的后端（DALL·E 3 / Google predict）
+     * 会按纵横比就近映射，见 ImageSizeRules。
+     */
+    val width: Int? = null,
+    val height: Int? = null,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
     val image: String? = null,
