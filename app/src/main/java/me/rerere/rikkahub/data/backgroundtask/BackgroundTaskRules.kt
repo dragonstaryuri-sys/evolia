@@ -3,6 +3,7 @@ package me.rerere.rikkahub.data.backgroundtask
 import kotlinx.serialization.Serializable
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.db.entity.BackgroundTaskCallbackState
+import me.rerere.rikkahub.core.data.db.entity.BackgroundTaskStatus
 import java.security.MessageDigest
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -89,6 +90,46 @@ object BackgroundTaskRules {
             compareByDescending<ConflictCandidate> { it.isExecuting }.thenByDescending { it.createdAt }
         ).first()
         return ConflictDecision.Reject(newest.taskId)
+    }
+
+    // ============================================================
+    // Worker 停止决策（区分用户取消与系统停止）
+    // ============================================================
+
+    /** Worker 被停止时的处置动作。 */
+    enum class WorkerStopAction {
+        /** 用户取消（DB 已 CANCELLED 终态）：清理任务产物 + 撤通知 */
+        CLEANUP_CANCELLED,
+
+        /** 系统停止（网络约束变化 / dataSync onTimeout / 系统停 FGS）：
+         *  保持任务状态与 chunk 断点数据，等待 WorkManager 重跑续传 */
+        KEEP_FOR_RESUME,
+
+        /** 终态（succeeded/failed）或未知状态：无需处理 */
+        NONE,
+    }
+
+    /**
+     * Worker 被停止时的处置决策：以 DB 状态为准区分「用户取消」与「系统停止」。
+     * - CANCELLED = 用户取消（Manager.cancelTask 先落终态再取消 Work）→ 清理产物；
+     * - queued/running/committing = 系统停止 → 保持状态与 chunk 断点续传数据不清理，
+     *   WorkManager 按退避重跑后由租约过期重认领续传（进程死亡路径同样依赖此机制）；
+     *   旧实现对一切取消统一 cancelTask + 删产物，一次瞬时断网就会把跑了半小时的
+     *   任务永久取消，13.3 恢复链路因此不可达。
+     * - succeeded/failed = 终态 → 无需处理。
+     */
+    fun decideWorkerStopAction(statusName: String?): WorkerStopAction {
+        val status = BackgroundTaskStatus.from(statusName) ?: return WorkerStopAction.NONE
+        return when (status) {
+            BackgroundTaskStatus.CANCELLED -> WorkerStopAction.CLEANUP_CANCELLED
+            BackgroundTaskStatus.QUEUED,
+            BackgroundTaskStatus.RUNNING,
+            BackgroundTaskStatus.COMMITTING,
+            -> WorkerStopAction.KEEP_FOR_RESUME
+            BackgroundTaskStatus.SUCCEEDED,
+            BackgroundTaskStatus.FAILED,
+            -> WorkerStopAction.NONE
+        }
     }
 
     // ============================================================

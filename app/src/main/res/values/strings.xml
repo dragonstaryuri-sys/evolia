@@ -152,6 +152,7 @@
   <string name="back">Back</string>
   <string name="backup_page_backing_up">Backing up...</string>
   <string name="backup_page_backup_items">Backup Items</string>
+  <string name="backup_page_plaintext_warning">Backup archives are not encrypted yet: API keys, WebDAV / email passwords and other secrets are stored in the archive in plaintext and uploaded to the configured WebDAV server. Make sure the server is trusted.</string>
   <string name="backup_page_backup_now">Backup Now</string>
   <string name="backup_page_backup_success">Backup Success</string>
   <string name="backup_page_chat_records">Core data(chat records/diary...)</string>
@@ -1102,6 +1103,10 @@
   <string name="assistant_tools_search_off">Off</string>
   <string name="assistant_tools_prefer_built_in_search">Prefer Built-in Search</string>
   <string name="assistant_tools_prefer_built_in_search_desc">Use model\'s native search when available</string>
+  <string name="assistant_tools_group_tool_calling">Tool Calling</string>
+  <string name="assistant_tools_max_tool_rounds_title">Consecutive Tool Call Rounds</string>
+  <string name="assistant_tools_max_tool_rounds_value">%d rounds</string>
+  <string name="assistant_tools_max_tool_rounds_desc">Max tool call rounds per request (10–30). Once reached, the AI stops calling tools and answers directly with what it has.</string>
   <string name="assistant_tools_device_control_title">Device Control</string>
   <string name="assistant_tools_device_control_desc">Notifications, apps, alarms, reminders, camera capture</string>
   <string name="assistant_tools_camera_capture_title">Camera Capture</string>

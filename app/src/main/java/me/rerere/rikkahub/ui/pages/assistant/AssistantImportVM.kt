@@ -116,42 +116,43 @@ class AssistantImportVM(
                 val confirmed = previewDeferred!!.await()
 
                 if (confirmed) {
-                    val settings = settingsStore.settingsFlow.value
-
-                    val updatedAssistants = if (isOverwriteMode) {
-                        // 覆盖模式：更新现有智能体的信息
-                        settings.assistants.map {
-                            if (it.id == finalTargetId) {
-                                it.copy(
-                                    name = botName.ifBlank { data.botInfo.name },
-                                    systemPrompt = botDescription.ifBlank { data.botInfo.description },
-                                    avatar = if (data.botInfo.avatar.isNotBlank()) Avatar.Image(data.botInfo.avatar) else it.avatar,
-                                    isMain = true
-                                )
-                            } else if (isMainAgent) {
-                                // 如果设为主智能体，确保其他智能体不是主智能体
-                                it.copy(isMain = false)
+                    // 原子事务：锁内基于最新智能体列表构建导入结果，避免陈旧快照覆盖并发写
+                    settingsStore.update { current ->
+                        val updatedAssistants = if (isOverwriteMode) {
+                            // 覆盖模式：更新现有智能体的信息
+                            current.assistants.map {
+                                if (it.id == finalTargetId) {
+                                    it.copy(
+                                        name = botName.ifBlank { data.botInfo.name },
+                                        systemPrompt = botDescription.ifBlank { data.botInfo.description },
+                                        avatar = if (data.botInfo.avatar.isNotBlank()) Avatar.Image(data.botInfo.avatar) else it.avatar,
+                                        isMain = true
+                                    )
+                                } else if (isMainAgent) {
+                                    // 如果设为主智能体，确保其他智能体不是主智能体
+                                    it.copy(isMain = false)
+                                } else {
+                                    it
+                                }
+                            }
+                        } else {
+                            // 新建模式
+                            val newAssistant = Assistant(
+                                id = finalTargetId,
+                                name = botName.ifBlank { data.botInfo.name },
+                                systemPrompt = botDescription.ifBlank { data.botInfo.description },
+                                avatar = if (data.botInfo.avatar.isNotBlank()) Avatar.Image(data.botInfo.avatar) else Avatar.Dummy,
+                                isMain = isMainAgent,
+                                chatModelId = current.chatModelId,
+                            )
+                            if (isMainAgent) {
+                                current.assistants.map { it.copy(isMain = false) } + newAssistant
                             } else {
-                                it
+                                current.assistants + newAssistant
                             }
                         }
-                    } else {
-                        // 新建模式
-                        val newAssistant = Assistant(
-                            id = finalTargetId,
-                            name = botName.ifBlank { data.botInfo.name },
-                            systemPrompt = botDescription.ifBlank { data.botInfo.description },
-                            avatar = if (data.botInfo.avatar.isNotBlank()) Avatar.Image(data.botInfo.avatar) else Avatar.Dummy,
-                            isMain = isMainAgent,
-                            chatModelId = settings.chatModelId,
-                        )
-                        if (isMainAgent) {
-                            settings.assistants.map { it.copy(isMain = false) } + newAssistant
-                        } else {
-                            settings.assistants + newAssistant
-                        }
+                        current.copy(assistants = updatedAssistants)
                     }
-                    settingsStore.update(settings.copy(assistants = updatedAssistants))
                 }
 
                 confirmed
@@ -161,13 +162,18 @@ class AssistantImportVM(
 
             // 如果导入失败且不是覆盖模式，则尝试清理新建的智能体
             if (!success && !isOverwriteMode) {
-                val settings = settingsStore.settingsFlow.value
-                if (settings.assistants.any { it.id == finalTargetId }) {
-                    settingsStore.update(
-                        settings.copy(
-                            assistants = settings.assistants.filter { it.id != finalTargetId }
+                var removed = false
+                settingsStore.update { current ->
+                    if (current.assistants.any { it.id == finalTargetId }) {
+                        removed = true
+                        current.copy(
+                            assistants = current.assistants.filter { it.id != finalTargetId }
                         )
-                    )
+                    } else {
+                        current
+                    }
+                }
+                if (removed) {
                     conversationRepo.deleteConversationOfAssistant(finalTargetId)
                 }
             }

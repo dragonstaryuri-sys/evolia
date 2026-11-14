@@ -261,12 +261,10 @@ fun AgentListPage() {
                             onClick = {
                                 scope.launch {
                                     chatVm.selectAssistant(assistant.id)
-                                    val lastConv = repo.getConversationsOfAssistant(
-                                        assistant.id
-                                    )
-                                        .firstOrNull()
-                                        ?.firstOrNull()
-                                    val chatId = lastConv?.id ?: Uuid.random()
+                                    // 轻量单列查询定位最新会话（置顶优先），禁止全量水合该助手全部会话
+                                    // 只为取一条 ID（历史 OOM 根因，AGENTS.md 8.7 红线）
+                                    val chatId = repo.getFirstConversationMetaIdOfAssistant(assistant.id)
+                                        ?: Uuid.random()
                                     navController.navigate(Screen.Chat(id = chatId.toString()))
                                 }
                             }

@@ -277,8 +277,9 @@ object AssistantExportImport : KoinComponent {
             }
 
             if (importedLorebooks.isNotEmpty()) {
-                val current = settingsStore.settingsFlow.value
-                settingsStore.update(current.copy(lorebooks = current.lorebooks + importedLorebooks))
+                settingsStore.update { current ->
+                    current.copy(lorebooks = current.lorebooks + importedLorebooks)
+                }
             }
 
             if (newLorebookIds.isNotEmpty()) {

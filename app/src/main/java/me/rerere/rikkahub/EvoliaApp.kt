@@ -212,7 +212,14 @@ class EvoliaApp : Application() {
                             )
                             .build()
                     )
-                    settingsStore.update(settings.copy(lastAutoBackupTime = System.currentTimeMillis()))
+                    // 原子事务：锁内基于最新快照重验开关后落时间戳，避免陈旧快照覆盖并发写
+                    settingsStore.update { current ->
+                        if (current.autoBackupOnStart && current.webDavConfig.url.isNotBlank()) {
+                            current.copy(lastAutoBackupTime = System.currentTimeMillis())
+                        } else {
+                            current
+                        }
+                    }
                 }
             }
         }

@@ -245,9 +245,10 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - 记忆预算分配以**首轮**历史为准冻结进快照 dynamicContext；每轮 `buildMessages` 只做消息预算（等价 CHAT_HISTORY 优先）。
 
 #### 8.6.2 工具循环保护（ToolLoopGuard）
-- **轮次上限** 16 轮（`DEFAULT_MAX_TOOL_ROUNDS`，一轮 = 一次含工具调用的模型响应）：超限后不再执行工具，以引导性错误 ToolResult（保持调用/结果配对）让模型直接作答，循环自然结束；**禁止**静默 break 丢弃结果。
+- **轮次上限**默认 16 轮（`DEFAULT_MAX_TOOL_ROUNDS`，一轮 = 一次含工具调用的模型响应）：超限后不再执行工具，以引导性错误 ToolResult（保持调用/结果配对）让模型直接作答，循环自然结束；**禁止**静默 break 丢弃结果。**用户可配置**：`Assistant.maxToolRounds`（助手详情「工具与搜索」页滑条，合法区间 `MIN_TOOL_ROUNDS=10` ~ `MAX_TOOL_ROUNDS=30`），运行时越界数据（历史/导入）必须 coerce 进区间再使用（GenerationHandler 与 UI 两处均有收敛）。
 - **相同指纹连续重复检测**：指纹 = 工具名 + 规范化参数；基于**上一轮快照状态**计数（同轮内重复调用不得相互累积），连续相同超过 2 次拦截。不同参数/不同工具/非连续重复不受影响。
 - **已删除「每请求仅一次 search_web」硬限制**（GenerationHandler 的 searchCount 与 createSearchTool 的 searchCounter 双重拦截均已移除）：换关键词的再次搜索是合理行为；`search_web` 的 systemPrompt 引导语已同步放宽。不要以「搜索次数限制」替代循环保护。
+- **search_web 空结果治理（SearchRetryGuard，纯函数有单测）**：搜索无结果 → 返回空 items/results + note 引导「更换关键词后重新搜索」，并累计**连续**空结果次数（有效结果归零）；连续空结果达 5 次（`DEFAULT_MAX_CONSECUTIVE_EMPTY_RESULTS`）后不再执行实际网络搜索，直接返回 error 要求模型终止搜索并告知用户搜不到。Guard 实例在 `createSearchTool` 闭包内创建（每轮生成一个，按请求天然隔离），**禁止**把它做成全局/会话级单例。
 - 工具执行失败 → 明确错误 ToolResult（异常类名+消息+截断堆栈）；结果为空串/JsonNull → 规范化为「执行成功但没有返回任何内容」note；工具不存在 → 结构化错误（不抛堆栈）。空 results 时中止循环（不产生无内容 TOOL 消息）。
 
 #### 8.6.3 链路日志与排查入口

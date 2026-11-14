@@ -69,11 +69,11 @@ class AssistantVM(
                     """.trimIndent()
                 )
             }
-            settingsStore.update(
-                settings.copy(
-                    assistants = settings.assistants.plus(newAssistant)
+            settingsStore.update { current ->
+                current.copy(
+                    assistants = current.assistants.plus(newAssistant)
                 )
-            )
+            }
         }
     }
 
@@ -85,12 +85,11 @@ class AssistantVM(
 
         viewModelScope.launch {
             // Optimistic update: Remove from settings immediately
-            val currentSettings = settings.value
-            settingsStore.update(
-                currentSettings.copy(
-                    assistants = currentSettings.assistants.filter { it.id != assistant.id }
+            settingsStore.update { current ->
+                current.copy(
+                    assistants = current.assistants.filter { it.id != assistant.id }
                 )
-            )
+            }
         }
 
         // Start delayed deletion of data
@@ -111,20 +110,20 @@ class AssistantVM(
 
         viewModelScope.launch {
             // Restore to settings
-            val currentSettings = settings.value
-            if (currentSettings.assistants.none { it.id == assistant.id }) {
-                settingsStore.update(
-                    currentSettings.copy(
-                        assistants = currentSettings.assistants.plus(assistant)
+            settingsStore.update { current ->
+                if (current.assistants.none { it.id == assistant.id }) {
+                    current.copy(
+                        assistants = current.assistants.plus(assistant)
                     )
-                )
+                } else {
+                    current
+                }
             }
         }
     }
 
     fun copyAssistant(assistant: Assistant) {
         viewModelScope.launch {
-            val settings = settings.value
             val copiedAssistant = assistant.copy(
                 id = kotlin.uuid.Uuid.random(),
                 name = "${assistant.name} (Clone)",
@@ -137,11 +136,11 @@ class AssistantVM(
                 isMain = false, // 复制品默认不是主智能体
                 includeUserProfile = false // 复制品默认关闭档案带入
             )
-            settingsStore.update(
-                settings.copy(
-                    assistants = settings.assistants.plus(copiedAssistant)
+            settingsStore.update { current ->
+                current.copy(
+                    assistants = current.assistants.plus(copiedAssistant)
                 )
-            )
+            }
         }
     }
 

@@ -525,7 +525,6 @@ class SettingsStore(
             preferences[ASSISTANT_TAGS] = JsonInstant.encodeToString(settingsToSave.assistantTags)
             preferences[PROVIDER_TAGS] = JsonInstant.encodeToString(settingsToSave.providerTags)
             preferences[RECENTLY_USED_ASSISTANTS] = JsonInstant.encodeToString(settingsToSave.recentlyUsedAssistants)
-            preferences[RECENTLY_USED_ASSISTANTS] = JsonInstant.encodeToString(settingsToSave.recentlyUsedAssistants)
             preferences[SEARCH_SERVICES] = JsonInstant.encodeToString(settingsToSave.searchServices)
             preferences[SEARCH_COMMON] = JsonInstant.encodeToString(settingsToSave.searchCommonOptions)
             preferences[SEARCH_SELECTED] =
@@ -563,14 +562,27 @@ class SettingsStore(
     }
 
     suspend fun updateAssistant(assistantId: Uuid) {
+        // 外层快照仅用于选择分支，实际写回走原子事务（禁止锁外改 settingsFlow.value：
+        // 与 persistLocked 的整对象回填并发时会互相覆盖，当前助手切换随机回退）
         val current = settingsFlow.value
-        if (!current.init && current.assistants.any { it.id == assistantId }) {
-            settingsFlow.value = current.copy(assistantId = assistantId, recentlyUsedAssistants = buildList {
-                add(assistantId)
-                current.recentlyUsedAssistants.filter { it != assistantId }.take(2).forEach { add(it) }
-            })
+        val shouldUpdateFlow = !current.init && current.assistants.any { it.id == assistantId }
+        if (shouldUpdateFlow) {
+            update { settings ->
+                if (!settings.init && settings.assistants.any { it.id == assistantId }) {
+                    settings.copy(
+                        assistantId = assistantId,
+                        recentlyUsedAssistants = buildList {
+                            add(assistantId)
+                            settings.recentlyUsedAssistants.filter { it != assistantId }.take(2).forEach { add(it) }
+                        }
+                    )
+                } else {
+                    settings
+                }
+            }
+        } else {
+            dataStore.edit { it[SELECT_ASSISTANT] = assistantId.toString() }
         }
-        dataStore.edit { it[SELECT_ASSISTANT] = assistantId.toString() }
     }
 
     suspend fun markAssistantUsed(assistantId: Uuid) {

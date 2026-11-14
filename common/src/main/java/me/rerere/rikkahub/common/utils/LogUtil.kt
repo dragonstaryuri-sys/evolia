@@ -14,9 +14,12 @@ import me.rerere.rikkahub.common.BuildConfig
  */
 object LogUtil {
     /**
-     * Debug log - only in debug builds
+     * Debug log - only in debug builds.
+     * 注意：lambda 变体刻意**不**加 inline——ai 模块 JVM target(11) 低于 common(17)，
+     * 跨模块内联会报 "Cannot inline bytecode built with JVM target 17" 编译错误；
+     * 非 inline 的 lambda 参数保留惰性求值（release 下不构建消息字符串）。
      */
-    inline fun d(tag: String, message: () -> String) {
+    fun d(tag: String, message: () -> String) {
         if (BuildConfig.DEBUG) {
             Log.d(tag, message())
         }
@@ -34,7 +37,7 @@ object LogUtil {
     /**
      * Info log - only in debug builds
      */
-    inline fun i(tag: String, message: () -> String) {
+    fun i(tag: String, message: () -> String) {
         if (BuildConfig.DEBUG) {
             Log.i(tag, message())
         }

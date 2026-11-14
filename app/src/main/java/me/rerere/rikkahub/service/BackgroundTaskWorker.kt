@@ -184,18 +184,39 @@ class BackgroundTaskWorker(
         }
     }
 
-    /** Worker 被停止：标记取消（幂等）+ 产物清理 + 撤通知（NonCancellable）。 */
+    /**
+     * Worker 被停止：按 DB 状态区分「用户取消」与「系统停止」（NonCancellable，取消的
+     * 协程内挂起语句会立即失效，历史 bug 模式）。
+     * - 用户取消（Manager.cancelTask 先落 CANCELLED 终态再取消 Work）：清理产物 + 撤通知；
+     * - 系统停止（网络约束变化 / dataSync onTimeout / 系统停 FGS）：保留状态与 chunk 断点
+     *   续传数据，WorkManager 按退避重跑后由租约过期重认领续传；不置 CANCELLED、不删产物。
+     */
     private suspend fun onWorkerStopped(taskId: String) {
         withContext(NonCancellable) {
             val task = backgroundTaskRepository.getTaskById(taskId)
             if (task != null) {
-                val cancelled = backgroundTaskRepository.cancelTask(taskId, System.currentTimeMillis()) > 0
-                backgroundTaskManager.executorFor(task.taskType)?.let { executor ->
-                    runCatching { executor.cleanup(task) }
+                val action = BackgroundTaskRules.decideWorkerStopAction(task.status)
+                when (action) {
+                    BackgroundTaskRules.WorkerStopAction.CLEANUP_CANCELLED -> {
+                        backgroundTaskManager.executorFor(task.taskType)?.let { executor ->
+                            runCatching { executor.cleanup(task) }
+                        }
+                        Log.i(TAG, "worker stopped: task=$taskId user-cancelled, output cleaned")
+                    }
+
+                    BackgroundTaskRules.WorkerStopAction.KEEP_FOR_RESUME -> {
+                        Log.i(
+                            TAG,
+                            "worker stopped by system: task=$taskId status=${task.status}, kept for resume"
+                        )
+                    }
+
+                    BackgroundTaskRules.WorkerStopAction.NONE -> {
+                        Log.i(TAG, "worker stopped: task=$taskId status=${task.status}, nothing to do")
+                    }
                 }
-                Log.i(TAG, "worker stopped: task=$taskId cancelled=$cancelled (was ${task.status})")
+                cancelForegroundNotification(task)
             }
-            task?.let { cancelForegroundNotification(it) }
         }
     }
 

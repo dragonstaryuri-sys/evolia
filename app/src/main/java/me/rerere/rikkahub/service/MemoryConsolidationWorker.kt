@@ -440,30 +440,30 @@ class MemoryConsolidationWorker(
         }
 
         // --- Finalize Result Update ---
-        val finalSettings = settingsStore.settingsFlow.first()
         val now = System.currentTimeMillis()
 
-        val updatedSettings = finalSettings.copy(
-            assistants = finalSettings.assistants.map { assistantItem ->
-                if (currentAssistant.id == assistantItem.id) {
-                    assistantItem.copy(
-                        lastConsolidationTime = if (episodicSuccessCount > 0 || updatedMasterContent != null) now else assistantItem.lastConsolidationTime,
-                        lastConsolidationResult = when {
-                            masterError != null -> "Master Memory Error: $masterError"
-                            updatedMasterContent != null && forceMaster -> "Master Memory updated manually"
-                            updatedMasterContent != null && incrementalMaster -> "Daily Master Memory sync successful"
-                            episodicSuccessCount > 0 -> "Consolidated $episodicSuccessCount items automatically"
-                            else -> assistantItem.lastConsolidationResult
-                        },
-                        masterMemoryContent = updatedMasterContent ?: assistantItem.masterMemoryContent,
-                        lastMasterMemoryUpdate = if (updatedMasterContent != null) now else assistantItem.lastMasterMemoryUpdate
-                    )
-                } else {
-                    assistantItem
+        settingsStore.update { settings ->
+            settings.copy(
+                assistants = settings.assistants.map { assistantItem ->
+                    if (currentAssistant.id == assistantItem.id) {
+                        assistantItem.copy(
+                            lastConsolidationTime = if (episodicSuccessCount > 0 || updatedMasterContent != null) now else assistantItem.lastConsolidationTime,
+                            lastConsolidationResult = when {
+                                masterError != null -> "Master Memory Error: $masterError"
+                                updatedMasterContent != null && forceMaster -> "Master Memory updated manually"
+                                updatedMasterContent != null && incrementalMaster -> "Daily Master Memory sync successful"
+                                episodicSuccessCount > 0 -> "Consolidated $episodicSuccessCount items automatically"
+                                else -> assistantItem.lastConsolidationResult
+                            },
+                            masterMemoryContent = updatedMasterContent ?: assistantItem.masterMemoryContent,
+                            lastMasterMemoryUpdate = if (updatedMasterContent != null) now else assistantItem.lastMasterMemoryUpdate
+                        )
+                    } else {
+                        assistantItem
+                    }
                 }
-            }
-        )
-        settingsStore.update(updatedSettings)
+            )
+        }
 
         // 发送通知
         if (updatedMasterContent != null) {
@@ -521,21 +521,21 @@ class MemoryConsolidationWorker(
     }
 
     private suspend fun updateLastResult(assistantId: Uuid, result: String, wasUpdated: Boolean) {
-        val settings = settingsStore.settingsFlow.first()
         val now = System.currentTimeMillis()
-        val updated = settings.copy(
-            assistants = settings.assistants.map { assistantItem ->
-                if (assistantItem.id == assistantId) {
-                    assistantItem.copy(
-                        lastConsolidationTime = if (wasUpdated) now else assistantItem.lastConsolidationTime,
-                        lastConsolidationResult = result
-                    )
-                } else {
-                    assistantItem
+        settingsStore.update { settings ->
+            settings.copy(
+                assistants = settings.assistants.map { assistantItem ->
+                    if (assistantItem.id == assistantId) {
+                        assistantItem.copy(
+                            lastConsolidationTime = if (wasUpdated) now else assistantItem.lastConsolidationTime,
+                            lastConsolidationResult = result
+                        )
+                    } else {
+                        assistantItem
+                    }
                 }
-            }
-        )
-        settingsStore.update(updated)
+            )
+        }
     }
 
     @Suppress("UNCHECKED_CAST")

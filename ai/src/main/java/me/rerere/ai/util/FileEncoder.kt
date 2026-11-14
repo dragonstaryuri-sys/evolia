@@ -1,5 +1,6 @@
 package me.rerere.ai.util
 
+import me.rerere.rikkahub.common.utils.LogUtil
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
@@ -54,7 +55,7 @@ fun UIMessagePart.Image.encodeBase64(withPrefix: Boolean = true): Result<String>
                 val sizeAfter = file.length()
                 val mimeAfter = file.guessMimeType().getOrNull() ?: "unknown"
                 val ratio = if (sizeBefore > 0) String.format("%.1f%%", sizeAfter * 100f / sizeBefore) else "N/A"
-                Log.i(
+                LogUtil.i(
                     TAG,
                     "Image normalized: " +
                             "mime[$mimeBefore -> $mimeAfter], " +
@@ -64,7 +65,7 @@ fun UIMessagePart.Image.encodeBase64(withPrefix: Boolean = true): Result<String>
                 )
             } else {
                 // 跳过归一化：已经是 webp 且体积未超阈值
-                Log.i(
+                LogUtil.i(
                     TAG,
                     "Image skipped normalize (already webp & small enough): " +
                             "mime=${currentMime}, size=${file.length()}B, path=${file.absolutePath}"
@@ -138,7 +139,7 @@ private fun normalizeImageToWebp(file: File) {
         val targetW = (originalBitmap.width * scale).toInt().coerceAtLeast(1)
         val targetH = (originalBitmap.height * scale).toInt().coerceAtLeast(1)
         val scaled = Bitmap.createScaledBitmap(originalBitmap, targetW, targetH, true)
-        Log.i(
+        LogUtil.i(
             TAG,
             "Resize image: ${originalBitmap.width}x${originalBitmap.height} " +
                     "-> ${targetW}x${targetH}, scale=${String.format("%.3f", scale)}"

@@ -735,15 +735,14 @@ class ChatVM(
 
     fun updateAssistantSearchMode(searchMode: me.rerere.rikkahub.core.data.model.AssistantSearchMode) {
         viewModelScope.launch {
-            val currentSettings = settingsStore.settingsFlow.value
-            val assistantId = currentSettings.assistantId
-            settingsStore.update(
+            settingsStore.update { currentSettings ->
+                val assistantId = currentSettings.assistantId
                 currentSettings.copy(
                     assistants = currentSettings.assistants.map {
                         if (it.id == assistantId) it.copy(searchMode = searchMode) else it
                     }
                 )
-            )
+            }
         }
     }
     val currentChatModel = settings.map { settings -> settings.getCurrentChatModel() }.stateIn(viewModelScope, SharingStarted.Lazily, null)
@@ -764,14 +763,13 @@ class ChatVM(
 
     fun updateAssistant(updatedAssistant: Assistant) {
         viewModelScope.launch {
-            val currentSettings = settingsStore.settingsFlow.value
-            settingsStore.update(
+            settingsStore.update { currentSettings ->
                 currentSettings.copy(
                     assistants = currentSettings.assistants.map {
                         if (it.id == updatedAssistant.id) updatedAssistant else it
                     }
                 )
-            )
+            }
         }
     }
 
@@ -785,14 +783,13 @@ class ChatVM(
 
     fun setChatModel(assistant: Assistant, model: Model) {
         viewModelScope.launch {
-            val currentSettings = settingsStore.settingsFlow.value
-            settingsStore.update(
+            settingsStore.update { currentSettings ->
                 currentSettings.copy(
                     assistants = currentSettings.assistants.map {
                         if (it.id == assistant.id) it.copy(chatModelId = model.id) else it
                     }
                 )
-            )
+            }
         }
     }
 

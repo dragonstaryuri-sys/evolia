@@ -2118,49 +2118,52 @@ class LocalTools(
                     try {
                         when (target) {
                             "user" -> {
-                                val currentSettings = settingsStore.settingsFlow.value
-                                val profile = currentSettings.userProfile
-                                var updatedProfile = profile
-
-                                // 收集"覆盖前"的字段级旧值，用于历史版本回溯
+                                // 原子事务：锁内基于最新用户档案合并（禁止锁外快照整体覆盖），
+                                // changes（旧值→新值）在事务内捕获；历史快照 Room 写在事务外（transform 须为纯函数）
                                 val changes = mutableMapOf<String, Pair<String, String>>()
 
-                                updates.forEach { (field, value) ->
-                                    val newValue = value.jsonPrimitive.contentOrNull ?: value.toString()
-                                    android.util.Log.d(
-                                        "LocalTools",
-                                        "update_profile: [user] updating '$field' to '$newValue'"
-                                    )
-                                    val oldValue = when (field) {
-                                        "appearance" -> updatedProfile.appearance
-                                        "occupation" -> updatedProfile.occupation
-                                        "preferences" -> updatedProfile.preferences
-                                        "diet" -> updatedProfile.diet
-                                        "health" -> updatedProfile.health
-                                        "taboos" -> updatedProfile.taboos
-                                        "interaction_preferences" -> updatedProfile.interactionPreferences
-                                        "important_relationships" -> updatedProfile.importantRelationships
-                                        "birthday" -> updatedProfile.birthday
-                                        else -> null
+                                settingsStore.update { current ->
+                                    var updatedProfile = current.userProfile
+
+                                    updates.forEach { (field, value) ->
+                                        val newValue = value.jsonPrimitive.contentOrNull ?: value.toString()
+                                        android.util.Log.d(
+                                            "LocalTools",
+                                            "update_profile: [user] updating '$field' to '$newValue'"
+                                        )
+                                        val oldValue = when (field) {
+                                            "appearance" -> updatedProfile.appearance
+                                            "occupation" -> updatedProfile.occupation
+                                            "preferences" -> updatedProfile.preferences
+                                            "diet" -> updatedProfile.diet
+                                            "health" -> updatedProfile.health
+                                            "taboos" -> updatedProfile.taboos
+                                            "interaction_preferences" -> updatedProfile.interactionPreferences
+                                            "important_relationships" -> updatedProfile.importantRelationships
+                                            "birthday" -> updatedProfile.birthday
+                                            else -> null
+                                        }
+                                        if (oldValue != null && oldValue != newValue) {
+                                            changes[field] = oldValue to newValue
+                                        }
+                                        updatedProfile = when (field) {
+                                            "appearance" -> updatedProfile.copy(appearance = newValue)
+                                            "occupation" -> updatedProfile.copy(occupation = newValue)
+                                            "preferences" -> updatedProfile.copy(preferences = newValue)
+                                            "diet" -> updatedProfile.copy(diet = newValue)
+                                            "health" -> updatedProfile.copy(health = newValue)
+                                            "taboos" -> updatedProfile.copy(taboos = newValue)
+                                            "interaction_preferences" -> updatedProfile.copy(interactionPreferences = newValue)
+                                            "important_relationships" -> updatedProfile.copy(importantRelationships = newValue)
+                                            "birthday" -> updatedProfile.copy(birthday = newValue)
+                                            else -> updatedProfile
+                                        }
                                     }
-                                    if (oldValue != null && oldValue != newValue) {
-                                        changes[field] = oldValue to newValue
-                                    }
-                                    updatedProfile = when (field) {
-                                        "appearance" -> updatedProfile.copy(appearance = newValue)
-                                        "occupation" -> updatedProfile.copy(occupation = newValue)
-                                        "preferences" -> updatedProfile.copy(preferences = newValue)
-                                        "diet" -> updatedProfile.copy(diet = newValue)
-                                        "health" -> updatedProfile.copy(health = newValue)
-                                        "taboos" -> updatedProfile.copy(taboos = newValue)
-                                        "interaction_preferences" -> updatedProfile.copy(interactionPreferences = newValue)
-                                        "important_relationships" -> updatedProfile.copy(importantRelationships = newValue)
-                                        "birthday" -> updatedProfile.copy(birthday = newValue)
-                                        else -> updatedProfile
-                                    }
+
+                                    current.copy(userProfile = updatedProfile)
                                 }
 
-                                // 真正覆盖前，先把旧值快照写入历史表（保留最近 3 个版本）
+                                // 旧值快照写入历史表（保留最近 3 个版本）：Room 写在 update 事务外执行
                                 if (changes.isNotEmpty()) {
                                     val batchId = System.currentTimeMillis()
                                     try {
@@ -2175,7 +2178,6 @@ class LocalTools(
                                     }
                                 }
 
-                                settingsStore.update(currentSettings.copy(userProfile = updatedProfile))
                                 buildJsonObject { put("success", true); put("message", "用户档案已完成增量更新。") }
                             }
 
@@ -2878,16 +2880,25 @@ class LocalTools(
                                 if (assistant != null) {
                                     val isWechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
                                     if (isWechatMode) {
-                                        val updatedAssistant = assistant.copy(
-                                            uiSettings = assistant.uiSettings.copy(wechatMode = false)
-                                        )
-                                        settingsStore.update(
-                                            settings.copy(
-                                                assistants = settings.assistants.map { a ->
-                                                    if (a.id == updatedAssistant.id) updatedAssistant else a
-                                                }
-                                            )
-                                        )
+                                        // 原子事务：锁内基于最新快照重验微信模式后再切换，避免陈旧快照覆盖并发写
+                                        settingsStore.update { current ->
+                                            val currentAssistant = current.assistants.find { it.id == assistantId }
+                                            val stillWechatMode = currentAssistant != null &&
+                                                current.getEffectiveDisplaySetting(currentAssistant).wechatMode
+                                            if (stillWechatMode) {
+                                                current.copy(
+                                                    assistants = current.assistants.map { a ->
+                                                        if (a.id == assistantId) {
+                                                            a.copy(uiSettings = a.uiSettings.copy(wechatMode = false))
+                                                        } else {
+                                                            a
+                                                        }
+                                                    }
+                                                )
+                                            } else {
+                                                current
+                                            }
+                                        }
                                         android.util.Log.i(
                                             "LocalTools",
                                             "call_control: call start, switched assistant $assistantId from wechatMode→normal"

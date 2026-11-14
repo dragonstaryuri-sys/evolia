@@ -74,14 +74,16 @@ class AssistantImportMemoryVM(
      */
     fun submitAll(onFinished: () -> Unit) {
         viewModelScope.launch {
-            // A. 关系档案 (L3)
-            val settings = settingsStore.settingsFlow.first()
-            val updatedAssistants = settings.assistants.map {
-                if (it.id.toString() == assistantId) {
-                    it.copy(masterMemoryContent = relationshipProfile)
-                } else it
+            // A. 关系档案 (L3)：原子事务，锁内基于最新智能体列表合并
+            settingsStore.update { settings ->
+                settings.copy(
+                    assistants = settings.assistants.map {
+                        if (it.id.toString() == assistantId) {
+                            it.copy(masterMemoryContent = relationshipProfile)
+                        } else it
+                    }
+                )
             }
-            settingsStore.update(settings.copy(assistants = updatedAssistants))
 
             // B. 里程碑 (仅主智能体)
             if (isMain) {

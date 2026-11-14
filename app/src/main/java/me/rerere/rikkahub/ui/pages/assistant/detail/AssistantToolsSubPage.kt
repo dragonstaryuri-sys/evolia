@@ -8,7 +8,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,16 +18,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlin.math.roundToInt
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.ai.ToolLoopGuard
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.core.data.model.Assistant
@@ -36,6 +45,8 @@ import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 import me.rerere.search.SearchServiceOptions
 import org.koin.compose.koinInject
 
@@ -113,6 +124,38 @@ fun AssistantToolsSubPage(
                         onCheckedChange = { onUpdate(assistant.copy(preferBuiltInSearch = it)) }
                     )
                 }
+            )
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // TOOL CALLING GROUP
+        // ═══════════════════════════════════════════════════════════════════
+        SettingsGroup(title = stringResource(R.string.assistant_tools_group_tool_calling)) {
+            // 连续调用工具次数（单次用户请求内允许的最大工具调用轮次），范围 10~30。
+            // 越界的历史/导入数据先收敛进合法区间再展示；滑动结束才写回助手配置。
+            val configuredToolRounds = assistant.maxToolRounds.coerceIn(
+                ToolLoopGuard.MIN_TOOL_ROUNDS,
+                ToolLoopGuard.MAX_TOOL_ROUNDS
+            )
+            var toolRoundsSliderValue by remember(configuredToolRounds) {
+                mutableFloatStateOf(configuredToolRounds.toFloat())
+            }
+
+            SliderSettingCard(
+                title = stringResource(R.string.assistant_tools_max_tool_rounds_title),
+                value = toolRoundsSliderValue,
+                valueText = stringResource(
+                    R.string.assistant_tools_max_tool_rounds_value,
+                    toolRoundsSliderValue.roundToInt()
+                ),
+                description = stringResource(R.string.assistant_tools_max_tool_rounds_desc),
+                onValueChange = { toolRoundsSliderValue = it },
+                onValueChangeFinished = {
+                    val newValue = toolRoundsSliderValue.roundToInt()
+                    onUpdate(assistant.copy(maxToolRounds = newValue))
+                },
+                valueRange = ToolLoopGuard.MIN_TOOL_ROUNDS.toFloat()..ToolLoopGuard.MAX_TOOL_ROUNDS.toFloat(),
+                steps = ToolLoopGuard.MAX_TOOL_ROUNDS - ToolLoopGuard.MIN_TOOL_ROUNDS - 1
             )
         }
 
@@ -476,6 +519,57 @@ fun AssistantToolsSubPage(
                     }
                 )
             }
+        }
+    }
+}
+
+/**
+ * 滑条设置卡片（与 AssistantContextManagementSubPage 同款样式）。
+ */
+@Composable
+private fun SliderSettingCard(
+    title: String,
+    value: Float,
+    valueText: String,
+    description: String,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int
+) {
+    Surface(
+        color = groupContainerColor(),
+        shape = AppShapes.ListItemSmall,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (valueText.isNotEmpty()) {
+                Text(
+                    text = valueText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                onValueChangeFinished = onValueChangeFinished,
+                valueRange = valueRange,
+                steps = steps
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

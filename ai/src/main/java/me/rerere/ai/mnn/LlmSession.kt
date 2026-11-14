@@ -1,5 +1,6 @@
 package me.rerere.ai.mnn
 
+import me.rerere.rikkahub.common.utils.LogUtil
 import android.util.Log
 import java.io.File
 import java.util.stream.Collectors
@@ -40,7 +41,7 @@ class LlmSession(
     }
 
     override fun load() {
-//        Log.d(TAG, "MNN_DEBUG load begin")
+//        LogUtil.d(TAG, "MNN_DEBUG load begin")
 //        modelLoading = true
 //        var historyStringList: List<String>? = null
 //        val currentHistory = this.savedHistory
@@ -68,7 +69,7 @@ class LlmSession(
 //            this.assistantPromptTemplate = extraAssistantPrompt
 //            this.backendType = backend
 //        }
-//        Log.d(TAG, "MNN_DEBUG load initNative")
+//        LogUtil.d(TAG, "MNN_DEBUG load initNative")
 //        nativePtr = initNative(
 //            configPath,
 //            historyStringList,
@@ -79,7 +80,7 @@ class LlmSession(
 //            },
 //            Gson().toJson(configMap)
 //        )
-//        Log.d(TAG, "MNN_DEBUG load initNative end")
+//        LogUtil.d(TAG, "MNN_DEBUG load initNative end")
 //        modelLoading = false
 //        if (releaseRequested) {
 //            release()
@@ -96,9 +97,9 @@ class LlmSession(
         params: Map<String, Any>,
         progressListener: GenerateProgressListener
     ): HashMap<String, Any> {
-        Log.d(TAG, "start generate prompt: $prompt")
+        LogUtil.d(TAG, "start generate prompt: $prompt")
         synchronized(this) {
-            Log.d(TAG, "MNN_DEBUG submit$prompt")
+            LogUtil.d(TAG, "MNN_DEBUG submit$prompt")
             generating = true
             val result = submitNative(nativePtr, prompt, keepHistory, progressListener)
             generating = false
@@ -118,7 +119,7 @@ class LlmSession(
 
     override fun release() {
         synchronized(this) {
-            Log.d(
+            LogUtil.d(
                 TAG,
                 "MNN_DEBUG release nativePtr: $nativePtr mGenerating: $generating"
             )

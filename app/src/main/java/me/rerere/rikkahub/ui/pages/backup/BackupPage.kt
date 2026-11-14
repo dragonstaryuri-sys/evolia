@@ -436,6 +436,13 @@ private fun WebDavPage(
                     }
                 }
 
+                // 安全提示：备份包暂未加密，密钥明文随包上传（见 WebDAV 备份安全审查）
+                Text(
+                    text = stringResource(R.string.backup_page_plaintext_warning),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
                 ListItem(
                     modifier = Modifier.fillMaxWidth(),
                     headlineContent = {

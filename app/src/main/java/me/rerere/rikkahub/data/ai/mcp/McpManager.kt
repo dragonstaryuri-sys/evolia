@@ -60,7 +60,8 @@ class McpManager(
                 .map { settings -> settings.mcpServers }
                 .collect { mcpServerConfigs ->
                     runCatching {
-                        Log.i(TAG, "update configs: $mcpServerConfigs")
+                        // 只记服务名列表：data class toString 会带出 headers 里的 Authorization 等凭证字段
+                        Log.i(TAG, "update configs: ${mcpServerConfigs.map { it.commonOptions.name }}")
                         val newConfigs = mcpServerConfigs.filter { it.commonOptions.enable }
                         val currentConfigs = clients.keys.toList()
                         val (toAdd, toRemove) = currentConfigs.checkDifferent(

@@ -41,10 +41,11 @@ class PrinterManager(
         return settings.printerConfig
     }
 
-    /** 更新配置（保存设备 / 自动打印开关等） */
-    suspend fun updateConfig(transform: (PrinterDeviceConfig) -> PrinterDeviceConfig) {
-        val current = settingsStore.settingsFlow.value
-        settingsStore.update(current.copy(printerConfig = transform(current.printerConfig)))
+    /** 更新配置（保存设备 / 自动打印开关等）：原子事务，基于锁内最新快照变换 */
+    suspend fun updateConfig(configTransform: (PrinterDeviceConfig) -> PrinterDeviceConfig) {
+        settingsStore.update { settings ->
+            settings.copy(printerConfig = configTransform(settings.printerConfig))
+        }
     }
 
     // ---------------- 环境检查 ----------------

@@ -74,6 +74,13 @@ data class Assistant(
     val customBodies: List<CustomBody> = emptyList(),
     val mcpServers: Set<Uuid> = emptySet(),
     val localTools: List<LocalToolOption> = listOf(LocalToolOption.DeviceControl),
+
+    /**
+     * 单次用户请求内允许的最大工具调用轮次（连续调用工具次数，一轮 = 一次包含工具调用的
+     * 模型响应）。用户可在助手详情「工具与搜索」页配置（10~30）；历史数据/导入数据越界时
+     * 由运行时收敛进合法区间（见 GenerationHandler）。
+     */
+    val maxToolRounds: Int = 16,
     val background: String? = null,
     val backgroundDim: Float = 0.6f,
     val useAssistantMaterialYouColors: Boolean = false,

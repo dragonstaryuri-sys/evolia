@@ -654,11 +654,25 @@ class DiaryVM(
         val updatedAssistant = targetAssistant.copy(
             uiSettings = targetAssistant.uiSettings.copy(wechatMode = false)
         )
-        settingsStore.update(
-            s.copy(
-                assistants = s.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }
-            )
-        )
+        // 原子事务：锁内基于最新快照重验微信模式后再切换，避免陈旧快照覆盖并发写
+        settingsStore.update { current ->
+            val currentAssistant = current.assistants.find { it.id == updatedAssistant.id }
+            val stillWechatMode = currentAssistant != null &&
+                current.getEffectiveDisplaySetting(currentAssistant).wechatMode
+            if (stillWechatMode) {
+                current.copy(
+                    assistants = current.assistants.map {
+                        if (it.id == updatedAssistant.id) {
+                            it.copy(uiSettings = it.uiSettings.copy(wechatMode = false))
+                        } else {
+                            it
+                        }
+                    }
+                )
+            } else {
+                current
+            }
+        }
         toaster?.show(app.getString(R.string.diary_comment_switched_to_normal_mode))
     }
 
@@ -1062,15 +1076,15 @@ class DiaryVM(
 
     fun toggleAutoDiary(assistantId: String, enabled: Boolean) {
         viewModelScope.launch {
-            val currentSettings = settingsStore.settingsFlow.value
-            val updatedAssistant = currentSettings.assistants.find { it.id.toString() == assistantId } ?: return@launch
-            settingsStore.update(
+            val exists = settingsStore.settingsFlow.value.assistants.any { it.id.toString() == assistantId }
+            if (!exists) return@launch
+            settingsStore.update { currentSettings ->
                 currentSettings.copy(
                     assistants = currentSettings.assistants.map {
-                        if (it.id == updatedAssistant.id) it.copy(enableAutoDiary = enabled) else it
+                        if (it.id.toString() == assistantId) it.copy(enableAutoDiary = enabled) else it
                     }
                 )
-            )
+            }
         }
     }
 

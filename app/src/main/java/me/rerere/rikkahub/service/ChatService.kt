@@ -80,6 +80,7 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationHandler
+import me.rerere.rikkahub.data.ai.SearchRetryGuard
 import me.rerere.rikkahub.data.ai.isTransientNetworkError
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
@@ -2381,11 +2382,13 @@ class ChatService(
                         }
                     }
                     if (!isTemporaryOrDestroyed(conversationId)) {
-                        val currentSettings = settingsStore.settingsFlow.value
-                        val updatedAssistants = currentSettings.assistants.map {
-                            if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
+                        settingsStore.update { settings ->
+                            settings.copy(
+                                assistants = settings.assistants.map {
+                                    if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
+                                }
+                            )
                         }
-                        settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
                     }
                 }
             }.onSuccess {
@@ -2411,11 +2414,13 @@ class ChatService(
                     // onSuccess 执行时点可能晚于 destroyTemporarySession（生成完成瞬间退出临时会话），
                     // 同样必须用墓碑判定，禁止把 lastConversationId 写成已销毁临时会话 id
                     if (!isTemporaryOrDestroyed(conversationId)) {
-                        val currentSettings = settingsStore.settingsFlow.value
-                        val updatedAssistants = currentSettings.assistants.map {
-                            if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
+                        settingsStore.update { settings ->
+                            settings.copy(
+                                assistants = settings.assistants.map {
+                                    if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
+                                }
+                            )
                         }
-                        settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
                     }
                 }
                 addConversationReference(conversationId)
@@ -2690,6 +2695,11 @@ class ChatService(
         providerIndex: Int? = null,
     ): Set<Tool> {
         val idx = providerIndex ?: settings.searchServiceSelected
+        // 空结果重试守卫（本次生成请求内有效）：空结果时引导换关键词重搜，
+        // 连续无结果达上限后不再实际执行搜索，直接要求 AI 终止搜索并告知用户，
+        // 防止「一直搜一直搜」的空转循环消耗 Token（createSearchTool 每轮生成调用一次，
+        // 闭包计数天然按请求隔离）。
+        val searchRetryGuard = SearchRetryGuard()
         return buildSet {
             add(Tool(name = "search_web", description = "联网检索实时信息", parameters = {
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
@@ -2698,47 +2708,65 @@ class ChatService(
                 // 注意：这里不再硬性限制"每请求仅搜索一次"。
                 // 异常重复调用由 GenerationHandler.ToolLoopGuard 统一保护
                 // （工具调用轮次上限 + 相同工具/相同参数连续重复检测），
-                // 换用不同关键词的连续搜索是合理行为，不应被拦截。
-                val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
-                val resultSize = 6
-                val commonOptions = settings.searchCommonOptions.copy(resultSize = resultSize)
-                val input = jsonElement as? JsonObject ?: JsonObject(emptyMap())
-                val searchResult = SearchService.getService(opt).search(input, commonOptions, opt).getOrThrow()
-                searchResult.items.forEachIndexed { i, item ->
-                    Log.v(
-                        TAG,
-                        "Raw Item [$i]: ${item.title} (${item.url})"
-                    )
-                }
-                val htmlRegex = Regex("<[^>]*>")
-                val maxCharsPerItem = (12000 / resultSize.coerceAtLeast(1)).coerceIn(1500, 4000)
-                val cleanedItems = searchResult.items.take(resultSize).map { item ->
-                    val cleanedText = item.text.replace(htmlRegex, "").trim()
-                    item.copy(text = cleanedText.take(maxCharsPerItem))
-                }
-                buildJsonObject {
-                    put("items", JsonArray(cleanedItems.map { item ->
+                // 换用不同关键词的连续搜索是合理行为，不应被拦截；
+                // 连续空结果则由 searchRetryGuard 兜底终止。
+                if (searchRetryGuard.shouldBlockSearch()) {
+                    buildJsonObject {
+                        put("error", JsonPrimitive(searchRetryGuard.blockedMessage()))
+                    }
+                } else {
+                    val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
+                    val resultSize = 6
+                    val commonOptions = settings.searchCommonOptions.copy(resultSize = resultSize)
+                    val input = jsonElement as? JsonObject ?: JsonObject(emptyMap())
+                    val searchResult = SearchService.getService(opt).search(input, commonOptions, opt).getOrThrow()
+                    searchResult.items.forEachIndexed { i, item ->
+                        Log.v(
+                            TAG,
+                            "Raw Item [$i]: ${item.title} (${item.url})"
+                        )
+                    }
+                    val htmlRegex = Regex("<[^>]*>")
+                    val maxCharsPerItem = (12000 / resultSize.coerceAtLeast(1)).coerceIn(1500, 4000)
+                    val cleanedItems = searchResult.items.take(resultSize).map { item ->
+                        val cleanedText = item.text.replace(htmlRegex, "").trim()
+                        item.copy(text = cleanedText.take(maxCharsPerItem))
+                    }
+                    if (cleanedItems.isEmpty()) {
                         buildJsonObject {
-                            put("title", item.title)
-                            put("url", item.url)
-                            put("text", item.text)
-                            put("link", item.url)
-                            put("snippet", item.text)
+                            put("items", JsonArray(emptyList()))
+                            put("results", JsonArray(emptyList()))
+                            put("note", JsonPrimitive(searchRetryGuard.noteEmptyResult()))
                         }
-                    }))
-                    put("results", JsonArray(cleanedItems.map { item ->
+                    } else {
+                        searchRetryGuard.noteResultsFound()
                         buildJsonObject {
-                            put("title", item.title)
-                            put("link", item.url)
-                            put("snippet", item.text)
+                            put("items", JsonArray(cleanedItems.map { item ->
+                                buildJsonObject {
+                                    put("title", item.title)
+                                    put("url", item.url)
+                                    put("text", item.text)
+                                    put("link", item.url)
+                                    put("snippet", item.text)
+                                }
+                            }))
+                            put("results", JsonArray(cleanedItems.map { item ->
+                                buildJsonObject {
+                                    put("title", item.title)
+                                    put("link", item.url)
+                                    put("snippet", item.text)
+                                }
+                            }))
                         }
-                    }))
+                    }
                 }
             }, systemPrompt = { _, _ ->
                 "## tool: search_web\n" +
                     "优先整合已有搜索结果作答；如果搜索结果已足够回答用户，无需再次搜索。" +
                     "确有必要时（如首次结果与目标明显不符、或需要不同角度的信息）可以换用不同关键词再次检索，" +
-                    "但避免以完全相同的参数重复调用。"
+                    "但避免以完全相同的参数重复调用。" +
+                    "若搜索无结果，请更换关键词后重新搜索试试；连续多次无结果时应停止搜索，" +
+                    "直接告知用户未找到相关信息，不要无限重试。"
             }))
         }
     }

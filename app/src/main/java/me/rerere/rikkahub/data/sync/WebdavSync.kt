@@ -95,7 +95,12 @@ class WebdavSync(
 
             if (updatedAssistants != currentSettings.assistants) {
                 LogUtil.i(TAG, "迁移清理完成，正在保存更新后的智能体设置...")
-                settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
+                // 迁移计算基于快照（extractSchedulesFromAssistants 含 DB 副作用，不能放进 transform），
+                // 落盘时按 id 合并进最新智能体列表，保留并发新增/删除的其他智能体
+                val migratedById = updatedAssistants.associateBy { it.id }
+                settingsStore.update { current ->
+                    current.copy(assistants = current.assistants.map { a -> migratedById[a.id] ?: a })
+                }
             }
 
             LogUtil.i(TAG, "数据迁移执行完毕")

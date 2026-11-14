@@ -376,13 +376,20 @@ internal fun ColumnScope.ModelList(
         if (fromIndex >= 0 && toIndex >= 0 &&
             fromIndex < favoriteModels.size && toIndex < favoriteModels.size
         ) {
-            val newFavoriteModels = settings.value.favoriteModels.toMutableList().apply {
-                add(toIndex, removeAt(fromIndex))
-            }
             coroutineScope.launch {
-                settingsStore.update(
-                    settings.value.copy(favoriteModels = newFavoriteModels)
-                )
+                // 原子事务：锁内基于最新收藏列表重排，避免陈旧快照覆盖并发写
+                settingsStore.update { current ->
+                    val currentFavorites = current.favoriteModels
+                    val canReorder = fromIndex < currentFavorites.size && toIndex < currentFavorites.size
+                    if (canReorder) {
+                        val newFavoriteModels = currentFavorites.toMutableList().apply {
+                            add(toIndex, removeAt(fromIndex))
+                        }
+                        current.copy(favoriteModels = newFavoriteModels)
+                    } else {
+                        current
+                    }
+                }
             }
         }
     }
@@ -498,11 +505,11 @@ internal fun ColumnScope.ModelList(
                                 IconButton(
                                     onClick = {
                                         coroutineScope.launch {
-                                            settingsStore.update(
-                                                settings.value.copy(
-                                                    favoriteModels = settings.value.favoriteModels.filter { it != model.id }
+                                            settingsStore.update { current ->
+                                                current.copy(
+                                                    favoriteModels = current.favoriteModels.filter { it != model.id }
                                                 )
-                                            )
+                                            }
                                         }
                                     }
                                 ) {
@@ -581,15 +588,14 @@ internal fun ColumnScope.ModelList(
                                 IconButton(
                                     onClick = {
                                         coroutineScope.launch {
-                                            val currentSettings = settings.value
-                                            val newFavoriteModels = if (item.isFavorite) {
-                                                currentSettings.favoriteModels.filter { it != item.model.id }
-                                            } else {
-                                                currentSettings.favoriteModels + item.model.id
+                                            settingsStore.update { current ->
+                                                val newFavoriteModels = if (item.isFavorite) {
+                                                    current.favoriteModels.filter { it != item.model.id }
+                                                } else {
+                                                    current.favoriteModels + item.model.id
+                                                }
+                                                current.copy(favoriteModels = newFavoriteModels)
                                             }
-                                            settingsStore.update(
-                                                currentSettings.copy(favoriteModels = newFavoriteModels)
-                                            )
                                         }
                                     }
                                 ) {

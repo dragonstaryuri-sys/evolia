@@ -144,6 +144,7 @@
   <string name="back">返回</string>
   <string name="backup_page_backing_up">备份中...</string>
   <string name="backup_page_backup_items">备份项目</string>
+  <string name="backup_page_plaintext_warning">备份包暂未加密：API 密钥、WebDAV / 邮箱密码等敏感信息会以明文写入备份包并上传到所配置的 WebDAV 服务器，请确保服务端可信。</string>
   <string name="backup_page_backup_now">立即备份</string>
   <string name="backup_page_backup_success">备份成功</string>
   <string name="backup_page_chat_records">核心数据 (含聊天记录/日记/日程等)</string>
@@ -1077,6 +1078,10 @@
   <string name="assistant_tools_search_off">关闭</string>
   <string name="assistant_tools_prefer_built_in_search">优先使用内置搜索</string>
   <string name="assistant_tools_prefer_built_in_search_desc">若模型支持，优先使用模型自带的搜索功能</string>
+  <string name="assistant_tools_group_tool_calling">工具调用</string>
+  <string name="assistant_tools_max_tool_rounds_title">连续调用工具次数</string>
+  <string name="assistant_tools_max_tool_rounds_value">%d 轮</string>
+  <string name="assistant_tools_max_tool_rounds_desc">单次请求内 AI 连续执行工具调用的最大轮数（10~30），超限后将停止调用工具，直接基于已有信息作答。</string>
   <string name="assistant_tools_device_control_title">设备控制</string>
   <string name="assistant_tools_device_control_desc">通知、应用、闹钟、提醒事项、摄像头拍照</string>
   <string name="assistant_tools_camera_capture_title">摄像头拍照</string>

@@ -205,7 +205,6 @@ class SpontaneousWorker(
     }
 
     private suspend fun updateAssistantState(assistant: Assistant, content: String, isHalfDelay: Boolean) {
-        val settings = settingsStore.settingsFlow.first()
         val newTime = if (isHalfDelay) {
             val minIntervalMs = assistant.notificationFrequencyMinutes * 60 * 1000L
             System.currentTimeMillis() - (minIntervalMs / 2)
@@ -213,17 +212,21 @@ class SpontaneousWorker(
             System.currentTimeMillis()
         }
 
-        val updatedAssistant = assistant.copy(
-            lastNotificationTime = newTime,
-            lastNotificationContent = if (content.isNotBlank()) content else assistant.lastNotificationContent
-        )
-
-        val updatedSettings = settings.copy(
-            assistants = settings.assistants.map {
-                if (it.id == assistant.id) updatedAssistant else it
-            }
-        )
-        settingsStore.update(updatedSettings)
+        // 原子事务：锁内基于最新快照更新，避免陈旧快照覆盖并发写
+        settingsStore.update { settings ->
+            settings.copy(
+                assistants = settings.assistants.map {
+                    if (it.id == assistant.id) {
+                        it.copy(
+                            lastNotificationTime = newTime,
+                            lastNotificationContent = if (content.isNotBlank()) content else it.lastNotificationContent
+                        )
+                    } else {
+                        it
+                    }
+                }
+            )
+        }
     }
 
     private fun sendNotification(title: String, content: String, conversationId: kotlin.uuid.Uuid) {

@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.backgroundtask
 
 import me.rerere.rikkahub.core.data.db.entity.BackgroundTaskCallbackState
+import me.rerere.rikkahub.core.data.db.entity.BackgroundTaskStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -199,6 +200,54 @@ class BackgroundTaskRulesTest {
     @Test
     fun `header is present for ui filtering reference`() {
         assertNotNull(BackgroundTaskCallbackHeader.INSTRUCTION_HEADER)
+    }
+
+    // ==================== Worker 停止决策（用户取消 vs 系统停止） ====================
+
+    @Test
+    fun `cancelled task cleans up on worker stop`() {
+        // 用户取消路径：Manager.cancelTask 先落 CANCELLED 终态再取消 Work
+        assertEquals(
+            BackgroundTaskRules.WorkerStopAction.CLEANUP_CANCELLED,
+            BackgroundTaskRules.decideWorkerStopAction(BackgroundTaskStatus.CANCELLED.name)
+        )
+    }
+
+    @Test
+    fun `non-terminal tasks keep state for resume on system stop`() {
+        // 系统停止（网络约束变化 / dataSync onTimeout / 系统停 FGS）：
+        // 保留状态与 chunk 断点数据，WorkManager 重跑后由租约过期重认领续传
+        for (status in listOf(
+            BackgroundTaskStatus.QUEUED,
+            BackgroundTaskStatus.RUNNING,
+            BackgroundTaskStatus.COMMITTING,
+        )) {
+            assertEquals(
+                "status=$status 应保持状态等待续传",
+                BackgroundTaskRules.WorkerStopAction.KEEP_FOR_RESUME,
+                BackgroundTaskRules.decideWorkerStopAction(status.name)
+            )
+        }
+    }
+
+    @Test
+    fun `terminal and unknown statuses need no handling`() {
+        assertEquals(
+            BackgroundTaskRules.WorkerStopAction.NONE,
+            BackgroundTaskRules.decideWorkerStopAction(BackgroundTaskStatus.SUCCEEDED.name)
+        )
+        assertEquals(
+            BackgroundTaskRules.WorkerStopAction.NONE,
+            BackgroundTaskRules.decideWorkerStopAction(BackgroundTaskStatus.FAILED.name)
+        )
+        assertEquals(
+            BackgroundTaskRules.WorkerStopAction.NONE,
+            BackgroundTaskRules.decideWorkerStopAction(null)
+        )
+        assertEquals(
+            BackgroundTaskRules.WorkerStopAction.NONE,
+            BackgroundTaskRules.decideWorkerStopAction("lowercase_unknown")
+        )
     }
 
     // ==================== refKey 工具 ====================

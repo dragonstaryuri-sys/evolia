@@ -1,5 +1,6 @@
 package me.rerere.ai.provider.providers
 
+import me.rerere.rikkahub.common.utils.LogUtil
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -145,7 +146,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
+        LogUtil.i(TAG) { "generateText: ${json.encodeToString(requestBody)}" }
 
         val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
         if (!response.isSuccessful) {
@@ -193,10 +194,10 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        LogUtil.i(TAG) { "streamText: ${json.encodeToString(requestBody)}" }
 
         requestBody["messages"]!!.jsonArray.forEach {
-            Log.i(TAG, "streamText: $it")
+            LogUtil.i(TAG, "streamText: $it")
         }
 
         // 流式调用：SSE 连接在模型思考阶段可能长时间不下发任何字节，
@@ -214,7 +215,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                 type: String?,
                 data: String
             ) {
-                Log.d(TAG, "onEvent: type=$type, data=$data")
+                LogUtil.d(TAG, "onEvent: type=$type, data=$data")
 
                 val dataJson = json.parseToJsonElement(data).jsonObject
                 val deltaMessage = parseMessage(buildJsonArray {
@@ -246,7 +247,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
 
                 when (type) {
                     "message_stop" -> {
-                        Log.d(TAG, "Stream ended")
+                        LogUtil.d(TAG, "Stream ended")
                         close()
                     }
 
@@ -270,7 +271,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                 try {
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        Log.i(TAG, "Error response: $bodyElement")
+                        LogUtil.i(TAG, "Error response: $bodyElement")
                         exception = bodyElement.parseErrorDetail()
                     }
                 } catch (e: Throwable) {
@@ -291,7 +292,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                 .newEventSource(request, listener)
 
         awaitClose {
-            Log.d(TAG, "Closing eventSource")
+            LogUtil.d(TAG, "Closing eventSource")
             eventSource.cancel()
         }
     }

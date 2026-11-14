@@ -88,11 +88,17 @@ class ToolLoopGuard(
 
     companion object {
         /**
-         * 单次用户请求允许的最大工具调用轮次。
+         * 单次用户请求允许的最大工具调用轮次（默认值）。
          * 正常多步任务（搜索→读网页→再搜索→回答）约 2~6 轮，16 轮为充足余量；
          * 上限远低于 maxSteps（模型请求次数）上限，仅约束「带工具调用的轮次」。
          */
         const val DEFAULT_MAX_TOOL_ROUNDS = 16
+
+        /** 用户可配置轮次下限（助手详情「工具与搜索」页滑条），越界配置在运行时收敛进区间 */
+        const val MIN_TOOL_ROUNDS = 10
+
+        /** 用户可配置轮次上限（助手详情「工具与搜索」页滑条） */
+        const val MAX_TOOL_ROUNDS = 30
 
         /** 相同工具 + 相同参数连续允许执行的次数上限（第 N+1 次起拦截） */
         const val DEFAULT_MAX_IDENTICAL_REPEATS = 2

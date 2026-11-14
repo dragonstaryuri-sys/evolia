@@ -680,7 +680,12 @@ class GenerationHandler(
         // ===== 工具调用循环保护（Part 3.4）=====
         // 轮次上限 + 相同指纹连续重复检测；拦截时以引导性错误 ToolResult 反馈模型，
         // 保持 Assistant 工具调用与 Tool 消息配对，循环自然结束。
-        val toolLoopGuard = ToolLoopGuard()
+        // 轮次上限取助手配置（用户可在「工具与搜索」页调整），历史/导入数据越界时收敛进合法区间。
+        val configuredMaxToolRounds = assistant.maxToolRounds.coerceIn(
+            ToolLoopGuard.MIN_TOOL_ROUNDS,
+            ToolLoopGuard.MAX_TOOL_ROUNDS
+        )
+        val toolLoopGuard = ToolLoopGuard(maxToolRounds = configuredMaxToolRounds)
         var toolRound = 0
 
         for (stepIndex in 0 until maxSteps) {

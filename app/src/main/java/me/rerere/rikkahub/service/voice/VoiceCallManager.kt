@@ -1504,14 +1504,25 @@ class VoiceCallManager(
         val isWechatMode = s.getEffectiveDisplaySetting(assistant).wechatMode
         if (!isWechatMode) return
 
-        val updatedAssistant = assistant.copy(
-            uiSettings = assistant.uiSettings.copy(wechatMode = false)
-        )
-        settingsStore.update(
-            s.copy(
-                assistants = s.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }
-            )
-        )
+        // 原子事务：锁内基于最新快照重验微信模式后再切换，避免陈旧快照覆盖并发写
+        settingsStore.update { current ->
+            val currentAssistant = current.assistants.find { it.id == conv.assistantId }
+            val stillWechatMode = currentAssistant != null &&
+                current.getEffectiveDisplaySetting(currentAssistant).wechatMode
+            if (stillWechatMode) {
+                current.copy(
+                    assistants = current.assistants.map {
+                        if (it.id == conv.assistantId) {
+                            it.copy(uiSettings = it.uiSettings.copy(wechatMode = false))
+                        } else {
+                            it
+                        }
+                    }
+                )
+            } else {
+                current
+            }
+        }
         Log.i(TAG, "startCall: switched assistant ${conv.assistantId} from wechatMode → normal")
     }
 

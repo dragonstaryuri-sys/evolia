@@ -1,5 +1,6 @@
 package me.rerere.ai.provider.providers.openai
 
+import me.rerere.rikkahub.common.utils.LogUtil
 import android.util.Log
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -111,7 +112,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
+        LogUtil.i(TAG) { "generateText: ${json.encodeToString(requestBody)}" }
 
         val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
         if (!response.isSuccessful) {
@@ -119,7 +120,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
         }
 
         val bodyStr = response.body?.string() ?: ""
-        Log.i(TAG, "generateText: $bodyStr")
+        LogUtil.i(TAG, "generateText: $bodyStr")
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
         val output = parseResponseOutput(bodyJson)
 
@@ -146,7 +147,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        LogUtil.i(TAG) { "streamText: ${json.encodeToString(requestBody)}" }
 
         // 流式调用：SSE 连接在模型思考阶段可能长时间不下发任何字节，
         // 沿用全局 60s readTimeout 会在深度思考场景误断连接。
@@ -163,7 +164,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                 type: String?,
                 data: String
             ) {
-                Log.d(TAG, "onEvent: $id/$type $data")
+                LogUtil.d(TAG, "onEvent: $id/$type $data")
                 val json = json.parseToJsonElement(data).jsonObject
                 val chunk = parseResponseDelta(json)
                 if (chunk != null) {
@@ -186,7 +187,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
                         println(bodyElement)
                         exception = bodyElement.parseErrorDetail()
-                        Log.i(TAG, "onFailure: $exception")
+                        LogUtil.i(TAG, "onFailure: $exception")
                     }
                 } catch (e: Throwable) {
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw")

@@ -1,5 +1,6 @@
 package me.rerere.ai.provider.providers.openai
 
+import me.rerere.rikkahub.common.utils.LogUtil
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -219,7 +220,7 @@ class ChatCompletionsAPI(
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
+        LogUtil.i(TAG) { "generateText: ${json.encodeToString(requestBody)}" }
 
         val response = proxyClient.newCall(request).await()
         if (!response.isSuccessful) {
@@ -292,11 +293,11 @@ class ChatCompletionsAPI(
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "streamText: start request, body size: ${json.encodeToString(requestBody).length}")
+        LogUtil.i(TAG) { "streamText: start request, body size: ${json.encodeToString(requestBody).length}" }
 
         val listener = object : EventSourceListener() {
             override fun onOpen(eventSource: EventSource, response: Response) {
-                Log.d(TAG, "onOpen: Connection established in ${System.currentTimeMillis() - startTime}ms")
+                LogUtil.d(TAG, "onOpen: Connection established in ${System.currentTimeMillis() - startTime}ms")
             }
 
             override fun onEvent(
@@ -307,7 +308,7 @@ class ChatCompletionsAPI(
             ) {
                 if (!firstTokenReceived) {
                     firstTokenReceived = true
-                    Log.d(TAG, "onEvent: First chunk received in ${System.currentTimeMillis() - startTime}ms")
+                    LogUtil.d(TAG, "onEvent: First chunk received in ${System.currentTimeMillis() - startTime}ms")
                 }
 
                 if (data == "[DONE]") {
@@ -392,7 +393,7 @@ class ChatCompletionsAPI(
             }
 
             override fun onClosed(eventSource: EventSource) {
-                Log.d(TAG, "onClosed: SSE connection closed")
+                LogUtil.d(TAG, "onClosed: SSE connection closed")
                 close()
             }
         }
@@ -400,7 +401,7 @@ class ChatCompletionsAPI(
         val eventSource = EventSources.createFactory(proxyClient).newEventSource(request, listener)
 
         awaitClose {
-            Log.d(TAG, "awaitClose: cancelling eventSource")
+            LogUtil.d(TAG, "awaitClose: cancelling eventSource")
             eventSource.cancel()
         }
     }

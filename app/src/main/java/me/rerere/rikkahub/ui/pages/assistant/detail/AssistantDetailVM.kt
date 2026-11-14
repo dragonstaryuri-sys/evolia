@@ -351,7 +351,9 @@ class AssistantDetailVM(
             try {
                 val currentSettings = settings.value
                 val currentAssistant = assistant.value
-                val conversations = conversationRepository.getConversationsOfAssistant(currentAssistant.id).first()
+                // 轻量元数据扫描（8.7 红线：禁止为筛选候选全量水合全部会话），
+                // 完整会话（含消息 / temporarySummaries）一律在循环内按需 getConversationById
+                val conversationMetas = conversationRepository.getConversationMetasOfAssistant(currentAssistant.id)
 
                 val modelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
                 val model = currentSettings.findModelById(modelId) ?: error("No model found")
@@ -363,17 +365,16 @@ class AssistantDetailVM(
                     val existingEpisodes = chatEpisodeDAO.getEpisodesOfAssistant(currentAssistant.id.toString())
                     val episodeMap = existingEpisodes.associateBy { it.conversationId }
 
-                    val toConsolidateEpisodes = conversations.filter { conv ->
-                        val existing = episodeMap[conv.id.toString()]
+                    // 候选筛选：挂起调用逐会话计数（禁止 runBlocking 阻塞主线程）
+                    val toConsolidateCandidates = conversationMetas.filter { meta ->
+                        val existing = episodeMap[meta.id.toString()]
                         val anchorTime = existing?.endTime ?: 0L
-                        val increment = kotlinx.coroutines.runBlocking {
-                            conversationRepository.countNewMessages(conv.id.toString(), anchorTime)
-                        }
-                        increment >= 4
+                        conversationRepository.countNewMessages(meta.id.toString(), anchorTime) >= 4
                     }
 
-                    for (conv in toConsolidateEpisodes) {
+                    for (meta in toConsolidateCandidates) {
                         yield()
+                        val conv = conversationRepository.getConversationById(meta.id) ?: continue
                         val existingEpisode = episodeMap[conv.id.toString()]
                         val anchorTime = existingEpisode?.endTime ?: 0L
                         val newMessagesEntities = conversationRepository.getMessagesForSummary(conv.id.toString(), anchorTime)
@@ -416,8 +417,18 @@ class AssistantDetailVM(
                 var updatedMasterContent: String? = null
                 if (updateMaster && currentAssistant.enableMasterMemory) {
                     yield()
+                    // 与 MemoryConsolidationWorker 的 L3 素材选择一致：元数据排序取前 10 个候选，
+                    // 再按需拉取完整会话过滤（currentMessages.size >= 2），最多取 5 个会话，
+                    // 避免为构建上下文把全部会话载入内存
+                    val targetConversations = conversationMetas
+                        .sortedByDescending { it.updateAt.toEpochMilli() }
+                        .take(10)
+                        .mapNotNull { conversationRepository.getConversationById(it.id) }
+                        .filter { it.currentMessages.size >= 2 }
+                        .take(5)
+                        .reversed()
                     val contextParts = mutableListOf<String>()
-                    for (conv in conversations.filter { it.currentMessages.size >= 2 }) {
+                    for (conv in targetConversations) {
                         val summary = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())?.content
                         if (!summary.isNullOrBlank()) {
                             contextParts.add("Conversation Summary: $summary")
@@ -451,19 +462,20 @@ class AssistantDetailVM(
                     if (length == 0) append("No new items to consolidate.")
                 }.trim()
 
-                val updatedSettings = currentSettings.copy(
-                    assistants = currentSettings.assistants.map {
-                        if (it.id == currentAssistant.id) {
-                            it.copy(
-                                lastConsolidationTime = if (episodicSuccessCount > 0 || updatedMasterContent != null) now else it.lastConsolidationTime,
-                                lastConsolidationResult = resultDesc,
-                                masterMemoryContent = updatedMasterContent ?: it.masterMemoryContent,
-                                lastMasterMemoryUpdate = if (updatedMasterContent != null) now else it.lastMasterMemoryUpdate
-                            )
-                        } else it
-                    }
-                )
-                settingsStore.update(updatedSettings)
+                settingsStore.update { settings ->
+                    settings.copy(
+                        assistants = settings.assistants.map {
+                            if (it.id == currentAssistant.id) {
+                                it.copy(
+                                    lastConsolidationTime = if (episodicSuccessCount > 0 || updatedMasterContent != null) now else it.lastConsolidationTime,
+                                    lastConsolidationResult = resultDesc,
+                                    masterMemoryContent = updatedMasterContent ?: it.masterMemoryContent,
+                                    lastMasterMemoryUpdate = if (updatedMasterContent != null) now else it.lastMasterMemoryUpdate
+                                )
+                            } else it
+                        }
+                    )
+                }
                 setSnackbarMessage(resultDesc)
             } catch (e: Exception) {
                 if (e !is CancellationException) {
@@ -471,18 +483,18 @@ class AssistantDetailVM(
                     setSnackbarMessage("Error: ${e.message}")
 
                     // 将错误也持久化到 lastConsolidationResult，以便 UI 展示
-                    val currentSettings = settings.value
-                    val currentAssistant = assistant.value
-                    val updatedSettings = currentSettings.copy(
-                        assistants = currentSettings.assistants.map {
-                            if (it.id == currentAssistant.id) {
-                                it.copy(
-                                    lastConsolidationResult = "Error: ${e.message ?: "Unknown error"}"
-                                )
-                            } else it
-                        }
-                    )
-                    settingsStore.update(updatedSettings)
+                    val failedAssistant = assistant.value
+                    settingsStore.update { settings ->
+                        settings.copy(
+                            assistants = settings.assistants.map {
+                                if (it.id == failedAssistant.id) {
+                                    it.copy(
+                                        lastConsolidationResult = "Error: ${e.message ?: "Unknown error"}"
+                                    )
+                                } else it
+                            }
+                        )
+                    }
                 }
             } finally {
                 _isConsolidating.value = false
@@ -995,31 +1007,33 @@ class AssistantDetailVM(
 
     fun update(assistant: Assistant) {
         viewModelScope.launch {
-            val currentSettings = settingsStore.settingsFlow.value
-
-            // 强制互斥逻辑：如果当前被设为主智能体，将其余所有智能体设为非主智能体
-            val updatedAssistants = if (assistant.isMain) {
-                currentSettings.assistants.map {
-                    if (it.id == assistant.id) assistant else it.copy(isMain = false)
+            settingsStore.update { currentSettings ->
+                // 强制互斥逻辑：如果当前被设为主智能体，将其余所有智能体设为非主智能体
+                val updatedAssistants = if (assistant.isMain) {
+                    currentSettings.assistants.map {
+                        if (it.id == assistant.id) assistant else it.copy(isMain = false)
+                    }
+                } else {
+                    currentSettings.assistants.map {
+                        if (it.id == assistant.id) assistant else it
+                    }
                 }
-            } else {
-                currentSettings.assistants.map {
-                    if (it.id == assistant.id) assistant else it
-                }
+                currentSettings.copy(assistants = updatedAssistants)
             }
-            settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
         }
     }
 
     fun updateTags(tagIds: List<Uuid>, updatedTags: List<Tag>) {
         viewModelScope.launch {
-            val currentSettings = settingsStore.settingsFlow.value;
-            val currentAssistant =
-                assistant.value; settingsStore.update(currentSettings.copy(assistants = currentSettings.assistants.map {
-            if (it.id == currentAssistant.id) it.copy(
-                tags = tagIds
-            ) else it
-        }, assistantTags = updatedTags))
+            val currentAssistant = assistant.value
+            settingsStore.update { currentSettings ->
+                currentSettings.copy(
+                    assistants = currentSettings.assistants.map {
+                        if (it.id == currentAssistant.id) it.copy(tags = tagIds) else it
+                    },
+                    assistantTags = updatedTags
+                )
+            }
         }
     }
 

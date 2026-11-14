@@ -1,6 +1,6 @@
 package me.rerere.ai.provider.providers
 
-import android.util.Log
+import me.rerere.rikkahub.common.utils.LogUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -123,7 +123,7 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
             if (response.isSuccessful) {
                 val body = response.body?.string() ?: error("empty body")
-                Log.d(TAG, "listModels: $body")
+                LogUtil.d(TAG, "listModels: $body")
                 val bodyObject = json.parseToJsonElement(body).jsonObject
                 val models = bodyObject["models"]?.jsonArray ?: return@withContext emptyList()
 
@@ -233,7 +233,7 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                 .build()
         )
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        LogUtil.i(TAG) { "streamText: ${json.encodeToString(requestBody)}" }
 
         // 流式调用：SSE 连接在模型思考阶段可能长时间不下发任何字节，
         // 沿用全局 60s readTimeout 会在深度思考场景误断连接。
@@ -250,7 +250,7 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                 type: String?,
                 data: String
             ) {
-                Log.i(TAG, "onEvent: $data")
+                LogUtil.i(TAG, "onEvent: $data")
 
                 try {
                     val jsonData = json.parseToJsonElement(data).jsonObject
@@ -519,7 +519,7 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
         } ?: emptyList()
 
         val groundingMetadata = message["groundingMetadata"]?.jsonObject
-        Log.i(TAG, "parseMessage: $groundingMetadata")
+        LogUtil.i(TAG, "parseMessage: $groundingMetadata")
         val annotations = parseSearchGroundingMetadata(groundingMetadata)
 
         return UIMessage(
@@ -541,7 +541,7 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                 url = uri
             )
         }
-        Log.i(TAG, "parseSearchGroundingMetadata: $chunks")
+        LogUtil.i(TAG, "parseSearchGroundingMetadata: $chunks")
         return chunks
     }
 
@@ -783,7 +783,7 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             return@withContext emptyList()
         }
 
-        Log.d(TAG, "createEmbedding: model=${model.modelId}, inputSize=${input.size}")
+        LogUtil.d(TAG, "createEmbedding: model=${model.modelId}, inputSize=${input.size}")
 
         // For single input, use embedContent endpoint
         // For multiple inputs, use batchEmbedContents endpoint
@@ -808,8 +808,8 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                 }
             )
 
-            Log.d(TAG, "createEmbedding: url=$url")
-            Log.d(TAG, "createEmbedding: requestBody=${json.encodeToString(requestBody)}")
+            LogUtil.d(TAG) { "createEmbedding: url=${url.toString().substringBefore("?")}" }
+            LogUtil.d(TAG) { "createEmbedding: requestBody=${json.encodeToString(requestBody)}" }
 
             val request = transformRequest(
                 providerSetting = providerSetting,
@@ -823,8 +823,8 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
             val bodyStr = response.body?.string() ?: ""
             
-            Log.d(TAG, "createEmbedding: responseCode=${response.code}")
-            Log.d(TAG, "createEmbedding: responseBody=$bodyStr")
+            LogUtil.d(TAG, "createEmbedding: responseCode=${response.code}")
+            LogUtil.d(TAG, "createEmbedding: responseBody=$bodyStr")
             
             if (!response.isSuccessful) {
                 error("Failed to create embedding: ${response.code} $bodyStr")
@@ -865,7 +865,7 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                 }
             )
 
-            Log.d(TAG, "createEmbedding batch: url=$url")
+            LogUtil.d(TAG) { "createEmbedding batch: url=${url.toString().substringBefore("?")}" }
 
             val request = transformRequest(
                 providerSetting = providerSetting,
@@ -879,7 +879,7 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
             val bodyStr = response.body?.string() ?: ""
             
-            Log.d(TAG, "createEmbedding batch: responseCode=${response.code}")
+            LogUtil.d(TAG, "createEmbedding batch: responseCode=${response.code}")
             
             if (!response.isSuccessful) {
                 error("Failed to create batch embedding: ${response.code} $bodyStr")

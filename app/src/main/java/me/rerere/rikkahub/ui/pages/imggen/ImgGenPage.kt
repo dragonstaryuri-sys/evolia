@@ -919,9 +919,9 @@ private fun SettingsBottomSheet(
                     onlyIcon = false,
                     onSelect = { model ->
                         scope.launch {
-                            vm.settingsStore.update(
-                                settings.copy(imageGenerationModelId = model.id)
-                            )
+                            vm.settingsStore.update { current ->
+                                current.copy(imageGenerationModelId = model.id)
+                            }
                         }
                     }
                 )
