@@ -150,6 +150,7 @@ import android.content.Context
 import androidx.core.app.NotificationManagerCompat
 import me.rerere.rikkahub.data.sync.WebdavSync
 import me.rerere.rikkahub.common.utils.LogUtil
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import androidx.core.content.edit
 
 private const val TAG = "RouteActivity"
@@ -166,6 +167,18 @@ class RouteActivity : AppCompatActivity() {
     private var pendingAssistantId by mutableStateOf<String?>(null)
     private var pendingConversationId by mutableStateOf<String?>(null)
     private var pendingRadioPlayerJump by mutableStateOf(false)
+
+    // 临时会话活跃时被拦截的「进入普通会话」导航（通知点击 / 应用快捷方式）。
+    // 不变式：用户要么停留在临时会话，要么退出临时会话进入普通会话，两者不能同时存在；
+    // 跳转前必须经用户确认，确认即销毁临时会话（导航 popUpTo 触发 TemporaryChatVM.onCleared 兜底销毁），
+    // 取消则丢弃本次导航、临时会话原样保留。
+    private var pendingTempExitNavigation by mutableStateOf<PendingTempExitNav?>(null)
+
+    private data class PendingTempExitNav(
+        val conversationId: String? = null,
+        val assistantId: String? = null,
+        val targetScreen: String? = null,
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -248,21 +261,34 @@ class RouteActivity : AppCompatActivity() {
                 }
                 try {
                     val assistantId = Uuid.parse(intentAssistantId)
-                    settingsStore.updateAssistant(assistantId)
-                    settingsStore.markAssistantUsed(assistantId)
-
-                    if (targetScreen == "diary") {
-                        navStack?.navigate(Screen.DiaryList(assistantId.toString()))
-                    } else {
-                        navStack?.navigate(Screen.Home) { popUpTo(0) { inclusive = true } }
-                        navStack?.navigate(Screen.Home) {
-                            popUpTo(0) { inclusive = true }
-                        }
-                        navStack?.navigate(Screen.Chat(Uuid.random().toString()))
+                    // 临时会话活跃且目标是普通会话页（日记页不是会话视图，不拦截）：
+                    // 直接跳转会以 popUpTo(0) 静默清栈销毁临时会话，必须先经用户确认
+                    if (chatService.hasActiveTemporarySession() && targetScreen != "diary") {
+                        pendingTempExitNavigation =
+                            PendingTempExitNav(assistantId = intentAssistantId, targetScreen = targetScreen)
+                        return@launch
                     }
+                    performAssistantIntentNavigation(assistantId, targetScreen)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
+            }
+        }
+    }
+
+    private fun performAssistantIntentNavigation(assistantId: Uuid, targetScreen: String?) {
+        lifecycleScope.launch {
+            settingsStore.updateAssistant(assistantId)
+            settingsStore.markAssistantUsed(assistantId)
+
+            if (targetScreen == "diary") {
+                navStack?.navigate(Screen.DiaryList(assistantId.toString()))
+            } else {
+                navStack?.navigate(Screen.Home) { popUpTo(0) { inclusive = true } }
+                navStack?.navigate(Screen.Home) {
+                    popUpTo(0) { inclusive = true }
+                }
+                navStack?.navigate(Screen.Chat(Uuid.random().toString()))
             }
         }
     }
@@ -313,9 +339,15 @@ class RouteActivity : AppCompatActivity() {
         LaunchedEffect(conversationIdStr) {
             if (conversationIdStr != null) {
                 pendingConversationId = null
-                navBackStack.navigate(Screen.Chat(conversationIdStr))
+                if (chatService.hasActiveTemporarySession()) {
+                    // 临时会话活跃：点通知进普通会话 = 退出临时会话，必须先经用户确认
+                    pendingTempExitNavigation = PendingTempExitNav(conversationId = conversationIdStr)
+                } else {
+                    navBackStack.navigate(Screen.Chat(conversationIdStr))
+                }
             }
         }
+        TempExitConfirmDialog(navBackStack)
         // 媒体通知点击：按当前播放项状态驱动导航（电台节目 → 节目详情；通话录音 → 通话详情）
         val radioPlayerJump = pendingRadioPlayerJump
         LaunchedEffect(radioPlayerJump) {
@@ -336,6 +368,46 @@ class RouteActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * 临时会话退出确认弹窗：被拦截的「进入普通会话」导航（通知点击 / 快捷方式）在此收口。
+     * 确认 = 销毁临时会话并执行原导航；取消 = 丢弃导航，临时会话原样保留。
+     */
+    @Composable
+    private fun TempExitConfirmDialog(navBackStack: NavHostController) {
+        val pending = pendingTempExitNavigation ?: return
+        ConfirmDialog(
+            onDismissRequest = { pendingTempExitNavigation = null },
+            onConfirm = {
+                val target = pendingTempExitNavigation
+                pendingTempExitNavigation = null
+                if (target?.conversationId != null) {
+                    if (chatService.hasActiveTemporarySession()) {
+                        // 临时会话页仍在栈顶：弹出它（TemporaryChatVM.onCleared 兜底销毁），
+                        // 同时进入通知指向的普通会话，保证两视图不同时存在
+                        val tempDestinationId = navBackStack.currentDestination?.id
+                        navBackStack.navigate(Screen.Chat(target.conversationId)) {
+                            if (tempDestinationId != null) {
+                                popUpTo(tempDestinationId) { inclusive = true }
+                            }
+                        }
+                    } else {
+                        // 用户在弹窗期间已自行退出临时会话，直接进入目标会话
+                        navBackStack.navigate(Screen.Chat(target.conversationId))
+                    }
+                } else if (target?.assistantId != null) {
+                    runCatching {
+                        performAssistantIntentNavigation(Uuid.parse(target.assistantId), target.targetScreen)
+                    }.onFailure { it.printStackTrace() }
+                }
+            },
+            title = stringResource(R.string.temp_exit_to_chat_title),
+            text = stringResource(R.string.temp_exit_to_chat_message),
+            confirmText = stringResource(R.string.temp_exit_to_chat_confirm),
+            dismissText = stringResource(R.string.temp_exit_to_chat_cancel),
+            dangerous = true
+        )
     }
 
     @Composable

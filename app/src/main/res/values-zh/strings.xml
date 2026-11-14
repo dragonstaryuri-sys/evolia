@@ -724,6 +724,10 @@
   <string name="temporary_chat_exit_message">退出后，本次临时会话的所有消息和相关数据都将被清空，且无法恢复。确定退出吗？</string>
   <string name="temporary_chat_exit_confirm">退出并清空</string>
   <string name="temporary_chat_exit_cancel">继续聊天</string>
+  <string name="temp_exit_to_chat_title">退出临时会话以查看？</string>
+  <string name="temp_exit_to_chat_message">普通会话中有新的消息。查看需要退出并清空当前临时会话，其内容将无法恢复。</string>
+  <string name="temp_exit_to_chat_confirm">退出并查看</string>
+  <string name="temp_exit_to_chat_cancel">留在临时会话</string>
   <string name="delete_memory_confirmation">确定要删除这条记忆吗？此操作无法撤销。</string>
   <string name="done">完成</string>
   <string name="loading">加载中...</string>

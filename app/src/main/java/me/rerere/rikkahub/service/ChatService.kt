@@ -560,9 +560,16 @@ class ChatService(
                 }
         }.getOrNull() ?: originalAssistant
 
-        val activeConvId = conversationReferences.keys
+        // 目标会话候选必须排除临时/销毁中/已销毁（墓碑）会话：临时会话开着时它引用在册且
+        // updateAt 最新，不过滤的话定时任务回复会被注入临时会话、随会话销毁而蒸发（历史 bug）。
+        // 排除后落点 = 用户正打开的正式会话（临时页下方，引用在册）→ DB 最新正式会话 → 新建。
+        val candidateConversations = conversationReferences.keys
             .mapNotNull { id -> conversations[id]?.value }
-            .filter { it.assistantId == originalAssistantId }
+            .filter { conversation ->
+                conversation.assistantId == originalAssistantId &&
+                    !isTemporaryOrDestroyed(conversation.id)
+            }
+        val activeConvId = candidateConversations
             .maxByOrNull { it.updateAt }
             ?.id
 
@@ -572,6 +579,11 @@ class ChatService(
             // 轻量查询最新会话 ID（禁止为找一条 ID 而 getAllConversations 全量水合——历史 OOM 根因之一）
             conversationRepo.getLatestConversationIdOfAssistant(originalAssistantId) ?: Uuid.random()
         }
+
+        // 任务触发时用户正处于临时会话（任意助手）：回复落入普通会话在 UI 上不可见，
+        // 且 App 前台时常规「生成完成」通知被 isForeground 门控拦截。完成后强制补发通知，
+        // 用户点击通知经 RouteActivity 的「退出临时会话确认」流程进入普通会话查看。
+        val replyHiddenInTempSession = temporarySessions.activeSessionIds().isNotEmpty()
 
         val monitorMsg = buildString {
             append("【系统自动化指令 - 任务触发】\n")
@@ -711,6 +723,12 @@ class ChatService(
                 job.invokeOnCompletion {
                     _generationJobs.update { current ->
                         if (current[conversationId] == job) current - conversationId else current
+                    }
+                    // 临时会话期间触发的任务回复：常规通知被前台门控拦截时在此补发
+                    //（仍尊重通知总开关 sendGenerationDoneNotification 内部的 notificationAiReplyEnabled）。
+                    // 用户此时仍停留在临时会话才需要提醒；已退出临时会话则回复在普通会话页直接可见。
+                    if (replyHiddenInTempSession && isForeground.value && hasActiveTemporarySession()) {
+                        sendGenerationDoneNotification(conversationId)
                     }
                     appScope.launch { delay(500); checkAllConversationsReferences() }
                 }
@@ -1378,7 +1396,9 @@ class ChatService(
         regenerateAssistantMsg: Boolean = true,
         forceWipe: Boolean = false,
         requirement: String? = null,
-        includeSkipContextMessages: Boolean = true
+        includeSkipContextMessages: Boolean = true,
+        chatModelOverrideId: Uuid? = null, // 临时会话内存态模型覆盖（不传 = 正式会话按助手/全局配置）
+        assistantOverride: Assistant? = null // 临时会话内存态助手配置覆盖
     ) {
         // 取消旧任务
         val oldJob = _generationJobs.value[conversationId]
@@ -1494,9 +1514,11 @@ class ChatService(
                     handleMessageComplete(
                         conversationId = conversationId,
                         contextEndNodeId = contextEndNodeId,
+                        assistantOverride = assistantOverride,
                         requirement = requirement,
                         targetMessageId = targetMsgId,
-                        includeSkipContextMessages = includeSkipContextMessages
+                        includeSkipContextMessages = includeSkipContextMessages,
+                        chatModelOverrideId = chatModelOverrideId
                     )
                     _generationDoneFlow.emit(conversationId)
                 } catch (e: Exception) {
@@ -2351,13 +2373,14 @@ class ChatService(
                     val mutex = persistenceMutexes.computeIfAbsent(conversationId) { Mutex() }
                     mutex.withLock {
                         // 保存同步捕获的快照（异常路径 interrupted 标记已更新在快照内）
-                        // 临时会话禁止落库（此兜底路径原实现无守卫，会把临时消息写入正式会话）
-                        if (!temporarySessions.isTemporary(conversationId)) {
+                        // 临时会话禁止落库。必须用墓碑判定：本协程执行时点在 destroyTemporarySession
+                        // 的 remove() 之后，isTemporary 已归 false，只查它会把临时消息落库成幽灵会话
+                        if (!isTemporaryOrDestroyed(conversationId)) {
                             runCatching { conversationRepo.saveConversation(interruptedNodesChanged) }
                                 .onFailure { Log.e(TAG, "中断/异常兜底保存失败: conv=$conversationId", it) }
                         }
                     }
-                    if (!temporarySessions.isTemporary(conversationId)) {
+                    if (!isTemporaryOrDestroyed(conversationId)) {
                         val currentSettings = settingsStore.settingsFlow.value
                         val updatedAssistants = currentSettings.assistants.map {
                             if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
@@ -2385,7 +2408,9 @@ class ChatService(
                     }
                 }
                 appScope.launch {
-                    if (!temporarySessions.isTemporary(conversationId)) {
+                    // onSuccess 执行时点可能晚于 destroyTemporarySession（生成完成瞬间退出临时会话），
+                    // 同样必须用墓碑判定，禁止把 lastConversationId 写成已销毁临时会话 id
+                    if (!isTemporaryOrDestroyed(conversationId)) {
                         val currentSettings = settingsStore.settingsFlow.value
                         val updatedAssistants = currentSettings.assistants.map {
                             if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
@@ -3196,6 +3221,22 @@ class ChatService(
 
     fun isTemporarySession(conversationId: Uuid): Boolean =
         temporarySessions.isTemporary(conversationId)
+
+    /**
+     * 临时会话完整身份判定：活跃 / 销毁中 / 已销毁（墓碑）三者任一命中即为临时会话。
+     * 注册表 remove() 后 isTemporary / isDestroying 同时归 false，唯一残留标记是
+     * destroyedTemporaryIds 墓碑（内存态）；任何「执行时点晚于 destroyTemporarySession」
+     * 的异步路径（兜底保存、lastConversationId 写入、任务目标会话选择等）必须用本判定，
+     * 只查 isTemporary 会在销毁完成后放行（历史 bug：临时消息被兜底落库成幽灵会话）。
+     */
+    private fun isTemporaryOrDestroyed(conversationId: Uuid): Boolean =
+        temporarySessions.isTemporary(conversationId) ||
+            temporarySessions.isDestroying(conversationId) ||
+            destroyedTemporaryIds.contains(conversationId)
+
+    /** 当前是否存在活跃临时会话（供通知点击拦截等 UI 层判断「用户正处于临时会话」）。 */
+    fun hasActiveTemporarySession(): Boolean =
+        temporarySessions.activeSessionIds().isNotEmpty()
 
     /**
      * 创建临时会话：生成运行期 UUID、注册身份、初始化仅存于内存的 Conversation。

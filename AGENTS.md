@@ -480,7 +480,15 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 | `checkAllConversationsReferences` | 跳过临时会话（历史 bug：生成结束 500ms 后的无引用清理把临时消息缓存逐出，下一条消息被写进 `computeIfAbsent` 重建的空会话——UI 看不到消息、AI 上下文清空；与 LRU 淘汰必须同步排除，两处缺一不可） |
 | `initializeConversation` | 临时会话：跳过 lastConversationId 追踪、离场归档、DB 重载；仅确保内存会话存在 |
 
+**墓碑判定（统一 `isTemporaryOrDestroyed`，禁止只查 `isTemporary`）**：注册表 `remove()` 后 `isTemporary`/`isDestroying` 同时归 false，唯一残留标记是 `destroyedTemporaryIds` 墓碑（内存态）。任何**执行时点晚于 `destroyTemporarySession`** 的异步路径（中断/异常兜底保存、onSuccess 的 lastConversationId 写入、`executeAgentTask` 目标会话选择等）必须用三合一判定——只查 `isTemporary` 会在销毁完成后放行（历史 bug：生成中退出临时会话 → 临时消息被兜底落库成「幽灵会话」+ `lastConversationId` 被写成临时会话 id → 幽灵霸占所有「最新会话」解析 → 首页进入幽灵会话后 `sendMessage` 被墓碑守卫静默丢弃，表现为「发消息看不到、无回复」）。
+
 **引用持有（双保险）**：`TemporaryChatVM` init 时 `addConversationReference(sessionId)`、`onCleared` 时 remove（与正式 ChatVM.trackConversation 同机制）；`destroyTemporarySession` 一并清 `conversationReferences`。任何新增的「无引用清理/逐出」路径都必须同时排除临时会话。
+
+### 15.5 定时任务路由与「进入普通会话」导航拦截（2026-11-13，不变式：临时会话与普通会话视图不能同时存在）
+
+- **定时任务绝不进临时会话**：`executeAgentTask` 的目标会话候选（`conversationReferences ∩ conversations` 按 `updateAt` 取最新）必须经 `isTemporaryOrDestroyed` 过滤——临时会话开着时它引用在册且 `updateAt` 最新，不过滤则任务指令+回复被注入临时会话、随会话销毁蒸发。落点 = 用户正打开的正式会话（临时页下方）→ DB 最新正式会话 → 新建。
+- **临时会话期间任务回复强制通知**：任务触发时若有活跃临时会话（任意助手），生成完成后在 `job.invokeOnCompletion` 补发通知（`isForeground` 门控会拦掉 App 前台的常规通知，导致用户在临时会话里完全无感知）；仍尊重 `notificationAiReplyEnabled` 总开关。
+- **通知/快捷方式导航拦截（RouteActivity）**：`NotificationHandler` 的 `Screen.Chat(conversationId)` 与 `handleIntent` 的 assistantId 分支（快捷方式，日记页不拦截）在 `hasActiveTemporarySession()` 为 true 时改为暂存 `pendingTempExitNavigation` 并弹 `ConfirmDialog`（dangerous=true）：确认 → `navigate(Screen.Chat)` 带 `popUpTo(currentDestination, inclusive)` 弹出临时会话页（`TemporaryChatVM.onCleared` 兜底销毁）；取消 → 丢弃导航、临时会话原样保留。禁止绕过此弹窗直接清栈跳转（会静默销毁临时会话内容）。
 
 ### 15.3 记忆只读（双层拦截）
 
@@ -495,7 +503,8 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ### 15.4 页面与 UI 约束
 
-- TemporaryChatPage：顶部仅返回 + 临时会话标识 + 只读头像（不可点击切换角色）；无新建话题入口。输入区**跟随用户的 chatInputStyle 设置分支渲染**（MINIMAL → `MinimalChatInput` / 其他 → `ChatInput`，均传 `temporaryMode = true`）。加号菜单与正式会话的**唯一 UI 差异**：隐藏立即整合、上下文刷新（= summarizeAndRefresh，记忆写入族，业务层本就禁止）与通话按钮（拨号即写正式 call_records，会话销毁后成悬挂记录）；模式/世界书/推理/UI模式/搜索全部保留且可用。`ModelSelector` 在临时会话**可点击切换**：选择写入 `TemporaryChatVM.overrideChatModelId`（内存态 StateFlow），经 `sendMessage(chatModelOverrideId=…)` → `triggerAIResponse` → `handleMessageComplete` 只影响本次生成，**绝不写回 Assistant.chatModelId 或全局设置**，退出即失效。`settingsForInput` 以会话助手覆盖 `settings.assistantId` 并把内存态覆盖助手拼接进助手列表，防全局当前助手漂移且会话内配置修改实时反映。
+- TemporaryChatPage：顶部布局 = 返回键 + 临时会话标识（HistoryToggleOff，**紧跟返回键左侧区**，2026-11-14 调整）+ 只读头像（不可点击切换角色）；无新建话题入口。**微信模式下 AI 思考/输出中标题「临时会话」临时替换为「正在输入中...」**（`chat_status_typing`，仅 WeChat mode + isAiTyping）。输入区**跟随用户的 chatInputStyle 设置分支渲染**（MINIMAL → `MinimalChatInput` / 其他 → `ChatInput`，均传 `temporaryMode = true`）。加号菜单与正式会话的**唯一 UI 差异**：隐藏立即整合、上下文刷新（= summarizeAndRefresh，记忆写入族，业务层本就禁止）与通话按钮（拨号即写正式 call_records，会话销毁后成悬挂记录）；模式/世界书/推理/UI模式/搜索全部保留且可用。`ModelSelector` 在临时会话**可点击切换**：选择写入 `TemporaryChatVM.overrideChatModelId`（内存态 StateFlow），经 `sendMessage(chatModelOverrideId=…)` → `triggerAIResponse` → `handleMessageComplete` 只影响本次生成，**绝不写回 Assistant.chatModelId 或全局设置**，退出即失效。`settingsForInput` 以会话助手覆盖 `settings.assistantId` 并把内存态覆盖助手拼接进助手列表，防全局当前助手漂移且会话内配置修改实时反映。
+- **消息操作（2026-11-14 与正式页对齐）**：ChatList 已接 `onQuote`（引用，`getSendContents()` 自动把 quotedMessages 转 Quote parts，VM 零改动）与 `onRegenerate`（刷新回复：requirement 输入弹窗 → `canPreserveVersionHistory` 判定 → false 时 forceWipe 确认弹窗，两段式与 ChatPage 一致；`TemporaryChatVM.regenerateAtMessage` 透传会话内模型/助手覆盖 → `ChatService.regenerateAtMessage` 新增可选 `chatModelOverrideId/assistantOverride` 参数）。**regenerate 链路对临时会话安全的前提**：节点替换走 `replaceConversationMessages`（临时守卫=仅内存）、生成走 `handleMessageComplete`（segments/L2/lastConversationId 守卫齐全）。**仍未接的菜单项（点了无反应，按需再接）**：编辑（需 `handleMessageEdit` + 版本切换 UI 配套）、收藏、分享、更新消息。
 - **退出统一确认**：返回键/手势/左上角返回 → `hasUserContent()`（存在 USER 消息，预置消息不算）为 true 时弹 `ConfirmDialog`（继续聊天 / 退出并清空）；空会话直接退出。确认后顺序：`tts.stop()` → `vm.requestDestroy()`（= `chatService.destroyTemporarySession`：markDestroying → 取消生成 Job → 取消微信 debounce → 删除会话引用的附件文件 → remove 注册 → cleanupConversation）→ `popBackStack()`。
 - **兜底销毁**：`TemporaryChatVM.onCleared()` 再次调用 destroy（幂等 no-op），覆盖通知跳转等绕过确认弹窗的离开路径，保证不遗留活跃生成任务与注册表条目。
 - TemporaryChatVM 复用 ChatService 全部生成链路（sendMessage/triggerAIResponse/工具/MCP），不复制 Agent 实现；语音为紧凑实现（录音→ASR→trigger，SystemASR 自动 fallback EvoliaASR/OnlineASR），**不含**正式页的录音期并行流式 SystemASR 优化；不启动 autoRead（避免 clobber 正式页 CustomTtsState 单例订阅），手动 TTS 播放保留，退出销毁时 `tts.stop()`。
