@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -52,6 +53,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.common.ui.components.ConfirmDialog
+import me.rerere.rikkahub.common.ui.components.InputDialog
+import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.core.data.model.AssistantSearchMode
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.data.datastore.ChatInputStyle
@@ -68,6 +72,7 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.hooks.rememberChatInputState
+import me.rerere.rikkahub.ui.hooks.QuotedMessage
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -190,6 +195,13 @@ fun TemporaryChatPage(assistantId: Uuid) {
 
     // --- 退出逻辑：统一确认 ---
     var showExitConfirm by remember { mutableStateOf(false) }
+
+    // --- 刷新回复（重新生成）：与正式聊天页相同的两段式确认 ---
+    var pendingRegenerateMessage by remember { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
+    var showRegenerateRequirementDialog by remember { mutableStateOf(false) }
+    var showRegenerateConfirmDialog by remember { mutableStateOf(false) }
+    var pendingRegenerateRequirement by remember { mutableStateOf<String?>(null) }
+
     fun exitTemporaryChat(destroy: Boolean) {
         if (destroy) {
             // 停止临时消息的音频播放，销毁会话数据后返回正式聊天
@@ -263,8 +275,14 @@ fun TemporaryChatPage(assistantId: Uuid) {
                     TopAppBar(
                         title = {
                             Column {
+                                // 微信模式下 AI 思考/输出过程中，标题临时替换为「正在输入中...」
+                                //（与正式聊天页微信模式 typing 提示同文案）
                                 Text(
-                                    text = stringResource(R.string.temporary_chat_title),
+                                    text = if (isAiTyping && effectiveDisplaySetting.wechatMode) {
+                                        stringResource(R.string.chat_status_typing)
+                                    } else {
+                                        stringResource(R.string.temporary_chat_title)
+                                    },
                                     style = MaterialTheme.typography.titleMedium
                                 )
                                 Text(
@@ -275,20 +293,23 @@ fun TemporaryChatPage(assistantId: Uuid) {
                             }
                         },
                         navigationIcon = {
-                            IconButton(onClick = handleBack) {
-                                Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back))
+                            // 返回键 + 临时会话标识（标识移到左侧，紧跟返回键）
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = handleBack) {
+                                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back))
+                                }
+                                Icon(
+                                    imageVector = Icons.Rounded.HistoryToggleOff,
+                                    contentDescription = stringResource(R.string.temporary_chat_title),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .padding(end = 12.dp)
+                                        .size(20.dp)
+                                )
                             }
                         },
                         actions = {
-                            // 临时会话标识 + 只读角色头像（不可点击切换）
-                            Icon(
-                                imageVector = Icons.Rounded.HistoryToggleOff,
-                                contentDescription = stringResource(R.string.temporary_chat_title),
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .padding(end = 8.dp)
-                                    .size(20.dp)
-                            )
+                            // 只读角色头像（不可点击切换）
                             UIAvatar(
                                 name = assistantForTheme.name.ifBlank { "Character" },
                                 value = assistantForTheme.avatar,
@@ -325,6 +346,48 @@ fun TemporaryChatPage(assistantId: Uuid) {
                         voiceMessagePlayer = vm.voiceMessagePlayer,
                         onDelete = { message ->
                             vm.deleteMessage(message.id)
+                        },
+                        onRegenerate = { message ->
+                            // 刷新回复：与正式聊天页一致，先弹「重新生成要求」输入弹窗
+                            pendingRegenerateMessage = message
+                            showRegenerateRequirementDialog = true
+                        },
+                        onQuote = { message ->
+                            // 引用消息：与正式聊天页一致（语音等空内容消息用占位描述）
+                            val rawContent = message.toContentText()
+                            val quoteContent = if (rawContent.isBlank()) {
+                                when {
+                                    message.parts.any { it is me.rerere.ai.ui.UIMessagePart.Image } -> "[图片]"
+                                    message.parts.any { it is me.rerere.ai.ui.UIMessagePart.Video } -> "[视频]"
+                                    message.parts.any { it is me.rerere.ai.ui.UIMessagePart.Audio } -> "[语音]"
+                                    message.parts.any { it is me.rerere.ai.ui.UIMessagePart.Document } -> "[文件]"
+                                    else -> "[消息]"
+                                }
+                            } else {
+                                if (rawContent.length > 200) rawContent.take(200) + "…" else rawContent
+                            }
+                            val rawPreview = message.toPreviewText()
+                            val displayContent = if (rawPreview.isBlank()) {
+                                quoteContent
+                            } else {
+                                if (rawPreview.length > 200) rawPreview.take(200) + "…" else rawPreview
+                            }
+                            val senderName = if (message.role == MessageRole.USER) {
+                                setting.displaySetting.userNickname.ifBlank { "User" }
+                            } else {
+                                assistantForTheme.name.ifBlank { "Assistant" }
+                            }
+                            inputState.addQuotedMessage(
+                                QuotedMessage(
+                                    senderName = senderName,
+                                    content = quoteContent,
+                                    isUser = message.role == MessageRole.USER,
+                                    displayContent = displayContent
+                                )
+                            )
+                            // 引用与编辑互斥（与正式页一致）
+                            inputState.editingMessage = null
+                            inputState.setMessageTextAndFocus(inputState.textContent.text.toString(), scope)
                         },
                         onGetFullMemoryContent = { memoryId, memoryType ->
                             // 临时会话允许查看记忆详情（只读）
@@ -496,6 +559,63 @@ fun TemporaryChatPage(assistantId: Uuid) {
                     confirmText = stringResource(R.string.temporary_chat_exit_confirm),
                     dismissText = stringResource(R.string.temporary_chat_exit_cancel),
                     dangerous = true
+                )
+            }
+
+            // 刷新回复：先输入要求（可留空），turn 结构不支持保留版本历史时再确认整轮删除
+            if (showRegenerateRequirementDialog && pendingRegenerateMessage != null) {
+                var requirement by remember { mutableStateOf("") }
+                InputDialog(
+                    onDismissRequest = {
+                        showRegenerateRequirementDialog = false
+                        pendingRegenerateMessage = null
+                    },
+                    onConfirm = {
+                        pendingRegenerateMessage?.let { message ->
+                            val req = requirement.ifBlank { null }
+                            if (vm.canPreserveVersionHistory(message)) {
+                                vm.regenerateAtMessage(message, forceWipe = false, requirement = req)
+                            } else {
+                                pendingRegenerateRequirement = req
+                                showRegenerateConfirmDialog = true
+                            }
+                        }
+                        showRegenerateRequirementDialog = false
+                        pendingRegenerateMessage = null
+                    },
+                    title = stringResource(R.string.chat_page_regenerate_requirement_title),
+                    value = requirement,
+                    onValueChange = { requirement = it },
+                    confirmText = stringResource(R.string.regenerate_confirm),
+                    dismissText = stringResource(R.string.cancel),
+                    placeholder = stringResource(R.string.chat_page_regenerate_requirement_placeholder),
+                    label = stringResource(R.string.chat_page_regenerate_requirement_label),
+                )
+            }
+
+            if (showRegenerateConfirmDialog && pendingRegenerateMessage != null) {
+                ConfirmDialog(
+                    onDismissRequest = {
+                        showRegenerateConfirmDialog = false
+                        pendingRegenerateMessage = null
+                        pendingRegenerateRequirement = null
+                    },
+                    onConfirm = {
+                        pendingRegenerateMessage?.let { message ->
+                            vm.regenerateAtMessage(
+                                message,
+                                forceWipe = true,
+                                requirement = pendingRegenerateRequirement
+                            )
+                        }
+                        showRegenerateConfirmDialog = false
+                        pendingRegenerateMessage = null
+                        pendingRegenerateRequirement = null
+                    },
+                    title = stringResource(R.string.regenerate_title),
+                    text = stringResource(R.string.regenerate_description),
+                    confirmText = stringResource(R.string.regenerate_confirm),
+                    dismissText = stringResource(R.string.cancel)
                 )
             }
         }

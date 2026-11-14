@@ -23,6 +23,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.longOrNull
 import java.util.concurrent.atomic.AtomicBoolean
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.rikkahub.R
 import me.rerere.ai.core.MessageRole
@@ -392,6 +393,48 @@ class TemporaryChatVM(
 
             // 4. 移除 pending；若已清空且有待触发消息，则统一触发一次 AI
             onASRNodeCompleted(nodeId)
+        }
+    }
+
+    // ===== 重新生成（刷新回复）=====
+    // 与正式 ChatVM.regenerateAtMessage 语义一致：节点替换走 ChatService.replaceConversationMessages
+    // （临时守卫 = 仅内存更新），生成走 handleMessageComplete（segments/L2/lastConversationId 守卫齐全），
+    // 并透传会话内模型/助手覆盖，保证刷新行为与正常发送一致。
+
+    /** 判断该消息所在 turn 能否保留版本历史（纯内存计算，复刻 ChatVM.canPreserveVersionHistory） */
+    fun canPreserveVersionHistory(message: UIMessage): Boolean {
+        val currentMessages = conversation.value.messageNodes.mapNotNull { node ->
+            node.messages.getOrNull(node.selectIndex) ?: node.messages.lastOrNull()
+        }
+        val index = currentMessages.indexOfFirst { it.id == message.id }
+        if (index == -1) return false
+        val lastUserIndex = currentMessages.subList(0, index + 1).indexOfLast { it.role == MessageRole.USER }
+        val turnStart = if (lastUserIndex >= 0) lastUserIndex else 0
+        val turnEnd = currentMessages.subList(index, currentMessages.size)
+            .indexOfFirst { it.role == MessageRole.USER }.let { if (it == -1) currentMessages.size else index + it }
+        // 微信模式分句会把同一个 turn 拆成多个 MessageNode；版本分支逻辑只能在单个节点内追加 version。
+        // turn 内 Assistant/TOOL 节点超过 1 个或含工具调用时，必须走整 turn 删除 + 重生成。
+        val assistantNodeCountInTurn = currentMessages.subList(turnStart, turnEnd).count {
+            it.role == MessageRole.ASSISTANT || it.role == MessageRole.TOOL
+        }
+        if (assistantNodeCountInTurn > 1) return false
+        for (i in turnStart until turnEnd) {
+            if (currentMessages[i].parts.any { it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult }) return false
+        }
+        return true
+    }
+
+    fun regenerateAtMessage(message: UIMessage, forceWipe: Boolean = false, requirement: String? = null) {
+        viewModelScope.launch {
+            chatService.regenerateAtMessage(
+                conversationId = sessionId,
+                message = message,
+                forceWipe = forceWipe,
+                requirement = requirement,
+                includeSkipContextMessages = true,
+                chatModelOverrideId = _overrideChatModelId.value,
+                assistantOverride = _sessionAssistantOverride.value
+            )
         }
     }
 

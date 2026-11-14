@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -1228,6 +1229,8 @@ private fun TopBar(
     val currentAssistant = settings.getCurrentAssistant()
     val isEmpty = !hasUserMessages
     var animateTopPillIn by remember { mutableStateOf(false) }
+    // 右上「更多」展开态：搜索 + 临时会话按钮的展开/收起（收起时保持左右各 2 的对称布局）
+    var showTopBarMore by remember { mutableStateOf(false) }
     val toaster = LocalToaster.current
 
     LaunchedEffect(conversationId) {
@@ -1249,7 +1252,9 @@ private fun TopBar(
                 )
         )
 
-        // 标题：叠层居中，相对于整个屏幕宽度居中显示
+        // 标题：叠层居中，相对于整个屏幕宽度居中显示。
+        // 横向避让按两侧实际按钮宽度预留（左 16+48+8+48、右 16+48+48+间距 ≈ 128dp），
+        // 旧值 80dp 小于按钮实际占用宽度，长助手名会伸到按钮底下被遮挡。
         val wechatMode = settings.getEffectiveDisplaySetting(currentAssistant).wechatMode
         val titleText = when {
             isReadOnly -> stringResource(R.string.chat_page_search_result_title)
@@ -1259,13 +1264,20 @@ private fun TopBar(
         Text(
             text = titleText,
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
                 .padding(vertical = 8.dp)
                 .height(topPillSize)
                 .wrapContentHeight(Alignment.CenterVertically)
-                .padding(horizontal = 80.dp)
+                .padding(horizontal = 128.dp)
+                .graphicsLayer {
+                    // 「更多」展开态右侧有 4 个按钮，超出标题常驻避让宽度——
+                    // 展开瞬间淡出标题，收起后恢复，避免长名被展开按钮遮挡的半截观感
+                    alpha = if (showTopBarMore) 0f else 1f
+                }
                 .clickable {
                     navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
                 }
@@ -1430,24 +1442,57 @@ private fun TopBar(
                                     }
 
                                     else -> {
-                                        // 临时会话入口：普通对话中同样可用（随时切入临时房间，
-                                        // 退出后 popBackStack 回到原会话，内容/草稿不丢）
-                                        IconButton(
-                                            onClick = { onEnterTemporaryChat() },
-                                            modifier = Modifier.size(topPillSize)
+                                        // 右侧收起态仅 [更多, 新建话题] 两个一级按钮（与左侧
+                                        // [返回, 自动朗读] 对称，标题居中不再被挤压遮挡）；
+                                        // 点「更多」向左展开 [临时会话, 搜索]，按钮变 × 可收起。
+                                        // 搜索入口仅此一处，展开态保留全部功能可达性。
+                                        Row(
+                                            modifier = Modifier.height(topPillSize),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
-                                        }
-                                        IconButton(
-                                            onClick = {
-                                                navController.navigate(Screen.ChatHistorySearch(assistantId = currentAssistant.id.toString()))
-                                            },
-                                            modifier = Modifier.size(topPillSize)
-                                        ) {
-                                            Icon(Icons.Rounded.Search, "Search")
-                                        }
-                                        IconButton(onClick = { onNewChat() }, modifier = Modifier.size(topPillSize)) {
-                                            Icon(Icons.Rounded.Add, "New Message")
+                                            AnimatedVisibility(
+                                                visible = showTopBarMore,
+                                                enter = expandHorizontally(
+                                                    animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f),
+                                                    expandFrom = Alignment.End
+                                                ) + fadeIn(animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f)),
+                                                exit = shrinkHorizontally(
+                                                    animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f)
+                                                ) + fadeOut(animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f))
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            showTopBarMore = false
+                                                            onEnterTemporaryChat()
+                                                        },
+                                                        modifier = Modifier.size(topPillSize)
+                                                    ) {
+                                                        Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
+                                                    }
+                                                    IconButton(
+                                                        onClick = {
+                                                            showTopBarMore = false
+                                                            navController.navigate(Screen.ChatHistorySearch(assistantId = currentAssistant.id.toString()))
+                                                        },
+                                                        modifier = Modifier.size(topPillSize)
+                                                    ) {
+                                                        Icon(Icons.Rounded.Search, "Search")
+                                                    }
+                                                }
+                                            }
+                                            IconButton(
+                                                onClick = { showTopBarMore = !showTopBarMore },
+                                                modifier = Modifier.size(topPillSize)
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (showTopBarMore) Icons.Rounded.Close else Icons.Rounded.MoreHoriz,
+                                                    contentDescription = if (showTopBarMore) "Collapse" else "More Options"
+                                                )
+                                            }
+                                            IconButton(onClick = { onNewChat() }, modifier = Modifier.size(topPillSize)) {
+                                                Icon(Icons.Rounded.Add, "New Message")
+                                            }
                                         }
                                     }
                                 }
