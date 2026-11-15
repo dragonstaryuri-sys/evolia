@@ -345,22 +345,30 @@ class WebdavSync(
                 settings.assistants.forEach { collectAvatar(it.avatar) }
                 LogUtil.i(TAG, "Collected ${usedAvatarFiles.size} in-use avatar files")
 
-                // 备份文件目录
-                val foldersToBackup = listOf("upload", "avatars", "lorebook_attachments", "app_locks")
+                // 备份文件目录（FILES 项，全部递归打包）：
+                // - upload：聊天附件 + 聊天背景图（BackgroundPicker 经 createChatFilesByContents 落盘到 upload/）
+                // - python_sandbox：Agent 沙盒工作文件（eval_python，按会话子目录组织，必须递归）
+                // - images：Agent 生图产物（GenMedia 媒体库与消息 Markdown 引用 images/<uuid>）
+                // zip 条目 = <folder>/<相对路径>；恢复侧通用分支按 FILES 项还原任意目录
+                val foldersToBackup = listOf(
+                    "upload", "avatars", "lorebook_attachments", "app_locks",
+                    "python_sandbox", "images",
+                )
                 foldersToBackup.forEach { folderName ->
                     val folder = File(context.filesDir, folderName)
                     if (folder.exists() && folder.isDirectory) {
-                        val files = folder.listFiles()?.filter { it.isFile }
-                        LogUtil.i(TAG, "Found ${files?.size ?: 0} files in $folderName folder")
-                        files?.forEach { file ->
+                        val files = folder.walkTopDown().filter { it.isFile }.toList()
+                        LogUtil.i(TAG, "Found ${files.size} files in $folderName folder")
+                        files.forEach { file ->
+                            val relativePath = file.toRelativeString(folder)
                             val shouldBackup = if (folderName == "avatars") {
                                 file.name in usedAvatarFiles
                             } else {
                                 true
                             }
                             if (shouldBackup) {
-                                addFileToZip(zipOut, file, "$folderName/${file.name}")
-                                LogUtil.d(TAG, "Added file to backup: $folderName/${file.name}")
+                                addFileToZip(zipOut, file, "$folderName/$relativePath")
+                                LogUtil.d(TAG, "Added file to backup: $folderName/$relativePath")
                             } else {
                                 LogUtil.d(TAG, "Skipped historical avatar: $folderName/${file.name}")
                             }
@@ -486,7 +494,14 @@ class WebdavSync(
                                         val fileName = ze.name.substringAfter("/")
                                         val targetFolder = File(context.filesDir, folderName).apply { mkdirs() }
                                         val targetFile = File(targetFolder, fileName)
-                                        FileOutputStream(targetFile).use { zipIn.copyTo(it) }
+                                        // 兼容嵌套目录条目（如 python_sandbox/<会话ID>/<文件>），父目录存在才能写入
+                                        targetFile.parentFile?.mkdirs()
+                                        // 防 Zip Slip：条目名不得上跳目录（完整 canonical 校验为遗留加固项）
+                                        if (!fileName.contains("..")) {
+                                            FileOutputStream(targetFile).use { zipIn.copyTo(it) }
+                                        } else {
+                                            LogUtil.w(TAG, "Skipped suspicious zip entry: ${ze.name}")
+                                        }
                                     }
                                 }
                                 else -> {

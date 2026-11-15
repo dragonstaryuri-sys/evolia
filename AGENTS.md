@@ -409,6 +409,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - `WebDavConfig.BackupItem` 新增 `CALL_RECORDINGS` / `RADIO_AUDIO`，默认勾选；两者依赖 DATABASE（未勾选时 UI 禁用）。ZIP 布局新增 `call_recordings/`、`radio_audio/` 顶层目录。
 - 老用户一次性迁移（DataStore key `backup_items_media_migrated`）：补两项默认勾选，保留用户原 DATABASE/FILES/TTS_CACHE 选择；迁移后用户取消勾选不被回退。
 - 恢复规则：录音/电台音频文件写回私有目录，**公共目录导出件的 DB 绝对路径改写回相对路径**（forever 语义不变）；`forever` / `audioExpiresAt` / `expires_at` 原值保留，不重置；文件缺失 → 录音 `audio=null`、电台删对应资产记录并按无音频降级，节目保持 PUBLISHED。
+- **FILES 项目录清单（2026-11 扩展）**：`upload`（聊天附件 + 聊天背景图）/ `avatars`（仅备份在用头像）/ `lorebook_attachments` / `app_locks` / `python_sandbox`（Agent 沙盒工作文件，按会话子目录）/ `images`（Agent 生图产物）。全部**递归打包**，zip 条目 = `<folder>/<相对路径>`；恢复走通用分支（按 FILES 项还原任意目录，含嵌套父目录 mkdirs + 条目名 `..` 防 Zip Slip）。旧备份无新目录条目时恢复自动兼容，无需迁移。
 
 ### 12.8 定时创作
 复用 `agent_task_manager`（AGENT_TASK）：定时唤起 Agent 走 `ChatService.executeAgentTask` 同一生成链路，Radio 工具可用即可定时创作草稿/发布；不新增 Radio 专用调度器。
