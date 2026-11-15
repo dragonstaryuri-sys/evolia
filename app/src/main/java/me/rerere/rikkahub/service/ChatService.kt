@@ -1190,7 +1190,7 @@ class ChatService(
                             append(ts.minute.toString().padStart(2, '0'))
                         }
                         append("[").append(dateStr).append("] ")
-                            .append(msg.role).append(": ").append(msg.toContentText().take(1000)).append("\n")
+                            .append(msg.role).append(": ").append(msg.toContentText()).append("\n")
                     }
                 }.toString()
 

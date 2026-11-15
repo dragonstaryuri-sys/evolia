@@ -1731,6 +1731,10 @@
   <string name="update_is_latest">当前已是最新版本</string>
   <string name="manual_archive_l1">手动归档</string>
   <string name="manual_archive_l1_loading">归档中，请耐心等待</string>
+  <string name="manual_archive_exit_confirm_title">归档仍在进行</string>
+  <string name="manual_archive_exit_confirm_message">手动归档还在逐批处理中，离开助手详情页会中断归档。已归档的内容会保留，之后再次点击按钮即可继续。</string>
+  <string name="manual_archive_exit_confirm_leave">离开</string>
+  <string name="manual_archive_exit_confirm_stay">继续归档</string>
   <string name="manual_archive_l1_no_messages">当前会话没有需要归档的新消息</string>
   <string name="manual_archive_l1_no_model">未配置摘要模型，请先前往模型设置</string>
   <string name="manual_archive_l1_timeout">摘要模型响应超时，请稍后重试</string>

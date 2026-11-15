@@ -1745,6 +1745,10 @@
   <string name="update_is_latest">You are already on the latest version</string>
   <string name="manual_archive_l1">Manual Archive</string>
   <string name="manual_archive_l1_loading">Archiving in progress, please wait patiently</string>
+  <string name="manual_archive_exit_confirm_title">Archive in progress</string>
+  <string name="manual_archive_exit_confirm_message">Manual archiving is still processing in batches. Leaving this page will interrupt it. Already archived content is kept — you can continue later by tapping the button again.</string>
+  <string name="manual_archive_exit_confirm_leave">Leave</string>
+  <string name="manual_archive_exit_confirm_stay">Keep archiving</string>
   <string name="manual_archive_l1_no_messages">There are no new messages in the current conversation to be archived</string>
   <string name="manual_archive_l1_no_model">No summary model configured, please go to Model Settings first</string>
   <string name="manual_archive_l1_timeout">Summary model response timed out, please try again later</string>

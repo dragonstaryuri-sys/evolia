@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.Alignment
@@ -129,6 +130,11 @@ fun AssistantDetailPage(
     val providers by vm.providers.collectAsStateWithLifecycle()
     val tags by vm.tags.collectAsStateWithLifecycle()
     val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
+    val isArchivingL1 by vm.isArchivingL1.collectAsStateWithLifecycle()
+
+    // 手动归档（L1）运行于 AssistantDetailVM.viewModelScope，退出整个详情页会静默取消；
+    // 顶栏返回键与详情页根路由的系统返回都需要先确认，避免用户无感知丢掉剩余归档。
+    var showArchiveExitConfirm by remember { androidx.compose.runtime.mutableStateOf(false) }
 
     val hasMemories by vm.hasMemories.collectAsStateWithLifecycle()
     val hasLorebooks by vm.hasLorebooks.collectAsStateWithLifecycle()
@@ -212,6 +218,11 @@ fun AssistantDetailPage(
         vm.update(assistant)
     }
 
+    // 归档进行中拦截系统返回：仅在详情页根路由拦截（子页返回只是回到根，归档不受影响）
+    BackHandler(enabled = isArchivingL1 && currentRoute == AssistantDetailRoutes.HOME) {
+        showArchiveExitConfirm = true
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -238,7 +249,14 @@ fun AssistantDetailPage(
                     }
                 },
                 navigationIcon = {
-                    BackButton()
+                    // 归档进行中时顶栏返回键点击会直接退出整个详情页（LocalNavController 是全局栈），同样需要确认
+                    BackButton(onClick = {
+                        if (isArchivingL1) {
+                            showArchiveExitConfirm = true
+                        } else {
+                            globalNavController.popBackStack()
+                        }
+                    })
                 },
                 actions = {
                     AnimatedVisibility(
@@ -535,6 +553,20 @@ fun AssistantDetailPage(
                 )
             }
         }
+    }
+
+    if (showArchiveExitConfirm) {
+        ConfirmDialog(
+            onDismissRequest = { showArchiveExitConfirm = false },
+            onConfirm = {
+                showArchiveExitConfirm = false
+                globalNavController.popBackStack()
+            },
+            title = stringResource(R.string.manual_archive_exit_confirm_title),
+            text = stringResource(R.string.manual_archive_exit_confirm_message),
+            confirmText = stringResource(R.string.manual_archive_exit_confirm_leave),
+            dismissText = stringResource(R.string.manual_archive_exit_confirm_stay)
+        )
     }
 
     if (showExportOptionsDialog) {
