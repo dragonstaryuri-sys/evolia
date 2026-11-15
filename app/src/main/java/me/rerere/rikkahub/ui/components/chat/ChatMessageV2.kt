@@ -213,6 +213,22 @@ data class MessageTurnGroup(
 }
 
 /**
+ * 节点的时间线排序键：优先用 [MessageNode.timelineCreatedAt]（节点创建时间，
+ * 创建后不再随会话更新而改变，持久化于 chat_message_nodes.created_at，与分页
+ * 查询的排序字段同源），异常数据（<= 0）时回退当前显示消息的时间。
+ *
+ * UI 分组 / 排序统一使用此键，而不是 currentMessage.createdAt：编辑消息会向节点
+ * 追加一条以编辑时刻为 createdAt 的新 version，若按消息时间排序，修改过旧消息的
+ * 节点会被拆组并"跑"到时间线最新位置。
+ */
+fun MessageNode.timelineSortKey(zone: TimeZone): Long =
+    if (timelineCreatedAt > 0L) {
+        timelineCreatedAt
+    } else {
+        currentMessage.createdAt.toInstant(zone).toEpochMilliseconds()
+    }
+
+/**
  * Group consecutive messages by role into MessageTurnGroups.
  * TOOL messages are treated as part of the ASSISTANT turn (they're tool results).
  */
@@ -234,12 +250,13 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
             val nodeRole = node.currentMessage.role
             val logicalRole = getGroupingRole(nodeRole)
             val isTimeBreak = if (currentGroup.isNotEmpty()) {
-                val lastNodeTime = currentGroup.last().currentMessage.createdAt
-                val currentNodeTime = node.currentMessage.createdAt
+                val lastNodeMs = currentGroup.last().timelineSortKey(TimeZone.currentSystemDefault())
+                val currentNodeMs = node.timelineSortKey(TimeZone.currentSystemDefault())
                 // chronologicalNodes 按 新→旧 遍历，lastNode 比 current 更新，
-                // 时间差 = lastNodeTime - currentNodeTime（正数）
-                (lastNodeTime.toInstant(TimeZone.currentSystemDefault()) -
-                    currentNodeTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
+                // 时间差 = lastNodeMs - currentNodeMs（正数）。
+                // 用节点创建时间而非消息时间：编辑旧消息会追加新 version（createdAt = 编辑时刻），
+                // 按消息时间判断会把编辑过的节点错误拆成独立 turn。
+                (lastNodeMs - currentNodeMs) > 5.minutes.inWholeMilliseconds
             } else false
 
         if ((logicalRole != currentGroupRole || isTimeBreak) && currentGroup.isNotEmpty()) {

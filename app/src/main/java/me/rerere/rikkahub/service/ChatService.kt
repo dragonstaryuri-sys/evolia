@@ -54,6 +54,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.MessageSource
 import me.rerere.ai.ui.finishReasoning
 import me.rerere.ai.ui.truncate
+import me.rerere.ai.ui.limitContext
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.service.notification.NotificationSoundManager
@@ -138,6 +139,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import kotlinx.datetime.LocalDateTime
 import me.rerere.rikkahub.BuildConfig
 
 private const val TAG = "ChatService"
@@ -272,6 +274,14 @@ internal fun removeVoiceMessageMarkerForDisplay(text: String): String {
  * 等待用户手动重试（重置计数）或根本性问题解决后再次满足触发条件。
  */
 private const val SEGMENT_FAILURE_THRESHOLD = 3
+
+// 手动整合（L2 episode）分 chunk 体积上限：单批字符 / 条数双上限。
+// previous_summary 随批滚动增长，限批防止单次 LLM 请求超上下文；单条超限消息不截断、独立成批。
+private const val EPISODE_ARCHIVE_MAX_CHUNK_CHARS = 12_000
+private const val EPISODE_ARCHIVE_MAX_CHUNK_MESSAGES = 60
+
+// 手动整合保留在 AI 上下文里的最近消息数（与原 Worker manualConsolidate 语义一致）
+private const val MANUAL_ARCHIVE_KEEP_RECENT = 10
 
 // ------------------------------------------------------------------
 //  安全解码 UIMessage：损坏的消息只记日志 + 抛 null，绝不闪退
@@ -465,6 +475,19 @@ class ChatService(
     private val archivingConversations = ConcurrentHashMap.newKeySet<Uuid>()
     private val summarizingConversations = ConcurrentHashMap.newKeySet<Uuid>()
 
+    // ---- L2 episode 归档的 UI 状态源（遮罩 / 进度 / 结果） ----
+    // episodeArchivingIds：任意会话的 episode 归档进行中。切换钩子路径（archiveConversation）
+    // 与手动整合路径（manualArchiveEpisode）统一在此登记，ChatPage 遮罩以此为准——
+    // ChatService 是 Koin single，退出页面重进后遮罩自动恢复，不以 VM 内存态为准。
+    private val _episodeArchivingIds = MutableStateFlow<Set<Uuid>>(emptySet())
+    val episodeArchivingIds: StateFlow<Set<Uuid>> = _episodeArchivingIds.asStateFlow()
+    private val _episodeArchiveProgress = MutableStateFlow<Map<Uuid, EpisodeArchiveProgress>>(emptyMap())
+    val episodeArchiveProgress: StateFlow<Map<Uuid, EpisodeArchiveProgress>> = _episodeArchiveProgress.asStateFlow()
+    private val _episodeArchiveResults = MutableSharedFlow<EpisodeArchiveResult>(extraBufferCapacity = 8)
+    val episodeArchiveResults: SharedFlow<EpisodeArchiveResult> = _episodeArchiveResults.asSharedFlow()
+    // 手动归档 Job（取消入口）；切换钩子路径随其宿主协程生命周期，不在此登记
+    private val episodeArchiveJobs = ConcurrentHashMap<Uuid, Job>()
+
     // 会话级别的互斥锁，确保同一时间只有一个生成任务在处理网络/状态更新
     private val conversationMutexes = ConcurrentHashMap<Uuid, Mutex>()
     // 数据库写入单独串行化，避免发送、刷新、分页切换和后台任务交错覆盖。
@@ -507,6 +530,9 @@ class ChatService(
             try {
                 return block()
             } catch (e: Exception) {
+                // 取消必须立刻穿透：不得落入下方网络重试分支（取消后 delay 也会立即抛出，
+                // 但显式 rethrow 保证语义清晰且不受异常消息措辞影响）
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 val isNetworkError = e is java.io.IOException || e.message?.contains(
                     "timeout",
                     ignoreCase = true
@@ -1127,6 +1153,7 @@ class ChatService(
         // 临时会话禁止 episode 归档（执行层守卫）
         if (temporarySessions.isTemporary(conversationId)) return null
         if (!archivingConversations.add(conversationId)) return null
+        _episodeArchivingIds.update { it + conversationId }
 
         var archivedEndTime: Long? = null
         try {
@@ -1181,15 +1208,7 @@ class ChatService(
                 val messagesText = StringBuilder().apply {
                     newMessages.forEach { msg ->
                         // 给每条消息附上日期时间戳，便于 AI 在跨天对话中区分事件发生的日期
-                        val ts = msg.createdAt
-                        val dateStr = buildString {
-                            append(ts.year).append('-')
-                            append(ts.monthNumber.toString().padStart(2, '0')).append('-')
-                            append(ts.dayOfMonth.toString().padStart(2, '0')).append(' ')
-                            append(ts.hour.toString().padStart(2, '0')).append(':')
-                            append(ts.minute.toString().padStart(2, '0'))
-                        }
-                        append("[").append(dateStr).append("] ")
+                        append("[").append(formatEpisodeTimestamp(msg.createdAt)).append("] ")
                             .append(msg.role).append(": ").append(msg.toContentText()).append("\n")
                     }
                 }.toString()
@@ -1240,8 +1259,214 @@ class ChatService(
             Log.e(TAG, "Failed to archive conversation $conversationId", e)
         } finally {
             archivingConversations.remove(conversationId)
+            _episodeArchivingIds.update { it - conversationId }
+            _episodeArchiveProgress.update { it - conversationId }
         }
         return archivedEndTime
+    }
+
+    // ---- 手动整合（L2 episode，进程内协程） ----
+
+    /**
+     * 启动手动整合（聊天页「整合」按钮入口，替代原 WorkManager Worker 路径）。
+     *
+     * @return false 表示已在归档中（幂等拒绝，UI 提示「正在整合中」）
+     */
+    fun startManualEpisodeArchive(conversationId: Uuid, keepRecent: Int = MANUAL_ARCHIVE_KEEP_RECENT): Boolean {
+        if (episodeArchiveJobs.containsKey(conversationId)) return false
+        if (archivingConversations.contains(conversationId)) return false
+        val job = appScope.launch {
+            val result = manualArchiveEpisode(conversationId, keepRecent)
+            _episodeArchiveResults.tryEmit(result)
+        }
+        episodeArchiveJobs[conversationId] = job
+        job.invokeOnCompletion { episodeArchiveJobs.remove(conversationId, job) }
+        return true
+    }
+
+    /** 取消进行中的手动整合（遮罩取消按钮入口）。已持久化 chunk 保留，endTime 停在最后完成的批。 */
+    fun cancelManualEpisodeArchive(conversationId: Uuid) {
+        episodeArchiveJobs[conversationId]?.cancel()
+    }
+
+    /**
+     * 手动整合主流程：分 chunk 滚动摘要，逐 chunk 持久化并推进 endTime（断点续归）。
+     *
+     * 进度语义（对齐 7.5.2 日记 chunk 惯例）：
+     * - 每个 chunk 生成成功且 saveEpisode 落库后才推进 endTime / 截断游标；
+     * - chunk 失败（异常 / 空白返回）或取消 → 立即停止，游标不推进，已存 chunk 全保留；
+     * - 下次归档以 episode.endTime 为锚点严格大于查询，未归档消息绝不进已归档范围。
+     */
+    private suspend fun manualArchiveEpisode(
+        conversationId: Uuid,
+        keepRecent: Int
+    ): EpisodeArchiveResult {
+        if (isTemporaryOrDestroyed(conversationId)) {
+            return EpisodeArchiveResult(
+                conversationId, EpisodeArchiveStatus.SKIPPED, 0, null, EpisodeArchiveReasons.TEMPORARY_SESSION
+            )
+        }
+        // 与切换钩子（archiveConversation）共享同一把锁：并发时一方跳过，锚点保证增量留给下次
+        if (!archivingConversations.add(conversationId)) {
+            return EpisodeArchiveResult(
+                conversationId, EpisodeArchiveStatus.SKIPPED, 0, null, EpisodeArchiveReasons.IN_PROGRESS
+            )
+        }
+        _episodeArchivingIds.update { it + conversationId }
+        var archivedCount = 0
+        try {
+            val conv = conversationRepo.getConversationById(conversationId)
+                ?: return EpisodeArchiveResult(
+                    conversationId, EpisodeArchiveStatus.SKIPPED, 0, null, EpisodeArchiveReasons.CONVERSATION_MISSING
+                )
+            val settings = settingsStore.settingsFlow.first()
+            val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
+            val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
+            val anchorTime = existingEpisode?.endTime ?: 0L
+
+            conversationRepo.markAsNotConsolidated(conversationId)
+
+            val visibleMessages = conv.currentMessages.filter { it.createdAtMillis() > anchorTime }
+            if (visibleMessages.isEmpty()) {
+                // 锚点之后没有任何新消息：会话已全部归档，直接落定整合状态
+                conversationRepo.markAsConsolidated(conversationId)
+                syncConversationCursorsFromDb(conversationId)
+                return EpisodeArchiveResult(
+                    conversationId, EpisodeArchiveStatus.SKIPPED, 0, null, EpisodeArchiveReasons.NO_NEW_MESSAGES
+                )
+            }
+            val messagesToKeep = visibleMessages.limitContext(keepRecent)
+            val messagesToProcess = visibleMessages.dropLast(messagesToKeep.size)
+            // 保留最近 keepRecent 条的产品规则：本轮实际归档数必须 ≥ keepRecent（与原 Worker 一致）
+            if (messagesToProcess.size < keepRecent) {
+                return EpisodeArchiveResult(
+                    conversationId, EpisodeArchiveStatus.SKIPPED, 0, null, EpisodeArchiveReasons.INSUFFICIENT_MESSAGES
+                )
+            }
+
+            val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
+            val model = settings.findModelById(modelId)
+                ?: assistant.chatModelId?.let { settings.findModelById(it) }
+                ?: settings.getCurrentChatModel()
+                ?: return EpisodeArchiveResult(conversationId, EpisodeArchiveStatus.FAILED, 0, "没有找到可用模型")
+            val provider = model.findProvider(settings.providers)
+                ?: return EpisodeArchiveResult(conversationId, EpisodeArchiveStatus.FAILED, 0, "没有找到可用服务商")
+            val providerHandler = providerManager.getProviderByType(provider) as Provider<ProviderSetting>
+            val locale = Locale.getDefault().displayName
+
+            val chunks = splitEpisodeArchiveChunks(
+                messagesToProcess, EPISODE_ARCHIVE_MAX_CHUNK_CHARS, EPISODE_ARCHIVE_MAX_CHUNK_MESSAGES
+            )
+            var rollingSummary = existingEpisode?.content
+            var significance = existingEpisode?.significance ?: 0
+            // 复用已有 episode 时保留其原始 startTime（覆盖范围起点），不回退为末批起点
+            var episodeStartTime = existingEpisode?.startTime
+                ?: messagesToProcess.first().createdAtMillis()
+            _episodeArchiveProgress.update {
+                it + (conversationId to EpisodeArchiveProgress(conversationId, 0, chunks.size))
+            }
+
+            for ((index, chunk) in chunks.withIndex()) {
+                _episodeArchiveProgress.update {
+                    it + (conversationId to EpisodeArchiveProgress(conversationId, index, chunks.size))
+                }
+                val messagesText = buildString {
+                    chunk.forEach { msg ->
+                        append("[").append(formatEpisodeTimestamp(msg.createdAt)).append("] ")
+                            .append(msg.role).append(": ").append(msg.toContentText()).append("\n")
+                    }
+                }
+                val prompt = fillPrompt(
+                    DEFAULT_FULL_SUMMARY_PROMPT, mapOf(
+                        "previous_summary" to (rollingSummary?.removePrefix("虚拟世界：") ?: "None"),
+                        "new_messages" to messagesText,
+                        "locale" to locale,
+                        "char" to assistant.name
+                    )
+                )
+                val resp = retryIO(times = 2) {
+                    providerHandler.generateText(
+                        provider,
+                        listOf(UIMessage.user(prompt)),
+                        TextGenerationParams(model, 0.3f, 1.0f, thinkingBudget = 0)
+                    )
+                }
+                val chunkSummary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
+                if (chunkSummary.isBlank()) {
+                    // 空白返回视为失败：停止后续 chunk，游标不推进，已存内容全部保留
+                    val status = if (archivedCount > 0) EpisodeArchiveStatus.PARTIAL else EpisodeArchiveStatus.FAILED
+                    return EpisodeArchiveResult(conversationId, status, archivedCount, "部分批次摘要为空")
+                }
+
+                val chunkEndTime = chunk.last().createdAtMillis()
+                rollingSummary = chunkSummary
+                significance += chunk.size
+                memoryRepository.saveEpisode(
+                    ChatEpisodeEntity(
+                        id = existingEpisode?.id ?: 0,
+                        assistantId = assistant.id.toString(),
+                        conversationId = conversationId.toString(),
+                        content = chunkSummary,
+                        keywords = "",
+                        embedding = null,
+                        embeddingModelId = null,
+                        startTime = episodeStartTime,
+                        endTime = chunkEndTime,
+                        significance = significance,
+                        lastAccessedAt = System.currentTimeMillis()
+                    )
+                )
+                // 截断游标与 endTime 同值推进，保持「已归档 ⇒ 上下文可截断」一致
+                conversationRepo.updateLastArchivedMessageTime(conversationId, chunkEndTime)
+                syncConversationCursorsFromDb(conversationId)
+                archivedCount += chunk.size
+            }
+            conversationRepo.markAsConsolidated(conversationId)
+            syncConversationCursorsFromDb(conversationId)
+            return EpisodeArchiveResult(conversationId, EpisodeArchiveStatus.COMPLETED, archivedCount, null)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 用户取消：in-flight chunk 丢弃，已持久化 chunk 保留（endTime 停在最后完成的批）。
+            // 吞掉取消让 Job 正常收尾（fire-and-forget 场景），finally 里做无挂起清理。
+            val status = if (archivedCount > 0) EpisodeArchiveStatus.PARTIAL else EpisodeArchiveStatus.SKIPPED
+            return EpisodeArchiveResult(conversationId, status, archivedCount, null)
+        } catch (e: Exception) {
+            Log.e(TAG, "Manual episode archive failed for $conversationId", e)
+            val status = if (archivedCount > 0) EpisodeArchiveStatus.PARTIAL else EpisodeArchiveStatus.FAILED
+            return EpisodeArchiveResult(conversationId, status, archivedCount, e.message)
+        } finally {
+            archivingConversations.remove(conversationId)
+            _episodeArchivingIds.update { it - conversationId }
+            _episodeArchiveProgress.update { it - conversationId }
+        }
+    }
+
+    /**
+     * 把 DB 侧归档相关游标同步进内存会话：内存态保留旧值会在后续 saveConversation 时
+     * 把 DB 里正确的游标覆盖回旧值（历史 bug，见原 ChatVM 整合同步注释）。
+     * 仅纯内存更新 + 持久化既有列，不触碰消息节点。
+     */
+    private suspend fun syncConversationCursorsFromDb(conversationId: Uuid) {
+        val updated = conversationRepo.getConversationById(conversationId) ?: return
+        mutateConversationAndSave(conversationId) { current ->
+            current.copy(
+                isConsolidated = updated.isConsolidated,
+                lastSummarizedMessageTime = updated.lastSummarizedMessageTime,
+                lastSummarizedMessageId = updated.lastSummarizedMessageId,
+                lastPruneTime = updated.lastPruneTime,
+                lastPruneMessageCount = updated.lastPruneMessageCount,
+                lastRefreshTime = updated.lastRefreshTime,
+                lastArchivedMessageTime = updated.lastArchivedMessageTime
+            )
+        }
+    }
+
+    /** episode 归档 prompt 用的「yyyy-MM-dd HH:mm」时间戳（与 archiveConversation 同款格式）。 */
+    private fun formatEpisodeTimestamp(ts: LocalDateTime): String = buildString {
+        append(ts.year).append('-')
+        append(ts.monthNumber.toString().padStart(2, '0')).append('-')
+        append(ts.dayOfMonth.toString().padStart(2, '0')).append(' ')
+        append(ts.hour.toString().padStart(2, '0')).append(':')
+        append(ts.minute.toString().padStart(2, '0'))
     }
 
     fun sendMessage(
@@ -1414,7 +1639,8 @@ class ChatService(
         // overwrite a newer mutation.
         val preparedReplacement = withTimeoutOrNull(5000) {
             initializeConversation(conversationId)
-            replaceConversationMessages(conversationId) { conversation ->
+            // 目标消息可能在空占位节点(超出默认水合深度的老消息),先定向水合再查找
+            replaceConversationMessages(conversationId, targetMessageIds = setOf(message.id)) { conversation ->
                 if (message.role == MessageRole.USER) {
                     val indexAt = conversation.messageNodes.indexOfFirst { node ->
                         node.messages.any { candidate -> candidate.id == message.id }
@@ -3136,12 +3362,16 @@ class ChatService(
 
     suspend fun replaceConversationMessages(
         conversationId: Uuid,
+        targetMessageIds: Set<Uuid> = emptySet(),
         transform: (Conversation) -> ConversationMessageDeletion?
     ): ConversationMessageDeletion? {
         val mutex = persistenceMutexes.computeIfAbsent(conversationId) { Mutex() }
         return mutex.withLock {
             if (!ensureConversationLoaded(conversationId)) return@withLock null
-            val previous = getConversationFlow(conversationId).value
+            val snapshot = getConversationFlow(conversationId).value
+            // 目标消息可能落在超出默认水合深度(助手全局最新 200 节点)的空占位节点中,
+            // 不先定向水合的话 transform 在内存里找不到目标 → 静默失败(删除/重生成无效果)。
+            val previous = hydrateTargetNodes(conversationId, snapshot, targetMessageIds)
             val replacement = transform(previous) ?: return@withLock null
             val safe = normalizeConversationForSave(
                 id = conversationId,
@@ -3168,6 +3398,35 @@ class ChatService(
             }
             normalizedReplacement
         }
+    }
+
+    /**
+     * 定向水合删除 / 重生成的目标消息所在节点(必须持 [persistenceMutexes] 对应锁调用)。
+     *
+     * 内存会话默认只水合助手全局最新 200 个节点(`fetchFullConversations` 的 loadLimit),
+     * 更早的历史只留空占位节点。目标消息全部已水合时原样返回;存在缺失时取全局深度
+     * 最大的缺失消息为锚点,复用搜索跳转的 depth 加载机制一次覆盖全部目标,并按节点 id
+     * 只合并空占位节点(见 [ConversationHydrationRules.mergePlaceholderNodes])。
+     */
+    private suspend fun hydrateTargetNodes(
+        conversationId: Uuid,
+        snapshot: Conversation,
+        targetMessageIds: Set<Uuid>
+    ): Conversation {
+        if (targetMessageIds.isEmpty()) return snapshot
+        if (temporarySessions.isTemporary(conversationId)) return snapshot // 临时会话纯内存,无占位
+        val missing = ConversationHydrationRules.findUnloadedTargetIds(snapshot, targetMessageIds)
+        if (missing.isEmpty()) return snapshot
+        // 以全局深度最大的缺失消息为锚点(单个 targetMessageId 的加载范围覆盖它到最新),
+        // 一次加载即可覆盖所有缺失目标;深度查询失败按 0 处理,不影响候选资格。
+        val assistantIdStr = snapshot.assistantId.toString()
+        val anchorMessageId = missing.maxByOrNull { id ->
+            runCatching {
+                conversationRepo.chatMessageDAO.getMessageGlobalDepth(assistantIdStr, id.toString())
+            }.getOrDefault(0)
+        }?.toString() ?: return snapshot
+        val hydrated = conversationRepo.getConversationById(conversationId, anchorMessageId) ?: return snapshot
+        return ConversationHydrationRules.mergePlaceholderNodes(snapshot, hydrated)
     }
 
     private fun normalizeConversationForSave(

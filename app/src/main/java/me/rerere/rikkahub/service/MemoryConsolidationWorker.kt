@@ -41,7 +41,6 @@ import me.rerere.rikkahub.common.JsonInstant
 import java.io.IOException
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
-import me.rerere.ai.ui.limitContext
 private val TAG = "MemoryConsolidation"
 
 class MemoryConsolidationWorker(
@@ -74,7 +73,6 @@ class MemoryConsolidationWorker(
     }
 
     override suspend fun doWork(): Result {
-        val forceConversationId = inputData.getString("FORCE_CONVERSATION_ID")
         val assistantIdString = inputData.getString("ASSISTANT_ID")
         val forceMaster = inputData.getBoolean("FORCE_MASTER", false)
         val incrementalMaster = inputData.getBoolean("INCREMENTAL_MASTER", false)
@@ -82,7 +80,7 @@ class MemoryConsolidationWorker(
 
         Log.i(
             TAG,
-            "Starting memory consolidation (Force: $forceConversationId, Assistant: $assistantIdString, IncrementalMaster: $incrementalMaster)"
+            "Starting memory consolidation (Assistant: $assistantIdString, IncrementalMaster: $incrementalMaster)"
         )
 
         return try {
@@ -94,34 +92,7 @@ class MemoryConsolidationWorker(
                 Log.e(TAG, "Failed to clear executed tasks", e)
             }
 
-            if (forceConversationId != null) {
-                if (!tryLock(forceConversationId)) {
-                    Log.i(TAG, "Conversation $forceConversationId is already being processed, skipping.")
-                    return Result.success()
-                }
-                try {
-                    val convId = Uuid.parse(forceConversationId)
-                    val conv = conversationRepository.getConversationById(convId)
-
-                    if (conv == null) {
-                        Log.e(TAG, "Conversation not found: $forceConversationId")
-                        return Result.failure(workDataOf("error_tag" to "ERROR_EXCEPTION:Conversation not found"))
-                    }
-
-                    val settings = settingsStore.settingsFlow.first()
-                    val assistant = settings.assistants.find { it.id == conv.assistantId }
-                        ?: return Result.failure(workDataOf("error_tag" to "ERROR_EXCEPTION:Assistant not found"))
-
-                    val errorTag = manualConsolidate(assistant, conv, isManual)
-                    if (errorTag == null) {
-                        Result.success()
-                    } else {
-                        Result.failure(workDataOf("error_tag" to errorTag))
-                    }
-                } finally {
-                    unlock(forceConversationId)
-                }
-            } else {
+            run {
                 val settings = settingsStore.settingsFlow.first()
                 val assistants = if (assistantIdString != null) {
                     settings.assistants.filter { it.id.toString() == assistantIdString }
@@ -173,109 +144,6 @@ class MemoryConsolidationWorker(
             }
         }
         return block()
-    }
-
-    private suspend fun manualConsolidate(assistant: Assistant, conv: Conversation, isManual: Boolean): String? {
-        val settings = settingsStore.settingsFlow.first()
-        val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
-        val anchorTime = existingEpisode?.endTime ?: 0L
-
-        // 获取当前所有生效（非删除，当前选定版本）的消息
-        val currentMessages = conv.currentMessages
-
-        // 过滤掉已经在旧归档中的消息
-        val visibleMessages = currentMessages.filter { msg ->
-            msg.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds() > anchorTime
-        }
-
-        // 手动归档时：
-        // 归档数量 = 未归档总数 - 保留数量(10)
-        // 校验：归档数量 >= 10
-        val totalUnconsolidated = visibleMessages.size
-        val consolidateCount = if (isManual) {
-            val messagesToKeep = visibleMessages.limitContext(10)
-            totalUnconsolidated - messagesToKeep.size
-        } else {
-            totalUnconsolidated // 自动任务默认处理全部可见消息
-        }
-
-        if (isManual && consolidateCount < 10) {
-            return "ERROR_INSUFFICIENT_MESSAGES"
-        }
-
-        // 修改：情节记忆使用 summarizerModelId
-        val summarizer =
-            resolveModel(assistant.summarizerModelId ?: settings.summarizerModelId, settings) ?: return "ERROR_NO_MODEL"
-
-        return try {
-            // 执行增量滚动式总结
-            val messagesToProcess = if (isManual) {
-                visibleMessages.take(consolidateCount)
-            } else {
-                visibleMessages
-            }
-
-            if (messagesToProcess.isEmpty()) return "ERROR_NO_MESSAGES"
-
-            val summary = generateConversationSummary(
-                handler = summarizer.handler,
-                providerSetting = summarizer.provider,
-                model = summarizer.model,
-                assistantName = assistant.name,
-                previousSummary = existingEpisode?.content,
-                messages = messagesToProcess,
-                timeoutMs = settings.chatGenerationTimeoutMinutes * 60 * 1000L
-            )
-
-            if (summary.isNotBlank()) {
-                val lastArchivedMessage = messagesToProcess.last()
-                val lastArchivedTime = lastArchivedMessage.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
-                val episode = ChatEpisodeEntity(
-                    id = existingEpisode?.id ?: 0,
-                    assistantId = assistant.id.toString(),
-                    conversationId = conv.id.toString(),
-                    content = summary,
-                    keywords = "",
-                    embedding = null,
-                    embeddingModelId = null,
-                    startTime = messagesToProcess.first().createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds(),
-                    endTime = lastArchivedTime,
-                    significance = messagesToProcess.size + (existingEpisode?.significance ?: 0),
-                    lastAccessedAt = System.currentTimeMillis()
-                )
-
-                memoryRepository.saveEpisode(episode)
-
-                // 只有立即整合（手动触发 episode 生成）才更新截断游标。
-                // 自动扫描（isManual=false）不设置：自动归档只生成 segment，
-                // 不应截断 AI 上下文。episode 与 segment 的时间戳互不影响。
-                if (isManual) {
-                    conversationRepository.updateLastArchivedMessageTime(conv.id, lastArchivedTime)
-                }
-
-                updateLastResult(
-                    assistantId = assistant.id,
-                    result = "Consolidation Successful",
-                    wasUpdated = true
-                )
-                null
-            } else {
-                updateLastResult(
-                    assistantId = assistant.id,
-                    result = "Consolidation Failed: Empty Summary",
-                    wasUpdated = false
-                )
-                "ERROR_EMPTY_SUMMARY"
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Manual consolidation failed", e)
-            updateLastResult(
-                assistantId = assistant.id,
-                result = "Consolidation Failed: ${e.message}",
-                wasUpdated = false
-            )
-            "ERROR_EXCEPTION:${e.message ?: "Unknown API Error"}"
-        }
     }
 
     private suspend fun consolidateAssistantMemories(

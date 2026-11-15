@@ -1832,6 +1832,10 @@
   <string name="consolidate_failed_unknown">Archiving failed: %s</string>
   <string name="consolidate_failed">Consolidation failed: Insufficient new messages or the summary model is not configured</string>
   <string name="consolidating_in_progress">Consolidating session memory...</string>
+  <string name="consolidating_in_progress_hint">Archiving memory (batch %1$d/%2$d)...</string>
+  <string name="consolidate_in_progress">Consolidation already in progress</string>
+  <string name="consolidate_cancel">Cancel</string>
+  <string name="consolidate_cancelled">Consolidation interrupted, %1$d messages archived. It will resume from where it stopped next time</string>
   <string name="consolidate_failed_empty_summary">Return result is empty</string>
   <!-- Image Generation -->
   <string name="img_gen_title">Image Generation</string>

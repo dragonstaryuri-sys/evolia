@@ -1263,6 +1263,10 @@
   <string name="consolidate_failed_no_messages">当前会话没有新增消息需要归档</string>
   <string name="consolidate_failed_unknown">归档失败：%s</string>
   <string name="consolidating_in_progress">正在整合会话记忆...</string>
+  <string name="consolidating_in_progress_hint">正在归档记忆（第 %1$d/%2$d 批）...</string>
+  <string name="consolidate_in_progress">整合已在进行中</string>
+  <string name="consolidate_cancel">取消整合</string>
+  <string name="consolidate_cancelled">整合已中断，已归档 %1$d 条消息，下次将从断点继续</string>
   <!-- Memory Actions -->
   <string name="assistant_memory_group_settings">记忆设置</string>
   <string name="assistant_memory_enable_title">启用记忆功能</string>

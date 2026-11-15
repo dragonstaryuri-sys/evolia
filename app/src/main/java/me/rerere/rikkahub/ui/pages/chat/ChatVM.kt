@@ -539,8 +539,61 @@ class ChatVM(
         syncingIds.contains(activeId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    private val _isConsolidating = MutableStateFlow(false)
-    val isConsolidating: StateFlow<Boolean> = _isConsolidating.asStateFlow()
+    /**
+     * 整合遮罩状态：以 ChatService 的 episode 归档状态为准（Koin single，退出页面重进自动恢复；
+     * 覆盖手动整合与切换会话钩子两条路径）。VM 内存态不再是状态源。
+     */
+    val isConsolidating: StateFlow<Boolean> = chatService.episodeArchivingIds
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Lazily, false)
+
+    /** 当前进行中的归档进度（第 doneChunks/totalChunks 批），遮罩 hint 展示用。 */
+    val consolidatingProgress: StateFlow<me.rerere.rikkahub.service.EpisodeArchiveProgress?> =
+        chatService.episodeArchiveProgress
+            .map { it.values.firstOrNull() }
+            .stateIn(viewModelScope, SharingStarted.Lazily, null)
+
+    init {
+        // 手动整合结果 → toast。页面关闭期间的结果不重放（SharedFlow 无 replay）。
+        viewModelScope.launch {
+            chatService.episodeArchiveResults.collect { result ->
+                when (result.status) {
+                    me.rerere.rikkahub.service.EpisodeArchiveStatus.COMPLETED -> {
+                        if (result.archivedCount > 0) {
+                            _toastFlow.emit(context.getString(R.string.consolidate_success))
+                        }
+                    }
+                    me.rerere.rikkahub.service.EpisodeArchiveStatus.PARTIAL -> {
+                        if (result.errorMessage == null) {
+                            _toastFlow.emit(
+                                context.getString(R.string.consolidate_cancelled, result.archivedCount)
+                            )
+                        } else {
+                            _toastFlow.emit(
+                                context.getString(R.string.consolidate_failed_unknown, result.errorMessage)
+                            )
+                        }
+                    }
+                    me.rerere.rikkahub.service.EpisodeArchiveStatus.FAILED -> {
+                        _toastFlow.emit(
+                            context.getString(R.string.consolidate_failed_unknown, result.errorMessage ?: "")
+                        )
+                    }
+                    me.rerere.rikkahub.service.EpisodeArchiveStatus.SKIPPED -> {
+                        when (result.reasonCode) {
+                            me.rerere.rikkahub.service.EpisodeArchiveReasons.NO_NEW_MESSAGES ->
+                                _toastFlow.emit(context.getString(R.string.consolidate_failed_no_messages))
+                            me.rerere.rikkahub.service.EpisodeArchiveReasons.INSUFFICIENT_MESSAGES ->
+                                _toastFlow.emit(context.getString(R.string.consolidate_failed_insufficient))
+                            me.rerere.rikkahub.service.EpisodeArchiveReasons.IN_PROGRESS ->
+                                _toastFlow.emit(context.getString(R.string.consolidate_in_progress))
+                            else -> result.errorMessage?.let { _toastFlow.emit(it) }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     val conversation: StateFlow<Conversation> = _currentActiveId
         .flatMapLatest { chatService.getConversationFlow(it) }
@@ -1080,13 +1133,27 @@ class ChatVM(
             }
 
             messagesByConversation.forEach { (conversationId, messageIds) ->
-                chatService.replaceConversationMessages(conversationId) { current ->
+                // targetMessageIds 触发 ChatService 定向水合:老消息可能落在超出默认
+                // 水合深度的空占位节点中,不水合则删除静默失败(transform 找不到目标)。
+                val deletion = chatService.replaceConversationMessages(
+                    conversationId,
+                    targetMessageIds = messageIds
+                ) { current ->
                     current.deleteMessages(messageIds).takeIf { deletion ->
                         deletion.deletedMessageIds.isNotEmpty()
                     }
                 }
+                // 删除后局部同步分页窗口(移除被删节点、替换更新节点),不调 loadInitial——
+                // 它会把窗口重置回最新 100 条:删除老消息后列表跳到别处(与删除点割裂),
+                // 且撤销恢复的内容也落在窗口外,用户感知为「撤销失败」。
+                if (deletion != null) {
+                    paginationManager?.syncConversationNodes(
+                        conversationId,
+                        deletion.conversation.messageNodes,
+                        deletion.deletedNodeIds
+                    )
+                }
             }
-            paginationManager?.loadInitial()
         }
     }
 
@@ -1201,80 +1268,24 @@ class ChatVM(
     fun undoDeleteConversation(conversationId: Uuid) { chatService.undoDeleteConversation(conversationId) }
 
     /**
-     * 针对指定会话强制执行记忆整合 (L2 Archiving)
+     * 针对指定会话强制执行记忆整合 (L2 episode Archiving)。
+     * 执行载体为 ChatService 进程内协程（替代原 WorkManager Worker 路径）：
+     * 遮罩、取消、断点续归统一由 ChatService 管理；退出页面任务继续跑，
+     * 重进后遮罩以 ChatService 状态自动恢复；取消保留已归档进度。
      */
     fun consolidateConversation(conversation: Conversation) {
         viewModelScope.launch {
-            _isConsolidating.value = true
-            try {
-                // 1. 将该会话标记为“未整合”，以绕过增量检查
-                conversationRepo.markAsNotConsolidated(conversation.id)
-
-                // 2. 启动 Worker 并传入强制指定的会话 ID
-                val workManager = androidx.work.WorkManager.getInstance(context)
-                val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
-                    .setInputData(androidx.work.workDataOf(
-                        "FORCE_CONVERSATION_ID" to conversation.id.toString(),
-                        "IS_MANUAL" to true
-                    ))
-                    .build()
-
-                workManager.enqueueUniqueWork(
-                    "consolidate_${conversation.id}",
-                    androidx.work.ExistingWorkPolicy.KEEP,
-                    request
-                )
-
-                // 3. 监听结果并反馈给 UI
-                val workInfo = workManager.getWorkInfoByIdFlow(request.id)
-                    .filter { it?.state?.isFinished == true }
-                    .firstOrNull()
-
-                if (workInfo != null) {
-                    when (workInfo.state) {
-                        androidx.work.WorkInfo.State.SUCCEEDED -> {
-                            // ✨ 修复点：直接在当前协程等待同步完成，避免状态延迟
-                            val updated = conversationRepo.getConversationById(conversation.id)
-                            if (updated != null) {
-                                chatService.mutateConversationAndSave(conversation.id) { current ->
-                                    current.copy(
-                                        isConsolidated = updated.isConsolidated,
-                                        lastSummarizedMessageTime = updated.lastSummarizedMessageTime,
-                                        lastSummarizedMessageId = updated.lastSummarizedMessageId,
-                                        lastPruneTime = updated.lastPruneTime,
-                                        lastPruneMessageCount = updated.lastPruneMessageCount,
-                                        lastRefreshTime = updated.lastRefreshTime,
-                                        // 同步手动归档后写入 DB 的时间戳游标，否则内存态会保留旧值并在
-                                        // saveConversation 时把 DB 里正确的 lastArchivedMessageTime 覆盖回旧值，
-                                        // 导致下次生成上下文时截断不生效（清理上下文失效）
-                                        lastArchivedMessageTime = updated.lastArchivedMessageTime
-                                    )
-                                }
-                            }
-                            _toastFlow.emit(context.getString(R.string.consolidate_success))
-                        }
-                        androidx.work.WorkInfo.State.FAILED -> {
-                            val errorTag = workInfo.outputData.getString("error_tag") ?: ""
-                            val message = when {
-                                errorTag == "ERROR_NO_MESSAGES" -> context.getString(R.string.consolidate_failed_no_messages)
-                                errorTag == "ERROR_NO_MODEL" -> context.getString(R.string.consolidate_failed_no_model)
-                                errorTag == "ERROR_EMPTY_SUMMARY" -> context.getString(R.string.consolidate_failed_empty_summary)
-                                errorTag == "ERROR_INSUFFICIENT_MESSAGES" -> context.getString(R.string.consolidate_failed_insufficient)
-                                errorTag.startsWith("ERROR_EXCEPTION:") -> {
-                                    val exception = errorTag.removePrefix("ERROR_EXCEPTION:")
-                                    context.getString(R.string.consolidate_failed_unknown, exception)
-                                }
-                                else -> context.getString(R.string.consolidate_failed_unknown, errorTag)
-                            }
-                            _toastFlow.emit(message)
-                        }
-                        else -> {}
-                    }
-                }
-            } finally {
-                _isConsolidating.value = false
+            val started = chatService.startManualEpisodeArchive(conversation.id)
+            if (!started) {
+                _toastFlow.emit(context.getString(R.string.consolidate_in_progress))
             }
         }
+    }
+
+    /** 取消当前进行中的整合（遮罩取消按钮入口）。通常至多一个归档在跑。 */
+    fun cancelConsolidation() {
+        val activeId = chatService.episodeArchiveProgress.value.keys.firstOrNull() ?: return
+        chatService.cancelManualEpisodeArchive(activeId)
     }
 
     fun updateConversation(newConversation: Conversation) {
@@ -1287,8 +1298,12 @@ class ChatVM(
 
     fun restoreConversation(backup: Conversation) {
         viewModelScope.launch {
-            chatService.mutateConversationAndSave(backup.id) { current ->
+            val restored = chatService.mutateConversationAndSave(backup.id) { current ->
                 current.restoreMessagesFrom(backup)
+            }
+            // 撤销恢复后局部同步窗口,把被删的节点放回原位置(不 loadInitial 重置窗口)
+            if (restored != null) {
+                paginationManager?.syncConversationNodes(backup.id, restored.messageNodes)
             }
         }
     }

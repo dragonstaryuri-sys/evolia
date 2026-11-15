@@ -59,6 +59,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.ui.components.chat.ChatMessageTurn
 import me.rerere.rikkahub.ui.components.chat.LocalVoiceMessagePlayer
 import me.rerere.rikkahub.ui.components.chat.MessageTurnGroup
+import me.rerere.rikkahub.ui.components.chat.timelineSortKey
 import me.rerere.rikkahub.ui.components.ui.ListSelectableItem
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.utils.plus
@@ -444,12 +445,13 @@ private fun SharedTransitionScope.ChatListNormal(
                         // 话题间的时间显示逻辑
                         // items[0] 最新 → items[last] 最旧；nextItem (index+1) 比当前更旧
                         // Turn.nodes 旧→新（ChatPage 已 reversed）：first=最旧, last=最新
-                        // 交界处差 = 当前 Turn 最旧节点 - 下一 Turn 最新节点
+                        // 交界处差 = 当前 Turn 最旧节点 - 下一 Turn 最新节点。
+                        // 时间键用节点创建时间（timelineSortKey）：编辑旧消息不改时间线位置。
                         val nextItem = items.getOrNull(index + 1)
                         val shouldShowTime = nextItem == null || nextItem is ChatUIItem.Separator || run {
-                            val olderTime = (nextItem as? ChatUIItem.Turn)?.group?.nodes?.last()?.currentMessage?.createdAt
-                            olderTime == null || (item.group.nodes.first().currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
-                                olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
+                            val olderTime = (nextItem as? ChatUIItem.Turn)?.group?.nodes?.last()?.timelineSortKey(TimeZone.currentSystemDefault())
+                            olderTime == null || (item.group.nodes.first().timelineSortKey(TimeZone.currentSystemDefault()) -
+                                olderTime) > 5.minutes.inWholeMilliseconds
                         }
 
                         val isTurnSelected = remember(selectedItems.size) {
@@ -475,7 +477,12 @@ private fun SharedTransitionScope.ChatListNormal(
                             if (shouldShowTime) {
                                 Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
                                     Text(
-                                        text = formatTime(item.group.nodes.first().currentMessage.createdAt),
+                                        // 显示时间线位置时间（节点创建时间），编辑旧消息不改变其所属时间段
+                                        text = formatTime(
+                                            Instant.fromEpochMilliseconds(
+                                                item.group.nodes.first().timelineSortKey(TimeZone.currentSystemDefault())
+                                            ).toLocalDateTime(TimeZone.currentSystemDefault())
+                                        ),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                                     )

@@ -77,6 +77,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import me.rerere.rikkahub.ui.components.chat.CallRecordDeleteDialog
 import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
+import me.rerere.rikkahub.ui.components.chat.timelineSortKey
 import me.rerere.rikkahub.data.ai.tools.CameraCaptureHub
 import me.rerere.rikkahub.ui.components.camera.CameraCaptureOverlay
 
@@ -458,10 +459,12 @@ private fun ChatPageContent(
             reversedTurns.forEachIndexed { index, turn ->
                 // group.nodes 为 新→旧，反转为 旧→新（与下方渲染约定一致）
                 val orderedNodes = turn.nodes.reversed()
-                val turnStartMs = orderedNodes.first().currentMessage.createdAt
-                    .toInstant(zone).toEpochMilliseconds()
-                val turnEndMs = orderedNodes.last().currentMessage.createdAt
-                    .toInstant(zone).toEpochMilliseconds()
+                // 排序键用节点创建时间（timelineCreatedAt），不用 currentMessage.createdAt：
+                // 编辑旧消息会追加新 version（createdAt = 编辑时刻），按消息时间排序会让
+                // 修改过的旧节点跑回时间线最新位置。timelineSortKey 与分页查询的
+                // chat_message_nodes.created_at 排序字段同源。
+                val turnStartMs = orderedNodes.minOf { it.timelineSortKey(zone) }
+                val turnEndMs = orderedNodes.maxOf { it.timelineSortKey(zone) }
                 val turnConvId = orderedNodes.first().conversationId.toString()
 
                 // 与用户诉求对应：通话气泡需按创建时间排入回合「内部」，
@@ -488,7 +491,7 @@ private fun ChatPageContent(
                 var segmentStartMs = turnStartMs
                 innerRecords.forEach { record ->
                     val (olderNodes, newerNodes) = remaining.partition {
-                        it.currentMessage.createdAt.toInstant(zone).toEpochMilliseconds() <= record.createTime
+                        it.timelineSortKey(zone) <= record.createTime
                     }
                     if (olderNodes.isNotEmpty()) {
                         merged.add(
@@ -633,6 +636,7 @@ private fun ChatPageContent(
 
     val isSyncingContext by vm.isSyncingContext.collectAsStateWithLifecycle()
     val isConsolidating by vm.isConsolidating.collectAsStateWithLifecycle()
+    val consolidatingProgress by vm.consolidatingProgress.collectAsStateWithLifecycle()
 
     val tts = LocalTTSState.current
 
@@ -1169,11 +1173,24 @@ private fun ChatPageContent(
                         }
                     }
 
+                    val consolidatingHint = consolidatingProgress?.let { progress ->
+                        stringResource(
+                            R.string.consolidating_in_progress_hint,
+                            progress.doneChunks + 1,
+                            progress.totalChunks
+                        )
+                    } ?: stringResource(R.string.consolidating_in_progress)
+                    // 取消仅对手动整合生效（切换钩子路径未登记取消 Job，progress 非空 ⟺ 手动路径）
+                    val manualArchiving = isConsolidating && consolidatingProgress != null
                     FullscreenLoadingOverlay(
                         visible = isSyncingContext || isConsolidating,
-                        hint = if (isConsolidating) stringResource(R.string.consolidating_in_progress) else stringResource(
+                        hint = if (isConsolidating) consolidatingHint else stringResource(
                             R.string.syncing_context_animation_hint
-                        )
+                        ),
+                        cancelText = if (manualArchiving) stringResource(R.string.consolidate_cancel) else null,
+                        onCancel = if (manualArchiving) {
+                            { vm.cancelConsolidation() }
+                        } else null
                     )
                 }
             }

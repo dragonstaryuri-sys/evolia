@@ -19,10 +19,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -84,6 +86,8 @@ fun CircularIconProgressIndicator(
  * @param hint         下方显示的提示文字
  * @param iconTint     图标和进度圈颜色
  * @param hintStyle    提示文字的 TextStyle，默认 bodyLarge
+ * @param cancelText   取消按钮文字；null 表示不显示取消按钮（默认）
+ * @param onCancel     取消回调；仅在 cancelText 非 null 时生效
  */
 @Composable
 fun FullscreenLoadingOverlay(
@@ -93,6 +97,8 @@ fun FullscreenLoadingOverlay(
     hint: String = "",
     iconTint: Color = MaterialTheme.colorScheme.primary,
     hintStyle: TextStyle = MaterialTheme.typography.bodyLarge,
+    cancelText: String? = null,
+    onCancel: (() -> Unit)? = null,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -131,6 +137,18 @@ fun FullscreenLoadingOverlay(
                     style = hintStyle,
                     color = MaterialTheme.colorScheme.onBackground
                 )
+                if (cancelText != null && onCancel != null) {
+                    TextButton(
+                        onClick = onCancel,
+                        // 语义色：primary；不写死颜色，深浅色自适应
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.padding(top = 16.dp)
+                    ) {
+                        Text(text = cancelText)
+                    }
+                }
             }
         }
     }
