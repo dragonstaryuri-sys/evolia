@@ -3,6 +3,7 @@ package me.rerere.rikkahub
 import me.rerere.rikkahub.data.ai.TtsVoiceResolver
 import me.rerere.rikkahub.data.ai.mergeVoiceOverride
 import me.rerere.rikkahub.data.ai.mimoEffectiveVoiceId
+import me.rerere.rikkahub.data.ai.stripConnectionFields
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.ensureMediaBackupItems
@@ -145,11 +146,55 @@ class TtsVoiceResolverTest {
         val elevenCopy = eleven.copy(voiceId = "v2", modelId = "eleven_turbo_v2")
         assertEquals("v2", (mergeVoiceOverride(eleven, elevenCopy) as TTSProviderSetting.ElevenLabs).voiceId)
         assertEquals("el", (mergeVoiceOverride(eleven, elevenCopy) as TTSProviderSetting.ElevenLabs).apiKey)
+
+        // FishAudio：apiKey 取全局，voiceId/model/speed 取副本
+        val fish = TTSProviderSetting.FishAudio(
+            id = Uuid.random(),
+            apiKey = "fish-key",
+            model = "s2.1-pro",
+            voiceId = "global-voice"
+        )
+        val fishCopy = fish.copy(
+            apiKey = "",
+            model = "s2.1-pro-free",
+            voiceId = "agent-voice",
+            speed = 1.3f
+        )
+        val mergedFish = mergeVoiceOverride(fish, fishCopy) as TTSProviderSetting.FishAudio
+        assertEquals("fish-key", mergedFish.apiKey)
+        assertEquals("agent-voice", mergedFish.voiceId)
+        assertEquals("s2.1-pro-free", mergedFish.model)
+        assertEquals(1.3f, mergedFish.speed, 0.001f)
     }
 
     @Test
     fun `merge rejects cross type`() {
         assertNull(mergeVoiceOverride(openAi, mimo))
+    }
+
+    // ==================== Fish Audio ====================
+
+    @Test
+    fun `fish audio setting round trips and agent copy strips api key`() {
+        val setting = TTSProviderSetting.FishAudio(
+            id = Uuid.random(),
+            apiKey = "fish-key",
+            model = "s2.1-pro-free",
+            voiceId = "voice-model-id",
+            speed = 1.2f
+        )
+
+        val decoded = JsonInstant.decodeFromString<TTSProviderSetting>(encode(setting))
+        assertTrue(decoded is TTSProviderSetting.FishAudio)
+        val fish = decoded as TTSProviderSetting.FishAudio
+        assertEquals("fish-key", fish.apiKey)
+        assertEquals("s2.1-pro-free", fish.model)
+        assertEquals("voice-model-id", fish.voiceId)
+        assertEquals(1.2f, fish.speed, 0.001f)
+
+        val stripped = stripConnectionFields(fish) as TTSProviderSetting.FishAudio
+        assertEquals("", stripped.apiKey)
+        assertEquals("fish-key", fish.apiKey)
     }
 
     // ==================== Mimo voicedesign / voiceclone 音色标识 ====================

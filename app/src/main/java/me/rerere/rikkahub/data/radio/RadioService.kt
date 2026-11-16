@@ -914,6 +914,7 @@ class RadioService(
             is me.rerere.tts.provider.TTSProviderSetting.Azure -> setting.voiceName
             is me.rerere.tts.provider.TTSProviderSetting.SystemTTS -> setting.voiceName ?: "system_default"
             is me.rerere.tts.provider.TTSProviderSetting.ElevenLabs -> setting.voiceId
+            is me.rerere.tts.provider.TTSProviderSetting.FishAudio -> setting.voiceId
             is me.rerere.tts.provider.TTSProviderSetting.MiniMax -> setting.voiceId
         }
     }

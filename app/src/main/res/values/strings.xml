@@ -1578,6 +1578,13 @@
   <!-- ElevenLabs Additional Resources -->
   <string name="setting_tts_page_api_key_description_elevenlabs">Your ElevenLabs API Key</string>
   <string name="setting_tts_page_api_key_placeholder_elevenlabs">Please enter ElevenLabs API Key</string>
+  <string name="setting_tts_page_api_key_description_fishaudio">Your Fish Audio API Key</string>
+  <string name="setting_tts_page_api_key_placeholder_fishaudio">Please enter Fish Audio API Key</string>
+  <string name="setting_tts_page_fishaudio_model_description">TTS model sent via the model header; s2.1-pro requires account credit, s2.1-pro-free is free</string>
+  <string name="setting_tts_page_fishaudio_speed_description">Synthesis speed (0.5 - 2.0)</string>
+  <string name="setting_tts_page_fishaudio_voice_picker_title">Select Fish Audio Voice</string>
+  <string name="setting_tts_page_fishaudio_voice_picker_empty">No voices found. You can paste a voice model ID manually.</string>
+  <string name="setting_tts_page_fishaudio_network_notice">Fish Audio is hosted outside mainland China. If voice loading or synthesis fails, ensure your network can reach api.fish.audio (for example, a network environment with overseas access).</string>
   <string name="setting_tts_page_model_id">Model ID</string>
   <string name="setting_tts_page_model_id_description">Model identifier for ElevenLabs</string>
   <!-- System TTS Additional Resources -->
@@ -1845,6 +1852,7 @@
   <string name="gemini_dct">Google\'s TTS with natural voices</string>
   <string name="azure_dct">Microsoft\'s high-quality cloud TTS</string>
   <string name="elevenlabs_dct">ElevenLabs Speech Synthesis Service</string>
+  <string name="fishaudio_dct">Fish Audio speech synthesis service</string>
   <string name="minimax_dct">Professional voice cloning,Chinese TTS with emotions</string>
   <string name="tts_error_concurrency">ElevenLabs account concurrency limit reached, queuing for speech synthesis...</string>
   <string name="backup_page_tts_cache">Voice cache</string>

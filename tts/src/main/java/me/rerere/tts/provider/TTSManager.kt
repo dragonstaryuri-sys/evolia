@@ -8,6 +8,7 @@ import me.rerere.tts.model.TTSVoice
 import me.rerere.tts.provider.providers.AzureTTSProvider
 import me.rerere.tts.provider.providers.CustomTTSProvider
 import me.rerere.tts.provider.providers.ElevenLabsTTSProvider
+import me.rerere.tts.provider.providers.FishAudioTTSProvider
 import me.rerere.tts.provider.providers.GeminiTTSProvider
 import me.rerere.tts.provider.providers.MiniMaxSimpleVoice
 import me.rerere.tts.provider.providers.MiniMaxTTSProvider
@@ -24,6 +25,7 @@ class TTSManager(private val context: Context) {
     private val miniMaxProvider = MiniMaxTTSProvider()
     private val elevenLabsProvider = ElevenLabsTTSProvider()
     private val azureProvider = AzureTTSProvider()
+    private val fishAudioProvider = FishAudioTTSProvider()
 
     fun generateSpeech(
         providerSetting: TTSProviderSetting,
@@ -38,6 +40,7 @@ class TTSManager(private val context: Context) {
             is TTSProviderSetting.MiniMax -> miniMaxProvider.generateSpeech(context, providerSetting, request)
             is TTSProviderSetting.ElevenLabs -> elevenLabsProvider.generateSpeech(context, providerSetting, request)
             is TTSProviderSetting.Azure -> azureProvider.generateSpeech(context, providerSetting, request)
+            is TTSProviderSetting.FishAudio -> fishAudioProvider.generateSpeech(context, providerSetting, request)
         }
     }
 
@@ -53,6 +56,7 @@ class TTSManager(private val context: Context) {
             is TTSProviderSetting.MiniMax -> miniMaxProvider.getVoices(context, providerSetting)
             is TTSProviderSetting.ElevenLabs -> elevenLabsProvider.getVoices(context, providerSetting)
             is TTSProviderSetting.Azure -> azureProvider.getVoices(context, providerSetting)
+            is TTSProviderSetting.FishAudio -> fishAudioProvider.getVoices(context, providerSetting)
         }
     }
 

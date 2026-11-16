@@ -96,6 +96,7 @@ fun voiceSummary(setting: TTSProviderSetting): String = when (setting) {
     }
 
     is TTSProviderSetting.ElevenLabs -> setting.voiceId
+    is TTSProviderSetting.FishAudio -> setting.voiceId.ifBlank { "未设置" }
     is TTSProviderSetting.Azure -> setting.voiceName
 }
 
@@ -380,7 +381,8 @@ fun AssistantVoicePage(assistantId: String) {
                 me.rerere.rikkahub.ui.pages.setting.components.TTSProviderConfigure(
                     setting = editing,
                     onValueChange = { editing = it },
-                    voiceOnly = true
+                    voiceOnly = true,
+                    connectionSetting = globalRef
                 )
                 }
                 item {

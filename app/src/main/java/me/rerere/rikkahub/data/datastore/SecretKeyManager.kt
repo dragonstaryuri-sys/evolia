@@ -190,6 +190,7 @@ class SecretKeyManager(
                 is TTSProviderSetting.MiniMax -> oldTtsProvider.apiKey
                 is TTSProviderSetting.ElevenLabs -> oldTtsProvider.apiKey
                 is TTSProviderSetting.Azure -> oldTtsProvider.apiKey
+                is TTSProviderSetting.FishAudio -> oldTtsProvider.apiKey
                 is TTSProviderSetting.Custom -> oldTtsProvider.apiKey
                 is TTSProviderSetting.SystemTTS -> ""
             }
@@ -200,6 +201,7 @@ class SecretKeyManager(
                 is TTSProviderSetting.MiniMax -> newTtsProvider.apiKey
                 is TTSProviderSetting.ElevenLabs -> newTtsProvider.apiKey
                 is TTSProviderSetting.Azure -> newTtsProvider.apiKey
+                is TTSProviderSetting.FishAudio -> newTtsProvider.apiKey
                 is TTSProviderSetting.Custom -> newTtsProvider.apiKey
                 is TTSProviderSetting.SystemTTS -> ""
             }
@@ -293,6 +295,12 @@ class SecretKeyManager(
                     provider.copy(apiKey = "")
                 } else provider
             }
+            is TTSProviderSetting.FishAudio -> {
+                if (provider.apiKey.isNotBlank()) {
+                    setTtsApiKey(provider.id, provider.apiKey)
+                    provider.copy(apiKey = "")
+                } else provider
+            }
             is TTSProviderSetting.Custom -> {
                 if (provider.apiKey.isNotBlank()) {
                     setTtsApiKey(provider.id, provider.apiKey)
@@ -334,6 +342,7 @@ class SecretKeyManager(
             is TTSProviderSetting.MiniMax -> provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
             is TTSProviderSetting.ElevenLabs -> provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
             is TTSProviderSetting.Azure -> provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
+            is TTSProviderSetting.FishAudio -> provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
             is TTSProviderSetting.Custom -> provider.copy(apiKey = getTtsApiKey(provider.id, provider.apiKey))
             is TTSProviderSetting.SystemTTS -> provider
         }

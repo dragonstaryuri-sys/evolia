@@ -249,6 +249,33 @@ sealed class TTSProviderSetting {
     }
 
     @Serializable
+    @SerialName("fishaudio")
+    data class FishAudio(
+        override var id: Uuid = Uuid.random(),
+        override var name: String = "Fish Audio TTS",
+        override val builtIn: Boolean = false,
+        val apiKey: String = "",
+        /** TTS 模型 ID，通过请求头 model 传递（与音色 ID 无关） */
+        val model: String = "s2.1-pro",
+        /** 音色模型 ID，对应请求体 reference_id */
+        val voiceId: String = "",
+        /** 语速，官方 prosody.speed 支持 0.5-2.0 */
+        val speed: Float = 1.0f
+    ) : TTSProviderSetting() {
+        override fun copyProvider(
+            id: Uuid,
+            name: String,
+            builtIn: Boolean
+        ): TTSProviderSetting {
+            return this.copy(
+                id = id,
+                name = name,
+                builtIn = builtIn
+            )
+        }
+    }
+
+    @Serializable
     @SerialName("azure")
     data class Azure(
         override var id: Uuid = Uuid.random(),
@@ -284,6 +311,7 @@ sealed class TTSProviderSetting {
                 MiniMax::class,
                 ElevenLabs::class,
                 Azure::class,
+                FishAudio::class,
             )
         }
     }

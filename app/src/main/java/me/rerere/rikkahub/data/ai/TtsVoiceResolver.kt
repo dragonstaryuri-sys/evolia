@@ -179,6 +179,16 @@ fun mergeVoiceOverride(global: TTSProviderSetting, override: TTSProviderSetting)
                 name = override.name.ifBlank { global.name }
             )
         }
+
+        is TTSProviderSetting.FishAudio -> {
+            override as TTSProviderSetting.FishAudio
+            global.copy(
+                voiceId = override.voiceId,
+                model = override.model,
+                speed = override.speed,
+                name = override.name.ifBlank { global.name }
+            )
+        }
     }
 }
 
@@ -211,5 +221,6 @@ fun stripConnectionFields(setting: TTSProviderSetting): TTSProviderSetting = whe
     is TTSProviderSetting.MiniMax -> setting.copy(apiKey = "", groupId = "")
     is TTSProviderSetting.ElevenLabs -> setting.copy(apiKey = "")
     is TTSProviderSetting.Azure -> setting.copy(apiKey = "")
+    is TTSProviderSetting.FishAudio -> setting.copy(apiKey = "")
     is TTSProviderSetting.SystemTTS -> setting
 }

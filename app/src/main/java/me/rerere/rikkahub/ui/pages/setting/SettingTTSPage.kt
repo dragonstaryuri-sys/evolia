@@ -443,6 +443,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         is TTSProviderSetting.MiniMax -> "MiniMax"
                         is TTSProviderSetting.ElevenLabs -> "ElevenLabs"
                         is TTSProviderSetting.Azure -> "Azure"
+                        is TTSProviderSetting.FishAudio -> "Fish Audio"
                         is TTSProviderSetting.SystemTTS -> "System"
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1134,6 +1135,7 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                 TTSPreset(TTSProviderSetting.Gemini::class, "Gemini", R.string.gemini_dct),
                 TTSPreset(TTSProviderSetting.Azure::class, "Azure TTS",R.string.azure_dct ),
                 TTSPreset(TTSProviderSetting.ElevenLabs::class, "ElevenLabs", R.string.elevenlabs_dct),
+                TTSPreset(TTSProviderSetting.FishAudio::class, "Fish Audio", R.string.fishaudio_dct),
                 TTSPreset(TTSProviderSetting.MiniMax::class, "MiniMax", R.string.minimax_dct),
             )
         }
@@ -1239,6 +1241,7 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                                     TTSProviderSetting.Gemini::class -> TTSProviderSetting.Gemini(builtIn = true)
                                     TTSProviderSetting.Azure::class -> TTSProviderSetting.Azure(builtIn = true)
                                     TTSProviderSetting.ElevenLabs::class -> TTSProviderSetting.ElevenLabs(builtIn = true)
+                                    TTSProviderSetting.FishAudio::class -> TTSProviderSetting.FishAudio(builtIn = true)
                                     TTSProviderSetting.MiniMax::class -> TTSProviderSetting.MiniMax(builtIn = true)
                                     else -> TTSProviderSetting.SystemTTS(builtIn = true)
                                 }
@@ -1282,6 +1285,7 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                                             TTSProviderSetting.Gemini::class -> "Google"
                                             TTSProviderSetting.Azure::class -> "Azure"
                                             TTSProviderSetting.ElevenLabs::class -> "ElevenLabs"
+                                            TTSProviderSetting.FishAudio::class -> "Fish Audio"
                                             TTSProviderSetting.MiniMax::class -> "MiniMax"
                                             else -> "Unknown"
                                         }
@@ -1396,6 +1400,7 @@ private fun TTSProviderItemContent(
                     is TTSProviderSetting.MiniMax -> "MiniMax"
                     is TTSProviderSetting.ElevenLabs -> "ElevenLabs"
                     is TTSProviderSetting.Azure -> "Azure"
+                    is TTSProviderSetting.FishAudio -> "Fish Audio"
                     is TTSProviderSetting.SystemTTS -> "System"
                     is TTSProviderSetting.Custom -> "OpenAI"
                 }

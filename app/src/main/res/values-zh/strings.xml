@@ -1567,6 +1567,14 @@
   <string name="setting_tts_page_api_key_placeholder_elevenlabs">请输入 ElevenLabs API Key</string>
   <string name="setting_tts_page_model_id">模型 ID</string>
   <string name="setting_tts_page_model_id_description">ElevenLabs 的模型标识符</string>
+  <!-- Fish Audio 补充资源 -->
+  <string name="setting_tts_page_api_key_description_fishaudio">您的 Fish Audio API Key</string>
+  <string name="setting_tts_page_api_key_placeholder_fishaudio">请输入 Fish Audio API Key</string>
+  <string name="setting_tts_page_fishaudio_model_description">通过 model 请求头指定的 TTS 模型；s2.1-pro 需账号额度，s2.1-pro-free 免费</string>
+  <string name="setting_tts_page_fishaudio_speed_description">合成语速（0.5 - 2.0）</string>
+  <string name="setting_tts_page_fishaudio_voice_picker_title">选择 Fish Audio 音色</string>
+  <string name="setting_tts_page_fishaudio_voice_picker_empty">未找到音色，也可以手动粘贴音色模型 ID</string>
+  <string name="setting_tts_page_fishaudio_network_notice">Fish Audio 服务位于境外，中国大陆网络可能无法直连 api.fish.audio。若音色列表或语音合成失败，请确认当前网络可以访问该域名（例如使用可访问境外网络的环境）。</string>
   <!-- System TTS 补充资源 -->
   <string name="setting_tts_page_voice_name_default">系统默认</string>
   <string name="provider_type_hint">提示：大多数提供商（包括 DeepSeek、智谱、以及各大中转站）都兼容 OpenAI 格式。只有在直接连接 Google 或 Anthropic 官方 API 时才需选择对应选项。如果是从中转站调用 Gemini/Claude，请依然选择 OpenAI。</string>
@@ -1824,6 +1832,7 @@
   <string name="gemini_dct">谷歌的语音合成服务</string>
   <string name="azure_dct">微软的语音合成服务</string>
   <string name="elevenlabs_dct">elevenlabs语音合成服务</string>
+  <string name="fishaudio_dct">Fish Audio 语音合成服务</string>
   <string name="minimax_dct">minimax的语音合成服务</string>
   <string name="tts_error_concurrency">ElevenLabs 账号并发受限，正在排队朗读...</string>
   <string name="backup_page_tts_cache">语音缓存</string>

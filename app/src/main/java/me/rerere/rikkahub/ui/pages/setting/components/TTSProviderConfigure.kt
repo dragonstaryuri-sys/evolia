@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Upload
@@ -88,6 +89,7 @@ import me.rerere.tts.model.TTSVoice
 import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.tts.provider.providers.MiniMaxSimpleVoice
 import me.rerere.tts.provider.providers.MimoTTSProvider
+import me.rerere.tts.provider.providers.FishAudioTTSProvider
 
 private const val TAG = "TTSProviderConfigure"
 
@@ -97,6 +99,11 @@ fun TTSProviderConfigure(
     modifier: Modifier = Modifier,
     onValueChange: (TTSProviderSetting) -> Unit,
     voiceOnly: Boolean = false,
+    /**
+     * 智能体声音配置页专用：该 Provider 的全局配置（含 apiKey），
+     * 仅用于拉取音色列表 / 试听，不会写入智能体的声音副本。
+     */
+    connectionSetting: TTSProviderSetting? = null,
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -131,6 +138,12 @@ fun TTSProviderConfigure(
             is TTSProviderSetting.ElevenLabs -> ElevenLabsTTSConfiguration(setting, onValueChange, voiceOnly)
             is TTSProviderSetting.SystemTTS -> SystemTTSConfiguration(setting, onValueChange, voiceOnly)
             is TTSProviderSetting.Azure -> AzureTTSConfiguration(setting, onValueChange, voiceOnly)
+            is TTSProviderSetting.FishAudio -> FishAudioTTSConfiguration(
+                setting = setting,
+                onValueChange = onValueChange,
+                voiceOnly = voiceOnly,
+                connectionSetting = connectionSetting as? TTSProviderSetting.FishAudio
+            )
         }
     }
 }
@@ -2792,6 +2805,348 @@ private fun SystemTTSConfiguration(
                             onValueChange(setting.copy(voiceName = voice.name))
                         }
                     )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FishAudioTTSConfiguration(
+    setting: TTSProviderSetting.FishAudio,
+    onValueChange: (TTSProviderSetting) -> Unit,
+    voiceOnly: Boolean = false,
+    connectionSetting: TTSProviderSetting.FishAudio? = null,
+) {
+    val tts = LocalTTSState.current
+    var voices by remember { mutableStateOf<List<TTSVoice>>(emptyList()) }
+    var isLoadingVoices by remember { mutableStateOf(false) }
+    var fetchError by remember { mutableStateOf<String?>(null) }
+    var showVoicePicker by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    // 智能体声音配置页的副本不含 apiKey，拉取音色时使用全局连接配置
+    val fetchApiKey = setting.apiKey.ifBlank { connectionSetting?.apiKey.orEmpty() }
+
+    suspend fun loadVoices() {
+        if (fetchApiKey.isBlank()) return
+        isLoadingVoices = true
+        fetchError = null
+        try {
+            voices = tts.getVoices(setting.copy(apiKey = fetchApiKey))
+        } catch (e: Exception) {
+            Log.e(TAG, "FishAudio: Fetch voices failed", e)
+            fetchError = e.localizedMessage ?: e.message
+        } finally {
+            isLoadingVoices = false
+        }
+    }
+
+    LaunchedEffect(fetchApiKey) {
+        if (fetchApiKey.isNotBlank()) {
+            // 输入 API Key 时防抖，避免每敲一个字符就发一次请求
+            delay(600)
+            loadVoices()
+        }
+    }
+
+    var apiKeyVisible by remember { mutableStateOf(false) }
+    if (!voiceOnly) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = AppShapes.CardSmall,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Info,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = stringResource(R.string.setting_tts_page_fishaudio_network_notice),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        FormItem(
+            label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
+            description = { Text(stringResource(R.string.setting_tts_page_api_key_description_fishaudio)) }
+        ) {
+            OutlinedTextField(
+                value = setting.apiKey,
+                onValueChange = { onValueChange(setting.copy(apiKey = it.trim())) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { if (!it.isFocused) apiKeyVisible = false },
+                placeholder = { Text(stringResource(R.string.setting_tts_page_api_key_placeholder_fishaudio)) },
+                visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                        Icon(
+                            imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                            contentDescription = "Toggle Visibility"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    // 模型：官方固定枚举，通过 model 请求头传递（与音色 ID 无关）
+    var modelExpanded by remember { mutableStateOf(false) }
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_model)) },
+        description = { Text(stringResource(R.string.setting_tts_page_fishaudio_model_description)) }
+    ) {
+        ExposedDropdownMenuBox(
+            expanded = modelExpanded,
+            onExpandedChange = { modelExpanded = !modelExpanded }
+        ) {
+            OutlinedTextField(
+                value = setting.model,
+                onValueChange = {},
+                readOnly = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded) }
+            )
+            ExposedDropdownMenu(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.ButtonSquared,
+                expanded = modelExpanded,
+                onDismissRequest = { modelExpanded = false }
+            ) {
+                FishAudioTTSProvider.presetModels.forEach { model ->
+                    DropdownMenuItem(
+                        text = { Text(model) },
+                        onClick = {
+                            modelExpanded = false
+                            onValueChange(setting.copy(model = model))
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    // 音色 ID：既可手动输入 / 粘贴，也可从官方音色列表选择
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_voice_id)) },
+        description = {
+            if (fetchError != null) {
+                Text(text = "Error: $fetchError", color = MaterialTheme.colorScheme.error)
+            } else {
+                Text(stringResource(R.string.setting_tts_page_voice_id_description))
+            }
+        }
+    ) {
+        OutlinedTextField(
+            value = setting.voiceId,
+            onValueChange = { onValueChange(setting.copy(voiceId = it.trim())) },
+            modifier = Modifier.fillMaxWidth(),
+            trailingIcon = {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
+                    if (isLoadingVoices) {
+                        InlineSpinner(size = 24.dp, strokeWidth = 2.dp)
+                        Spacer(Modifier.size(8.dp))
+                    }
+                    IconButton(onClick = { showVoicePicker = true }) {
+                        Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Voice")
+                    }
+                }
+            },
+            placeholder = { Text("reference_id") }
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_speed)) },
+        description = { Text(stringResource(R.string.setting_tts_page_fishaudio_speed_description)) }
+    ) {
+        OutlinedNumberInput(
+            value = setting.speed,
+            onValueChange = { newSpeed ->
+                if (newSpeed in 0.5f..2.0f) {
+                    onValueChange(setting.copy(speed = newSpeed))
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = stringResource(R.string.setting_tts_page_speed)
+        )
+    }
+
+    if (showVoicePicker) {
+        FishAudioVoicePicker(
+            voices = voices,
+            currentVoiceId = setting.voiceId,
+            isLoading = isLoadingVoices,
+            errorMessage = fetchError,
+            onSelect = {
+                onValueChange(setting.copy(voiceId = it.id))
+                showVoicePicker = false
+            },
+            onRefresh = { scope.launch { loadVoices() } },
+            onDismiss = { showVoicePicker = false }
+        )
+    }
+}
+
+@Composable
+private fun FishAudioVoicePicker(
+    voices: List<TTSVoice>,
+    currentVoiceId: String,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onSelect: (TTSVoice) -> Unit,
+    onRefresh: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val haptics = rememberPremiumHaptics()
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredVoices by remember(voices, searchQuery) {
+        derivedStateOf {
+            if (searchQuery.isBlank()) {
+                voices
+            } else {
+                voices.filter { voice ->
+                    voice.name.contains(searchQuery, ignoreCase = true) ||
+                        voice.id.contains(searchQuery, ignoreCase = true) ||
+                        (voice.description?.contains(searchQuery, ignoreCase = true) ?: false)
+                }
+            }
+        }
+    }
+
+    BasicAlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .fillMaxHeight(0.85f),
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp, start = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.setting_tts_page_fishaudio_voice_picker_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (isLoading) {
+                        InlineSpinner(size = 24.dp, strokeWidth = 2.dp)
+                    } else {
+                        IconButton(onClick = onRefresh) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = "Refresh")
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    placeholder = { Text(stringResource(R.string.setting_tts_page_azure_voice_picker_search_placeholder)) },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Clear") } }
+                    } else null,
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium
+                )
+
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    contentPadding = PaddingValues(bottom = 8.dp)
+                ) {
+                    items(filteredVoices, key = { it.id }) { voice ->
+                        val isSelected = voice.id == currentVoiceId
+                        ListItem(
+                            modifier = Modifier.clickable {
+                                haptics.perform(HapticPattern.Pop)
+                                onSelect(voice)
+                            },
+                            headlineContent = {
+                                Text(
+                                    text = voice.name,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            supportingContent = {
+                                Text(
+                                    text = listOfNotNull(voice.description, voice.id)
+                                        .filter { it.isNotBlank() }
+                                        .joinToString(" | "),
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            },
+                            trailingContent = if (isSelected) {
+                                { Icon(Icons.Rounded.Check, tint = MaterialTheme.colorScheme.primary, contentDescription = "Selected") }
+                            } else null,
+                            colors = ListItemDefaults.colors(
+                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface
+                            )
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                        )
+                    }
+
+                    if (filteredVoices.isEmpty()) {
+                        item {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.setting_tts_page_fishaudio_voice_picker_empty),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, end = 8.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    androidx.compose.material3.TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.done))
+                    }
                 }
             }
         }
