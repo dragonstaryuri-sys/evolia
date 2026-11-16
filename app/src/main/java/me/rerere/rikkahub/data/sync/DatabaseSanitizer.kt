@@ -87,7 +87,7 @@ object DatabaseSanitizer {
                 "chat_messages", "chat_message_nodes", "app_locks",
                 "schedule_events", "call_records",
                 "radio_channels", "radio_episodes", "radio_audio_assets", "radio_episode_deletion_logs",
-                "background_tasks"
+                "background_tasks", "chat_unread_messages"
             )
 
             for (sourceTableName in sourceTables) {
@@ -189,6 +189,13 @@ object DatabaseSanitizer {
             targetDbInfo.execSQL("""
                 DELETE FROM `schedule_events`
                 WHERE `task_id` NOT IN (SELECT `id` FROM `schedules`)
+            """.trimIndent())
+
+            // 清理孤儿未读记录：还原期间外键关闭，上方幽灵节点清理的级联不生效，
+            // 指向已清理节点（或旧备份中残留）的未读记录在恢复外键前手动兜底删除
+            targetDbInfo.execSQL("""
+                DELETE FROM `chat_unread_messages`
+                WHERE `node_id` NOT IN (SELECT `id` FROM `chat_message_nodes`)
             """.trimIndent())
 
             // 同步进度水位线

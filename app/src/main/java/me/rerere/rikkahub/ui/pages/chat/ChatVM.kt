@@ -478,6 +478,30 @@ class ChatVM(
     private val anchorConversationId: Uuid = Uuid.parse(id)
     private val _currentActiveId = MutableStateFlow(anchorConversationId)
 
+    // --- 未读角标联动（状态唯一事实源在 ChatService，AGENTS.md 未读规则） ---
+
+    /** 当前实际激活会话 id：VM init 会按跳转目标/最新会话回退，组合层以 VM 为准。 */
+    val currentActiveConversationId: Uuid? get() = _currentActiveId.value
+
+    /** 进入组合 / 恢复 RESUMED 时登记「正在前台查看该会话」。 */
+    fun notifyConversationViewed(id: Uuid) {
+        chatService.setActiveViewingConversation(id)
+    }
+
+    /** 离开 RESUMED（导航走 / 进后台）/ 离开组合时撤销登记（仅当登记的仍是本会话）。 */
+    fun notifyConversationViewStopped(id: Uuid) {
+        if (chatService.activeViewingConversationId.value == id) {
+            chatService.setActiveViewingConversation(null)
+        }
+    }
+
+    /** 进入 / 恢复查看会话时清零该会话未读记录（幂等，由 ChatService 落库）。 */
+    fun markConversationAsRead(id: Uuid) {
+        viewModelScope.launch {
+            chatService.markConversationAsRead(id)
+        }
+    }
+
     /** 当前消息分页窗口内各会话的通话记录流（用于聊天时间线渲染通话卡片）。
      *
      *  关键约束：消息列表是滑动窗口（见 ConversationRepository.MessagePaginationManager，

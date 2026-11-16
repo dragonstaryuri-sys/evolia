@@ -47,6 +47,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantCreationSheet
+import me.rerere.rikkahub.service.UnreadRules
 import me.rerere.rikkahub.ui.pages.chat.ChatListVM
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
@@ -121,6 +122,8 @@ fun AgentListPage() {
     val navController = LocalNavController.current
     val settings by assistantVm.settings.collectAsStateWithLifecycle()
     val lastMessages by chatVm.assistantsLastMessages.collectAsStateWithLifecycle()
+    // 未读角标数据源：按 Agent 汇总的未读消息数量（数据库 Flow 自动驱动）
+    val unreadCounts by chatVm.assistantUnreadCounts.collectAsStateWithLifecycle()
 
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
@@ -258,6 +261,7 @@ fun AgentListPage() {
                         AgentItem(
                             assistant = assistant,
                             lastMessage = lastMessages[assistant.id] ?: "",
+                            unreadCount = unreadCounts[assistant.id] ?: 0,
                             onClick = {
                                 scope.launch {
                                     chatVm.selectAssistant(assistant.id)
@@ -309,6 +313,7 @@ fun AgentListPage() {
                             AgentItem(
                                 assistant = assistant,
                                 lastMessage = lastMessages[assistant.id] ?: "",
+                                unreadCount = unreadCounts[assistant.id] ?: 0,
                                 onClick = {
                                     scope.launch {
                                         chatVm.selectAssistant(assistant.id)
@@ -425,7 +430,8 @@ fun AgentItem(
     lastMessage: String,
     onClick: () -> Unit,
     onCopy: (() -> Unit)? = null,
-    dragHandle: (@Composable () -> Unit)? = null
+    dragHandle: (@Composable () -> Unit)? = null,
+    unreadCount: Int = 0
 ) {
     Surface(
         modifier = Modifier
@@ -438,12 +444,38 @@ fun AgentItem(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            UIAvatar(
-                name = assistant.name,
-                value = assistant.avatar,
-                modifier = Modifier.size(48.dp),
-                shape = AppShapes.Indicator
-            )
+            // 未读角标：0 隐藏 / 1~99 数字 / >=100 显示 99+（UnreadRules 统一格式化）。
+            // BadgedBox 叠加在头像右上角，不改变头像尺寸、不侵占点击区域、不影响拖动排序；
+            // Badge 使用主题语义色（默认 error 配色），深浅色模式自动适配。
+            val badgeText = UnreadRules.formatUnreadBadgeCount(unreadCount)
+            BadgedBox(
+                badge = {
+                    if (badgeText != null) {
+                        Badge {
+                            // 轻量动画：数量变化时淡入淡出，避免生硬跳变
+                            AnimatedContent(
+                                targetState = badgeText,
+                                transitionSpec = {
+                                    (fadeIn(animationSpec = tween(150)) +
+                                        scaleIn(initialScale = 0.6f, animationSpec = tween(150))) togetherWith
+                                        (fadeOut(animationSpec = tween(150)) +
+                                        scaleOut(targetScale = 0.6f, animationSpec = tween(150)))
+                                },
+                                label = "unread_badge_count"
+                            ) { text ->
+                                Text(text)
+                            }
+                        }
+                    }
+                }
+            ) {
+                UIAvatar(
+                    name = assistant.name,
+                    value = assistant.avatar,
+                    modifier = Modifier.size(48.dp),
+                    shape = AppShapes.Indicator
+                )
+            }
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

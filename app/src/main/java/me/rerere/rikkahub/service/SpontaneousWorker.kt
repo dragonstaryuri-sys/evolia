@@ -186,9 +186,16 @@ class SpontaneousWorker(
 
                     if (content.isNotBlank()) {
                         val newMessage = UIMessage.assistant(content).copy(modelId = model.id)
-                        chatService.mutateConversationAndSave(conversation.id) { current ->
+                        // 自发消息不经生成链路（handleMessageComplete）：落库前先做未读决策，
+                        // 未读记录与消息同一事务写入（用户正在查看则视为已读，返回空列表）
+                        val newNode = newMessage.toMessageNode(conversation.id)
+                        val unreadNodes = chatService.decideUnreadForExternalNodes(
+                            conversationId = conversation.id,
+                            nodes = listOf(newNode)
+                        )
+                        chatService.mutateConversationAndSave(conversation.id, unreadNodes = unreadNodes) { current ->
                             current.copy(
-                                messageNodes = current.messageNodes + newMessage.toMessageNode(current.id),
+                                messageNodes = current.messageNodes + newNode,
                                 updateAt = Instant.now()
                             )
                         }

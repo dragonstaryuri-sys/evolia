@@ -512,3 +512,31 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **兜底销毁**：`TemporaryChatVM.onCleared()` 再次调用 destroy（幂等 no-op），覆盖通知跳转等绕过确认弹窗的离开路径，保证不遗留活跃生成任务与注册表条目。
 - TemporaryChatVM 复用 ChatService 全部生成链路（sendMessage/triggerAIResponse/工具/MCP），不复制 Agent 实现；语音为紧凑实现（录音→ASR→trigger，SystemASR 自动 fallback EvoliaASR/OnlineASR），**不含**正式页的录音期并行流式 SystemASR 优化；不启动 autoRead（避免 clobber 正式页 CustomTtsState 单例订阅），手动 TTS 播放保留，退出销毁时 `tts.stop()`。
 - 注册表逻辑有单测固化：`app/src/test/.../service/TemporaryChatSessionRegistryTest.kt`。
+
+## 16. 未读消息角标（Home Agent 头像，DB v48，2026-11-16）
+
+### 16.1 数据模型与唯一事实源
+
+- 表 `chat_unread_messages`（实体 `ChatUnreadMessageEntity`，DAO `ChatUnreadDAO`，DB v48，`MIGRATION_47_48` 仅建表+索引）：`node_id` 主键（= `chat_message_nodes.id`）、`conversation_id`、`created_at`。**未读以消息节点为单位**，一个节点至多一条记录，多版本消息天然去重；`INSERT IGNORE` 幂等。
+- `assistant_id` **不落库**，统计经 `INNER JOIN conversationentity` 聚合（`observeUnreadCountByAssistant`，Flow 由 InvalidationTracker 驱动，禁止轮询）；Home 经 `ChatListVM.assistantUnreadCounts` 消费。
+- `node_id` 挂 **FK CASCADE** 到 `chat_message_nodes`：删除消息节点 / 删除会话 / 刷新覆盖的未读清理由数据库级联完成，**禁止**在各删除路径重复手写清理。
+- 历史消息不回填：升级后未读从零开始。
+
+### 16.2 写入时机与原子性（硬约束）
+
+- 唯一决策函数 `service/UnreadRules.kt`（纯函数，`UnreadRulesTest` 22 用例固化）；写入必须与消息落库**同一事务**（`ConversationRepository.saveConversationWithUnread` → `mutateConversationAndSave(unreadNodes=…)`），禁止「消息已存、未读后补」的跨事务补偿。
+- 三个写入入口：① `handleMessageComplete` 的 `onSuccess` 汇总（普通模式）；② 微信模式逐句 `storeWechatSentenceNode` / 整条语音条 / TTS 回退文本（逐句即时决策，节点登记进 `unreadHandledNodeIds` 供 onSuccess 排除）；③ `SpontaneousWorker` 自发消息（`decideUnreadForExternalNodes`）。**任何新增「直接向会话追加可见 ASSISTANT 节点」的路径必须按同样方式接入**。
+- **基线语义**：生成开始时的「已有可见内容节点 id 集合」，不是全部节点 id 集合——AI 首条回复会复用生成前的空占位节点 id（`processMessageIds[0] = placeholderId`），用全节点差集会漏计主回复；刷新回复是在已有可见内容节点上追加版本，节点已在基线内 → 不重复计数。
+- 流式 Chunk 期间**禁止**写未读；仅在回复持久化完成后写入。生成失败 / 用户中断（failure 分支）不产生未读。
+
+### 16.3 可见性口径（与 ChatList 渲染一致）
+
+- 只计 `UnreadRules.isVisibleAssistantNode` 为真的节点：`currentMessage` 角色为 ASSISTANT、`skipContext == false`、且选中版本有文本或音频/图片内容。因此 CALL / CALL_STATE / CALL_REQUEST / AGENT_TASK / DIARY_COMMENT（均 `skipContext=true`）、纯 ToolCall 节点、空占位、未选中历史版本天然排除。
+- 微信模式一次生成多个独立节点 → 按可见节点逐条计数，不合并为一轮。
+
+### 16.4 活跃会话状态与清零
+
+- 「用户正在查看的会话」唯一事实源：`ChatService.activeViewingConversationId`（StateFlow）。ChatPage / TemporaryChatPage 在组合时登记、`ON_PAUSE` / `onDispose` 撤销；判定条件 = **App 前台（`isForeground`）+ 该会话正是当前活跃会话**。禁止在页面或 Service 里另建独立判断变量，禁止只看 `currentAssistantId`（同助手其他会话/后台场景会误判已读）。
+- 清零：ChatPage 进入组合及 `ON_RESUME` 调用 `markConversationAsRead(conversationId)`（DELETE 幂等）；按 conversationId 独立，**禁止**进入一个会话时清空该 Agent 的其他会话。
+- 临时会话永不产生未读记录（不落库），但必须登记/撤销「正在查看」，否则停留在临时会话期间其他正式会话的回复会被误判已读。
+- 备份恢复：`chat_unread_messages` 已登记 `DatabaseSanitizer` 白名单，并在外键重新开启前执行孤儿未读清理 SQL（恢复期间级联不生效）。

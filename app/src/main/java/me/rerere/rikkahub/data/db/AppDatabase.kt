@@ -46,9 +46,10 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         RadioEpisodeEntity::class,
         RadioAudioAssetEntity::class,
         RadioEpisodeDeletionLogEntity::class,
-        BackgroundTaskEntity::class
+        BackgroundTaskEntity::class,
+        ChatUnreadMessageEntity::class
     ],
-    version = 47,
+    version = 48,
     exportSchema = true
 )
 @TypeConverters(
@@ -83,6 +84,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun radioAudioAssetDao(): RadioAudioAssetDao
     abstract fun radioEpisodeDeletionLogDao(): RadioEpisodeDeletionLogDao
     abstract fun backgroundTaskDao(): BackgroundTaskDao
+    abstract fun chatUnreadDao(): ChatUnreadDAO
 
     companion object {
         const val TAG = "AppDatabase"
@@ -640,6 +642,42 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.v(TAG, "开始 46->47 迁移：radio_episodes 新增可见性列 visibility")
                 db.execSQL(
                     "ALTER TABLE `radio_episodes` ADD COLUMN `visibility` TEXT NOT NULL DEFAULT 'PUBLIC'"
+                )
+            }
+        }
+
+        /**
+         * 47 → 48：新建未读消息节点表 chat_unread_messages（Home 页 Agent 头像未读角标）。
+         *
+         * 仅记录「已持久化但用户尚未查看」的 ASSISTANT 可见消息节点：
+         * - node_id 主键（= chat_message_nodes.id），重复写入走 INSERT IGNORE 幂等；
+         * - FK CASCADE 指向 chat_message_nodes：删除消息节点/会话时未读记录由数据库级联清理；
+         * - assistant_id 不落库，统计经 JOIN conversationentity 获取；
+         * - 历史消息不做全量回填：迁移后未读计数从零开始，仅统计升级后产生的回复。
+         * 仅新增表，不改动任何既有数据，历史数据完整保留。
+         */
+        val MIGRATION_47_48 = object : Migration(47, 48) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 47->48 迁移：新建 chat_unread_messages 表（未读角标）")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `chat_unread_messages` (
+                        `node_id` TEXT NOT NULL,
+                        `conversation_id` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`node_id`),
+                        FOREIGN KEY(`node_id`) REFERENCES `chat_message_nodes`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_chat_unread_messages_conversation_id` " +
+                        "ON `chat_unread_messages` (`conversation_id`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_chat_unread_messages_node_id` " +
+                        "ON `chat_unread_messages` (`node_id`)"
                 )
             }
         }

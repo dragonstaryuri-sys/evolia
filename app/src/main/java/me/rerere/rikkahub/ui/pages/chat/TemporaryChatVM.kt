@@ -111,6 +111,23 @@ class TemporaryChatVM(
 
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(sessionId)
 
+    // --- 未读角标联动（状态唯一事实源在 ChatService） ---
+    // 临时会话自身不参与未读计数（消息不落库、无未读记录），但必须登记「正在查看」：
+    // 用户停留在临时会话期间，其他助手正式会话的回复应正确计入未读；
+    // 离开（ON_PAUSE / 离开组合 / 销毁）时撤销登记。
+
+    /** 进入组合 / 恢复 RESUMED 时登记「正在前台查看临时会话」。 */
+    fun notifyTemporaryConversationViewed() {
+        chatService.setActiveViewingConversation(sessionId)
+    }
+
+    /** 离开 RESUMED / 离开组合时撤销登记（仅当登记的仍是本临时会话）。 */
+    fun notifyTemporaryConversationViewStopped() {
+        if (chatService.activeViewingConversationId.value == sessionId) {
+            chatService.setActiveViewingConversation(null)
+        }
+    }
+
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
 

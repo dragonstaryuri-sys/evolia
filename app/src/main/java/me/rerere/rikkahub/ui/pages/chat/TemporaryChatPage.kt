@@ -130,6 +130,33 @@ fun TemporaryChatPage(assistantId: Uuid) {
         }
     }
 
+    // ===== 未读角标联动 =====
+    // 临时会话自身不产生未读记录（消息不落库），但必须登记/撤销「正在前台查看」：
+    // 停留在临时会话期间，其他助手正式会话的回复应正确计入未读。
+    // ON_RESUME 重新登记、ON_PAUSE 与离开组合撤销；登记/撤销均幂等。
+    LaunchedEffect(conversation.id) {
+        vm.notifyTemporaryConversationViewed()
+    }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val unreadLifecycleObserver = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME ->
+                    vm.notifyTemporaryConversationViewed()
+
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE ->
+                    vm.notifyTemporaryConversationViewStopped()
+
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(unreadLifecycleObserver)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(unreadLifecycleObserver)
+            vm.notifyTemporaryConversationViewStopped()
+        }
+    }
+
     // --- 语音消息：录音控制器 + 麦克风权限 ---
     val voiceRecorderController = remember { VoiceRecorderController(context) }
     DisposableEffect(voiceRecorderController) {

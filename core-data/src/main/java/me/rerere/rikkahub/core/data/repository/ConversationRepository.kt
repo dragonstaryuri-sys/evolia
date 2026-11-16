@@ -56,6 +56,7 @@ class ConversationRepository(
     private val tokenUsageDAO: TokenUsageDAO,
     private val scheduleDAO: ScheduleDAO,
     private val callRecordDao: CallRecordDao,
+    private val chatUnreadDAO: ChatUnreadDAO,
 ) {
     companion object {
         private const val PAGE_SIZE = 30
@@ -520,12 +521,57 @@ class ConversationRepository(
 
     /** Persist the conversation and its message graph in one transaction. */
     suspend fun saveConversation(conversation: Conversation) = withContext(Dispatchers.IO) {
+        saveConversationInternal(conversation, unreadNodes = emptyList())
+    }
+
+    /**
+     * Persist the conversation and write unread records in the SAME transaction.
+     *
+     * 未读角标专用：消息最终持久化与未读记录写入原子生效，消除「消息已保存但未读
+     * 尚未写入」之间进程中断导致的未读遗漏。写入走 INSERT IGNORE（node_id 主键）幂等。
+     *
+     * @param unreadNodes 本轮新增的用户可见 ASSISTANT 节点对应的未读记录（可为空）
+     */
+    suspend fun saveConversationWithUnread(
+        conversation: Conversation,
+        unreadNodes: List<ChatUnreadMessageEntity>
+    ) = withContext(Dispatchers.IO) {
+        saveConversationInternal(conversation, unreadNodes)
+    }
+
+    private suspend fun saveConversationInternal(
+        conversation: Conversation,
+        unreadNodes: List<ChatUnreadMessageEntity>
+    ) {
         val normalized = conversation.normalizeMessageNodes()
         db.withTransaction {
             conversationDAO.upsert(conversationToConversationEntity(normalized))
             syncMessages(normalized)
+            if (unreadNodes.isNotEmpty()) {
+                chatUnreadDAO.insertUnreadNodes(unreadNodes)
+            }
         }
     }
+
+    /**
+     * 用户进入/恢复查看会话时清零该会话的全部未读记录（幂等，DELETE 语义天然可重入）。
+     */
+    suspend fun markConversationAsRead(conversationId: Uuid) = withContext(Dispatchers.IO) {
+        chatUnreadDAO.deleteByConversationId(conversationId.toString())
+    }
+
+    /**
+     * 观察「AssistantId -> 未读数量」映射。Room InvalidationTracker 驱动，
+     * 未读表或会话表变化后自动重查，UI 无需轮询。
+     */
+    fun observeAssistantUnreadCounts(): Flow<Map<Uuid, Int>> =
+        chatUnreadDAO.observeUnreadCountByAssistant()
+            .map { list ->
+                list.mapNotNull { row ->
+                    runCatching { Uuid.parse(row.assistantId) to row.unreadCount }.getOrNull()
+                }.toMap()
+            }
+            .flowOn(Dispatchers.IO)
 
     /**
      * 差量持久化：仅 upsert 指定节点的实体行（节点行 + 其消息行），不触碰其他节点、不删除任何行

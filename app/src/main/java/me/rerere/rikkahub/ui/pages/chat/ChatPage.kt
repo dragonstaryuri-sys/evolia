@@ -191,6 +191,44 @@ fun ChatPage(
         }
     }
 
+    // ===== 未读角标联动（AGENTS.md 未读规则） =====
+    // 进入组合即登记「正在前台查看该会话」并清零该会话未读（进入转场期间的回复也算已读）；
+    // 会话 id 在 VM 内回退/跳转变化时重新登记。ON_RESUME（从后台返回仍停留在本会话）同样
+    // 清零；ON_PAUSE（导航去其他页面）与离开组合撤销「正在查看」登记，保证其他会话的
+    // 回复在此期间正常计入未读。清零与登记均为幂等操作，快速切换页面不会误清/误记。
+    LaunchedEffect(conversation.id) {
+        vm.notifyConversationViewed(conversation.id)
+        vm.markConversationAsRead(conversation.id)
+    }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val unreadLifecycleObserver = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                    vm.currentActiveConversationId?.let { activeId ->
+                        vm.notifyConversationViewed(activeId)
+                        vm.markConversationAsRead(activeId)
+                    }
+                }
+
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> {
+                    vm.currentActiveConversationId?.let { activeId ->
+                        vm.notifyConversationViewStopped(activeId)
+                    }
+                }
+
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(unreadLifecycleObserver)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(unreadLifecycleObserver)
+            vm.currentActiveConversationId?.let { activeId ->
+                vm.notifyConversationViewStopped(activeId)
+            }
+        }
+    }
+
     // 监听滚动到底部事件（发送新消息后触发）
     LaunchedEffect(Unit) {
         vm.scrollToBottomEvent.collect {

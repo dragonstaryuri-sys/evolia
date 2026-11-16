@@ -46,6 +46,14 @@ class ChatListVM(
     val assistantsLastMessages: StateFlow<Map<Uuid, String>> = conversationRepo.getAssistantsLastMessagesFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    /**
+     * 每个 Agent 的未读消息数量（AssistantId -> 未读节点数）。
+     * Room InvalidationTracker 驱动的数据库 Flow，未读表变化后自动更新角标，无轮询。
+     * Home 页 Agent 头像右上角未读角标数据源。
+     */
+    val assistantUnreadCounts: StateFlow<Map<Uuid, Int>> = conversationRepo.observeAssistantUnreadCounts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     val conversations: Flow<PagingData<ConversationListItem>> = combine(
         settings.map { it.assistantId }.distinctUntilChanged(),
         _searchQuery

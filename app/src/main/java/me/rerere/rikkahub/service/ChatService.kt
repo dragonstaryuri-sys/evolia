@@ -65,6 +65,7 @@ import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.ChatMessageEntity
+import me.rerere.rikkahub.core.data.db.entity.ChatUnreadMessageEntity
 import kotlinx.coroutines.job
 import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import me.rerere.rikkahub.core.data.model.Assistant
@@ -423,6 +424,35 @@ class ChatService(
     val generationDoneFlow: SharedFlow<Uuid> = _generationDoneFlow.asSharedFlow()
     private val _isForeground = MutableStateFlow(false)
     val isForeground: StateFlow<Boolean> = _isForeground.asStateFlow()
+
+    // 用户当前正在前台查看的会话（ChatPage / TemporaryChatPage 组合时设置、离开组合时清除）。
+    // 未读判定的唯一状态源：AI 回复完成时据此决定是否计入未读，禁止在页面/Service
+    // 中另立互相独立的判断变量。临时会话 id 也会登记（用户在临时会话内时，其他正式
+    // 会话的回复应计入未读），但临时会话自身永不产生未读记录。
+    private val _activeViewingConversationId = MutableStateFlow<Uuid?>(null)
+    val activeViewingConversationId: StateFlow<Uuid?> = _activeViewingConversationId.asStateFlow()
+
+    /** 由 ChatPage / TemporaryChatPage 在进入组合时设置、离开组合时清除（传 null）。 */
+    fun setActiveViewingConversation(id: Uuid?) {
+        _activeViewingConversationId.value = id
+    }
+
+    /**
+     * 会话可见性判定（未读计不计入的依据）：App 前台 && 用户正在查看该会话。
+     * 与 ProcessLifecycleOwner 的 isForeground 观察共用一套机制（ON_START/ON_STOP）。
+     */
+    fun isConversationBeingViewed(conversationId: Uuid): Boolean =
+        _activeViewingConversationId.value == conversationId && _isForeground.value
+
+    /**
+     * 用户进入/恢复查看正式会话时清零该会话未读记录（幂等）。
+     * 临时会话无未读记录，直接跳过。
+     */
+    suspend fun markConversationAsRead(conversationId: Uuid) {
+        if (temporarySessions.isTemporary(conversationId)) return
+        runCatching { conversationRepo.markConversationAsRead(conversationId) }
+            .onFailure { Log.e(TAG, "清除未读失败: conv=$conversationId", it) }
+    }
 
     private val _syncingConversationIds = MutableStateFlow<Set<Uuid>>(emptySet())
 
@@ -1789,6 +1819,17 @@ class ChatService(
             var currentConversation = conversations[conversationId]?.value
                 ?: conversationRepo.getConversationById(conversationId)
                 ?: return@withLock
+            // 未读基线快照：生成开始时「已有可见内容」的节点集合。AI 回复的首条消息会复用
+            // 生成前已存在的空占位节点 id（processMessageIds[0] = placeholderId），不能以
+            // 「全部节点 id 差集」判定新消息——以「是否已有可见内容」为界：占位节点生成后
+            // 变为可见 → 计入未读；刷新回复是在已有可见内容的节点上追加版本 → 已在基线内，
+            // 不重复计数（未读以节点为单位，一个节点至多一条记录）。
+            val baselineVisibleNodeIds = currentConversation.messageNodes
+                .filter { UnreadRules.isVisibleAssistantNode(it) }
+                .mapTo(mutableSetOf()) { it.id }
+            // 已做过未读决策的节点 id（微信模式逐句 / 整条语音路径在落库时决策），
+            // 防止 onSuccess 汇总时对同一批节点重复决策，覆盖用户中途查看的已读状态
+            val unreadHandledNodeIds = mutableSetOf<Uuid>()
             val processMessageIds = mutableMapOf<Int, Uuid>()
             val placeholderId = targetMessageId ?: currentConversation.currentMessages.lastOrNull()?.let {
                 if (it.role == MessageRole.ASSISTANT && it.toContentText()
@@ -2263,7 +2304,8 @@ class ChatService(
                                                 isVoice = toVoice,
                                                 isFirstSentence = isFirstSentence,
                                                 nonTextParts = wechatFirstNodeNonTextParts,
-                                                currentConversation = currentConversation
+                                                currentConversation = currentConversation,
+                                                handledUnreadIds = unreadHandledNodeIds
                                             )
                                             wechatStoredSentenceCount++
                                             wechatLastSentenceLength = segment.text.length
@@ -2353,7 +2395,13 @@ class ChatService(
                                     messageNodes = currentConversation.messageNodes + newNode
                                 )
                                 updateConversation(conversationId, normalizeNodes = true) { currentConversation }
-                                mutateConversationAndSave(conversationId) { current -> current }
+                                // 整条语音条未读决策：与落库同一事务写入（用户正在查看则视为已读跳过）
+                                val unreadNodes = decideUnreadForNewNodes(
+                                    conversationId = conversationId,
+                                    nodes = listOf(newNode),
+                                    handledIds = unreadHandledNodeIds
+                                )
+                                mutateConversationAndSave(conversationId, unreadNodes = unreadNodes) { current -> current }
                                 sendWechatSentenceNotification(conversationId)
                                 wechatStoredSentenceCount++
                                 Log.d(TAG, "WeChat voice full reply: ${fullReplyText.take(30)}... duration=${durationMs}ms")
@@ -2372,7 +2420,13 @@ class ChatService(
                                     messageNodes = currentConversation.messageNodes + newNode
                                 )
                                 updateConversation(conversationId, normalizeNodes = true) { currentConversation }
-                                mutateConversationAndSave(conversationId) { current -> current }
+                                // TTS 失败回退文本未读决策：与落库同一事务写入（用户正在查看则视为已读跳过）
+                                val unreadNodes = decideUnreadForNewNodes(
+                                    conversationId = conversationId,
+                                    nodes = listOf(newNode),
+                                    handledIds = unreadHandledNodeIds
+                                )
+                                mutateConversationAndSave(conversationId, unreadNodes = unreadNodes) { current -> current }
                                 sendWechatSentenceNotification(conversationId)
                                 wechatStoredSentenceCount++
                             }
@@ -2417,7 +2471,8 @@ class ChatService(
                                     isVoice = toVoice,
                                     isFirstSentence = isFirstSentence,
                                     nonTextParts = wechatFirstNodeNonTextParts,
-                                    currentConversation = currentConversation
+                                    currentConversation = currentConversation,
+                                    handledUnreadIds = unreadHandledNodeIds
                                 )
                                 wechatStoredSentenceCount++
                                 wechatLastSentenceLength = segment.text.length
@@ -2620,7 +2675,19 @@ class ChatService(
             }.onSuccess {
                 if (!currentJob.isActive) return@onSuccess
                 val finalConv = currentConversation
-                mutateConversationAndSave(conversationId) { current -> current }
+                // 未读汇总决策：本轮新增的可见 ASSISTANT 节点（微信模式逐句已决策的节点已被
+                // unreadHandledNodeIds 排除）。用户正在查看该会话 → 全部视为已读不写入；
+                // 否则与最终落库同一事务写入（saveConversationWithUnread），消息保存与未读
+                // 记录原子生效。INSERT IGNORE 幂等，重复完成回调不会重复计数。
+                val isViewingConversation = isConversationBeingViewed(conversationId)
+                val unreadCandidates = if (!isTemporaryOrDestroyed(conversationId) && !isViewingConversation) {
+                    UnreadRules.pickUnreadCandidates(
+                        conversation = finalConv,
+                        baselineVisibleNodeIds = baselineVisibleNodeIds,
+                        excludeNodeIds = unreadHandledNodeIds
+                    )
+                } else emptyList()
+                mutateConversationAndSave(conversationId, unreadNodes = unreadCandidates) { current -> current }
                 // 本轮记账：多步工具调用循环中每步 usage 挂在当步 assistant 消息上，
                 // 对新增 id 的消息逐条求和（跨步骤累计必须用 sum，禁止 merge 的非零覆盖语义）
                 val roundUsage = finalConv.currentMessages
@@ -2783,13 +2850,50 @@ class ChatService(
      *
      * @return 更新后的 Conversation，便于调用方刷新本地 currentConversation 变量。
      */
+    /**
+     * 为生成过程中新持久化的节点做未读决策（微信模式逐句路径 / 整条语音回复路径）。
+     *
+     * 决策结果（无论是否实际写入）登记进 [handledIds]，防止 onSuccess 汇总时对同一批
+     * 节点重复决策（重复插入或覆盖用户中途查看产生的已读状态）。
+     * 返回应与本次落库同事务写入的未读记录：用户正在查看该会话时为空（视为已读），
+     * 临时会话为空（永不落库）。
+     */
+    private fun decideUnreadForNewNodes(
+        conversationId: Uuid,
+        nodes: List<MessageNode>,
+        handledIds: MutableSet<Uuid>
+    ): List<ChatUnreadMessageEntity> {
+        val candidates = nodes.filter { UnreadRules.isVisibleAssistantNode(it) }
+        if (candidates.isEmpty()) return emptyList()
+        handledIds += candidates.map { it.id }
+        if (isTemporaryOrDestroyed(conversationId)) return emptyList()
+        if (isConversationBeingViewed(conversationId)) return emptyList()
+        return candidates.map { UnreadRules.toUnreadEntity(it, conversationId) }
+    }
+
+    /**
+     * 为不经生成链路（handleMessageComplete）直接落库的 ASSISTANT 节点做未读决策，
+     * 返回应与落库同事务写入的未读记录（调用方经 mutateConversationAndSave 的
+     * unreadNodes 参数传入）。用户正在查看该会话 → 空列表（视为已读）；
+     * 临时会话 → 空列表（永不落库）。典型调用方：自发消息 SpontaneousWorker。
+     */
+    fun decideUnreadForExternalNodes(
+        conversationId: Uuid,
+        nodes: List<MessageNode>
+    ): List<ChatUnreadMessageEntity> = decideUnreadForNewNodes(
+        conversationId = conversationId,
+        nodes = nodes,
+        handledIds = mutableSetOf()
+    )
+
     private suspend fun storeWechatSentenceNode(
         conversationId: Uuid,
         text: String,
         isVoice: Boolean,
         isFirstSentence: Boolean,
         nonTextParts: List<UIMessagePart>?,
-        currentConversation: Conversation
+        currentConversation: Conversation,
+        handledUnreadIds: MutableSet<Uuid>
     ): Conversation {
         val prefixParts = if (isFirstSentence && nonTextParts != null) nonTextParts else emptyList()
 
@@ -2831,7 +2935,13 @@ class ChatService(
             messageNodes = currentConversation.messageNodes + newNode
         )
         updateConversation(conversationId, normalizeNodes = true) { updated }
-        mutateConversationAndSave(conversationId) { it }
+        // 微信模式逐句未读决策：与该句落库同一事务写入（用户正在查看则视为已读跳过）
+        val unreadNodes = decideUnreadForNewNodes(
+            conversationId = conversationId,
+            nodes = listOf(newNode),
+            handledIds = handledUnreadIds
+        )
+        mutateConversationAndSave(conversationId, unreadNodes = unreadNodes) { it }
         sendWechatSentenceNotification(conversationId)
         return updated
     }
@@ -3332,6 +3442,7 @@ class ChatService(
     /** Apply a field/node mutation to the latest in-memory value, then persist it. */
     suspend fun mutateConversationAndSave(
         id: Uuid,
+        unreadNodes: List<ChatUnreadMessageEntity> = emptyList(),
         transform: (Conversation) -> Conversation
     ): Conversation? {
         val mutex = persistenceMutexes.computeIfAbsent(id) { Mutex() }
@@ -3347,7 +3458,8 @@ class ChatService(
             updateConversation(id) { updated }
             if (!temporarySessions.isTemporary(id)) {
                 try {
-                    conversationRepo.saveConversation(updated)
+                    // 未读记录与消息落库同一事务原子生效（空列表时等价 saveConversation）
+                    conversationRepo.saveConversationWithUnread(updated, unreadNodes)
                     deleteFilesAsync(id, filesToDelete)
                 } catch (error: Throwable) {
                     updateConversation(id) { current -> if (current == updated) previous else current }

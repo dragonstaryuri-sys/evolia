@@ -23,7 +23,8 @@ val repositoryModule = module {
             dailyActivityDAO = get(),
             tokenUsageDAO = get(),
             scheduleDAO = get(), // 新增注入
-            callRecordDao = get()
+            callRecordDao = get(),
+            chatUnreadDAO = get()
         )
     }
 
