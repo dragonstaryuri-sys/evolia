@@ -98,6 +98,10 @@ sealed interface Screen {
     @Serializable
     data object SettingSearch : Screen
 
+    /** 沙箱文件管理（设置 → 数据设置）。 */
+    @Serializable
+    data object SettingSandboxFiles : Screen
+
     @Serializable
     data object SettingTTS : Screen
 

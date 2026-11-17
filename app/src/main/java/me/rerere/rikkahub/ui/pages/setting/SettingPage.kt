@@ -42,6 +42,7 @@ import me.rerere.rikkahub.ui.components.ui.ChatModelWarningBanner
 import me.rerere.rikkahub.ui.components.ui.ProviderConfigWarningCard
 import me.rerere.rikkahub.common.countImageFiles
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.data.sandboxfile.SandboxFileRepository
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -379,6 +380,24 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         subtitle = stringResource(R.string.setting_page_data_backup_desc),
                         icon = { Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(20.dp)) },
                         onClick = { navController.navigate(Screen.Backup) }
+                    )
+                    // 沙箱文件管理入口（Python 沙箱产物，生命周期与对话解耦）
+                    val sandboxFileRepository = koinInject<SandboxFileRepository>()
+                    val sandboxFileCount by produceState(-1) {
+                        value = sandboxFileRepository.countFiles()
+                    }
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_page_sandbox_files),
+                        subtitle = if (sandboxFileCount >= 0) {
+                            stringResource(
+                                R.string.setting_page_sandbox_files_desc,
+                                sandboxFileCount
+                            )
+                        } else {
+                            stringResource(R.string.setting_page_sandbox_files_desc_plain)
+                        },
+                        icon = { Icon(Icons.Rounded.FolderOpen, null, modifier = Modifier.size(20.dp)) },
+                        onClick = { navController.navigate(Screen.SettingSandboxFiles) }
                     )
                     val context = LocalContext.current
                     val chatStorageState by produceState(-1 to 0L) {

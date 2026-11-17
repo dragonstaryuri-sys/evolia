@@ -106,6 +106,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingModelPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderPage
+import me.rerere.rikkahub.ui.pages.setting.SettingSandboxFilePage
 import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingTTSPage
 import me.rerere.rikkahub.ui.pages.setting.SettingRpOptimizationsPage
@@ -550,6 +551,7 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.SettingModels> { SettingModelPage() }
                     composable<Screen.SettingAbout> { SettingAboutPage() }
                     composable<Screen.SettingSearch> { SettingSearchPage() }
+                    composable<Screen.SettingSandboxFiles> { SettingSandboxFilePage() }
                     composable<Screen.SettingTTS> { SettingTTSPage() }
                     composable<Screen.SettingMcp> { SettingMcpPage() }
                     composable<Screen.SettingMcpToolDesc> { SettingMcpToolDescPage() }
