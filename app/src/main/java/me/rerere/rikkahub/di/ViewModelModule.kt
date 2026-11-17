@@ -21,6 +21,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingVM
 import me.rerere.rikkahub.ui.pages.setting.McpToolDescVM
 import me.rerere.rikkahub.ui.pages.setting.PermissionVM
 import me.rerere.rikkahub.ui.pages.setting.PrinterVM
+import me.rerere.rikkahub.ui.pages.setting.SandboxFileVM
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerVM
 import me.rerere.rikkahub.ui.pages.menu.MenuVM
 import me.rerere.rikkahub.ui.pages.discover.DiaryVM
@@ -80,6 +81,7 @@ val viewModelModule = module {
         )
     }
     viewModelOf(::ChatListVM)
+    viewModelOf(::SandboxFileVM)
     viewModelOf(::AssistantVM)
     viewModelOf(::McpToolDescVM)
     viewModel { params ->

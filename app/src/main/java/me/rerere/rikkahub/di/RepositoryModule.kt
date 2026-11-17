@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.di
 
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
+import me.rerere.rikkahub.data.sandboxfile.SandboxFileRepository
 import me.rerere.rikkahub.data.ai.rag.RerankServiceImpl
 import me.rerere.rikkahub.core.data.ai.EmbeddingService as IEmbeddingService
 import me.rerere.rikkahub.core.data.ai.RerankService as IRerankService
@@ -99,5 +100,9 @@ val repositoryModule = module {
 
     single {
         CallRecordRepository(dao = get())
+    }
+
+    single {
+        SandboxFileRepository(get())
     }
 }
