@@ -609,9 +609,14 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 ### 17.9 测试与验收
 
 - 纯 JVM 单测（app/src/test 下 data/extensions/ + data/ai/tools/）：JsonSchemaValidator（13 例）/ ExtensionRules（版本/判定/合并/恢复/可用性矩阵/路径安全/Manifest 校验，22 例）/ ZipPackageReader（ZIP Slip/重复/炸弹/缺 manifest，10 例，其中重复条目用例**手写 raw ZIP**——Java ZipOutputStream 自身拒绝重复条目）/ ExtensionAgentTools（目录 Prompt/错误映射/参数解析）/ ToolDescriptionService（解析/分批/Prompt）。
-- 验证命令：`./gradlew :app:compileDebugKotlin` + `./gradlew :app:testDebugUnitTest`（2026-11-16：399 全绿）。
-- **模拟器实测已通过（2026-11-17，EvoliaTest AVD）**：创建→校验→安装→打开 Mini App→权限三连（read/write/toast 逐项运行时授权弹窗）→发帖→Room 落库核验→重开持久化→停用禁用入口→卸载保留数据→重装恢复数据（场景 D）→深色渲染，全程零崩溃。**修复**：首次安装 `stagingDir.renameTo(targetDir)` 因 `extensions/installed|backups` 父目录未创建静默返回 false（rename(2) ENOENT）——Installer 在切换前必须 mkdirs 父目录，禁止回退。
-- 临时会话拦截规则在 TemporarySessionToolRulesTest 固化；QuickJS Tool Runtime 的工具执行（ExtensionAgentTools 调用链）仍待真机/配置 Provider 后验证。
+- 验证命令：`./gradlew :app:compileDebugKotlin` + `./gradlew :app:testDebugUnitTest`（2026-11-18：414 全绿）。
+- **模拟器实测已通过（2026-11-17/18，EvoliaTest AVD）**：① Mini App 全链路——创建→校验→安装→打开→权限三连（read/write/toast 逐项运行时授权弹窗）→发帖→Room 落库核验→重开持久化→停用禁用入口→卸载保留数据→重装恢复数据（场景 D）→深色渲染，全程零崩溃；② Tool Extension Agent 调用链——目录 Prompt 注入→`get_extension_tool_schema`（303 字节含参数定义）→`call_extension_tool`→QuickJS 执行→受控网络请求 Open-Meteo→实时天气数据返回（Agent 把结果渲染成表格），ToolLoopGuard 语义下失败自动换参数重试、跨轮 app_id 自纠错均验证。**实测修复的 4 个 bug（全部已固化进代码，禁止回退）**：
+  1. 首次安装 `stagingDir.renameTo(targetDir)` 因 `extensions/installed|backups` 父目录未创建静默返回 false（rename(2) ENOENT）——Installer 切换前必须 mkdirs 父目录；
+  2. `ExtensionToolRuntime.runToolScript` 从未注入 `request.arguments`——工具脚本顶层 `arguments` 恒为 undefined、恒收空参数；修复 = 执行前 `globalThis.arguments = Object.freeze(<json>)`（SDK_PRELUDE 是 IIFE 不受污染），扩展 JS 以 `arguments` 读取调用参数；
+  3. `__evoliaRequest` 信封不匹配——原生直接返回 `{ok,status,body}` 而 JS `__call` 约定读 `{ok,value}`，JS 侧 `resp.status` 恒 undefined；修复 = 成功时包 `value`、失败透传错误信封。**所有 native handler 必须遵守 `{ok, value}` 信封约定**；
+  4. `EXECUTION_TIMEOUT_SECONDS` 15s 在上游 API 波动时把网络请求误判为工具超时——提至 30s 与 OkHttp 超时对齐。
+  另：天气示例模板已补内联 Schema（required city）与英文城市映射；Mini App Bridge 权限授权后页面不自动重试（JS promise 已 reject）为已知 UX 改进点（P3）。
+- MIGRATION_48_49 已在真机场景实测（旧 v48 库升级后六表建立、数据无损）。
 
 ### 17.10 已知边界与后续（不回退清单）
 

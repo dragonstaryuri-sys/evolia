@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.rikkahub.common.JsonInstant
@@ -60,7 +61,9 @@ class ExtensionToolRuntime(
         const val TAG = "ExtensionToolRuntime"
         const val MEMORY_LIMIT_BYTES = 64 * 1024 * 1024
         const val MAX_STACK_SIZE_BYTES = 512 * 1024
-        const val EXECUTION_TIMEOUT_SECONDS = 15L
+        // 30s：与 ExtensionNetworkService 的 OkHttp 超时对齐（模拟器实测 Open-Meteo
+        // 上游波动时 15s 会导致网络请求被误判为工具超时）
+        const val EXECUTION_TIMEOUT_SECONDS = 30L
         const val MAX_LOG_LINES = 20
         private val loaderInitialized = AtomicInteger(0)
         private val mainHandler = Handler(Looper.getMainLooper())
@@ -167,6 +170,12 @@ class ExtensionToolRuntime(
 
             val fullCode = buildString {
                 appendLine(ExtensionSdkPrelude.SDK_PRELUDE)
+                // 注入调用参数（详设 9.5 统一调用结构）：工具脚本在顶层通过
+                // `arguments` 标识符读取 Agent 传入的参数。SDK_PRELUDE 是 IIFE，
+                // 挂在 globalThis 上不会污染其闭包作用域。
+                append("globalThis.arguments = Object.freeze(")
+                append(JsonInstant.encodeToString(request.arguments))
+                appendLine(");")
                 appendLine(request.entrySource)
                 appendLine(";")
             }
@@ -272,7 +281,17 @@ class ExtensionToolRuntime(
                     ExtensionToolError.INVALID_ARGUMENTS,
                     "request 参数必须是对象"
                 )
-            JsonInstant.encodeToString(network.requestStructured(params))
+            // requestStructured 返回 {ok, status, body, contentType} 或 {ok:false, code, message}；
+            // JS 侧 __call 约定信封为 {ok, value}（value 为结果对象）——成功时把 status/body
+            // 包进 value，失败时透传错误信封（模拟器实测踩坑：曾直接返回导致 JS 读 resp.status=undefined）
+            val structured = network.requestStructured(params)
+            val isOk = (structured["ok"] as? JsonPrimitive)?.booleanOrNull == true
+            if (isOk) {
+                val value = JsonObject(structured.filterKeys { it != "ok" })
+                okEnvelope(value)
+            } else {
+                JsonInstant.encodeToString(structured)
+            }
         }
 
         native("__evoliaStorageGet") { raw ->

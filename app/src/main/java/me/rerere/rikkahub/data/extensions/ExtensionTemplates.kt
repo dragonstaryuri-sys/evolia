@@ -180,6 +180,13 @@ run(typeof arguments === "object" ? arguments : {});
       "tool_id": "get_weather",
       "name": "查询天气",
       "description": "查询指定城市的当前天气信息",
+      "schema": {
+        "type": "object",
+        "required": ["city"],
+        "properties": {
+          "city": { "type": "string", "description": "城市名（如 北京 / 上海）" }
+        }
+      },
       "entry": "tools/get_weather.js",
       "permissions": ["network.request"]
     }
@@ -200,11 +207,16 @@ function run(args) {
     "上海": [31.2304, 121.4737],
     "广州": [23.1291, 113.2644],
     "深圳": [22.5431, 114.0579],
-    "杭州": [30.2741, 120.1551]
+    "杭州": [30.2741, 120.1551],
+    "beijing": [39.9042, 116.4074],
+    "shanghai": [31.2304, 121.4737],
+    "guangzhou": [23.1291, 113.2644],
+    "shenzhen": [22.5431, 114.0579],
+    "hangzhou": [30.2741, 120.1551]
   };
-  var coords = geo[city];
+  var coords = geo[city] || geo[String(city).toLowerCase()];
   if (!coords) {
-    return { error: "示例暂只支持：北京/上海/广州/深圳/杭州" };
+    return { error: "示例暂只支持：北京/上海/广州/深圳/杭州（或英文名 Beijing 等）" };
   }
   var resp = evolia.network.request({
     url: "https://api.open-meteo.com/v1/forecast?latitude=" + coords[0] +
