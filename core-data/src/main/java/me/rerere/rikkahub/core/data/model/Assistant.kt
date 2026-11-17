@@ -76,6 +76,15 @@ data class Assistant(
     val localTools: List<LocalToolOption> = listOf(LocalToolOption.DeviceControl),
 
     /**
+     * 助手级 Mini App 授权（详设 13.1 第三层权限）：已启用 Mini App 的 app_id 集合。
+     *
+     * 只影响 Mini App 内 Tools 的可调用性（第三层开关）；独立 Tool Extension 不受
+     * 此字段限制（整体启用 + Tool 全局启用后对所有助手开放）。默认空集合兼容
+     * 历史数据（JsonInstant 忽略未知 key，旧备份无缝反序列化）。
+     */
+    val enabledMiniAppIds: Set<String> = emptySet(),
+
+    /**
      * 单次用户请求内允许的最大工具调用轮次（连续调用工具次数，一轮 = 一次包含工具调用的
      * 模型响应）。用户可在助手详情「工具与搜索」页配置（10~30）；历史数据/导入数据越界时
      * 由运行时收敛进合法区间（见 GenerationHandler）。

@@ -28,6 +28,12 @@ import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.RoomTransactionRunner
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.extensions.ExtensionCreator
+import me.rerere.rikkahub.data.extensions.ExtensionInstaller
+import me.rerere.rikkahub.data.extensions.ExtensionNetworkService
+import me.rerere.rikkahub.data.extensions.ExtensionRegistry
+import me.rerere.rikkahub.data.extensions.ExtensionToolRuntime
+import me.rerere.rikkahub.data.extensions.MiniAppStorageService
 import me.rerere.rikkahub.data.planner.PlannerFacade
 import me.rerere.rikkahub.data.sync.WebdavSync
 import me.rerere.rikkahub.core.data.repository.MilestoneRepository
@@ -118,7 +124,8 @@ val dataSourceModule = module {
                 AppDatabase.MIGRATION_44_45,
                 AppDatabase.MIGRATION_45_46,
                 AppDatabase.MIGRATION_46_47,
-                AppDatabase.MIGRATION_47_48
+                AppDatabase.MIGRATION_47_48,
+                AppDatabase.MIGRATION_48_49
             )
             .build()
     }
@@ -158,6 +165,10 @@ val dataSourceModule = module {
     single { get<AppDatabase>().radioEpisodeDeletionLogDao() }
     single { get<AppDatabase>().backgroundTaskDao() }
     single { get<AppDatabase>().chatUnreadDao() }
+    single { get<AppDatabase>().extensionDao() }
+    single { get<AppDatabase>().extensionToolConfigDao() }
+    single { get<AppDatabase>().miniAppDataDao() }
+    single { get<AppDatabase>().miniAppVersionDao() }
 
     single<DbTransactionRunner> { RoomTransactionRunner(get()) }
 
@@ -175,6 +186,14 @@ val dataSourceModule = module {
     single { DiaryRepository(agentDiaryDao = get()) }
     single { DiaryOcrService(settingsStore = get(), providerManager = get(), diaryRepo = get(), appScope = get()) }
     single { McpManager(settingsStore = get(), appScope = get()) }
+
+    // ---------- Evolia Extensions（详设第二/八/九/十二/十三章） ----------
+    single { ExtensionRegistry(context = get(), repository = get(), appScope = get<AppScope>()) }
+    single { MiniAppStorageService(repository = get(), registry = get()) }
+    single { ExtensionNetworkService() }
+    single { ExtensionToolRuntime(context = get(), storage = get(), network = get()) }
+    single { ExtensionInstaller(context = get(), db = get(), repository = get()) }
+    single { ExtensionCreator(context = get()) }
 
     single { DoubaoImportManager(context = get(), conversationRepo = get()) }
 

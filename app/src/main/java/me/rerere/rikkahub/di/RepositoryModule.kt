@@ -100,4 +100,13 @@ val repositoryModule = module {
     single {
         CallRecordRepository(dao = get())
     }
+
+    single {
+        ExtensionRepository(
+            extensionDAO = get(),
+            toolConfigDAO = get(),
+            miniAppDataDAO = get(),
+            miniAppVersionDAO = get()
+        )
+    }
 }

@@ -352,6 +352,14 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         onClick = { navController.navigate(Screen.SettingMcp) }
                     )
 
+                    // Mini Apps（Evolia Extensions，详设 13.4：统一扩展管理入口）
+                    SettingGroupItem(
+                        title = "小应用",
+                        subtitle = "扩展工具与小应用管理（创建 / 导入 / 权限）",
+                        icon = { Icon(Icons.Rounded.Widgets, null, modifier = Modifier.size(20.dp)) },
+                        onClick = { navController.navigate(Screen.SettingMiniApps) }
+                    )
+
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_permission_check),
                         subtitle = stringResource(R.string.setting_page_permission_check_desc),

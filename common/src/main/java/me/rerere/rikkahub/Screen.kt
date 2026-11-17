@@ -149,6 +149,24 @@ sealed interface Screen {
     @Serializable
     data object SettingPrinter : Screen
 
+    // ---------- Evolia Extensions（详设第四/十四/十五章） ----------
+
+    /** Mini Apps 管理主页（已安装扩展列表 / 创建 / 导入）。 */
+    @Serializable
+    data object SettingMiniApps : Screen
+
+    /** 扩展详情页（Tool 管理 / 权限授权 / 更新 / 卸载）。 */
+    @Serializable
+    data class ExtensionDetail(val appId: String) : Screen
+
+    /** 本地扩展创建工作区（草稿编辑器）。 */
+    @Serializable
+    data class ExtensionCreator(val draftId: String? = null) : Screen
+
+    /** Mini App 运行页（独立 WebView Runtime）。 */
+    @Serializable
+    data class MiniApp(val appId: String) : Screen
+
     @Serializable
     data object SettingWakeWord : Screen
 

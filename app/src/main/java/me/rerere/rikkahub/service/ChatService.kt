@@ -90,6 +90,7 @@ import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT_TEMPL
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.tools.TemporarySessionToolRules
 import me.rerere.rikkahub.data.ai.tools.buildBackgroundTaskTools
+import me.rerere.rikkahub.data.ai.tools.buildExtensionAgentTools
 import me.rerere.rikkahub.data.ai.tools.buildMcpAgentTools
 import me.rerere.rikkahub.data.ai.tools.buildRadioAgentTools
 import me.rerere.rikkahub.data.radio.RadioService
@@ -384,6 +385,8 @@ class ChatService(
     private val mediaPlaybackController: me.rerere.rikkahub.service.media.MediaPlaybackController,
     private val backgroundTaskManager: me.rerere.rikkahub.data.backgroundtask.BackgroundTaskManager,
     private val temporarySessions: TemporaryChatSessionRegistry,
+    private val extensionRegistry: me.rerere.rikkahub.data.extensions.ExtensionRegistry,
+    private val extensionToolRuntime: me.rerere.rikkahub.data.extensions.ExtensionToolRuntime,
     ) {
     data class ContextRefreshResult(
         val success: Boolean,
@@ -2106,6 +2109,13 @@ class ChatService(
                                     backgroundTaskManager = backgroundTaskManager,
                                 ))
                             }
+
+                            // 扩展工具按需加载（AGENTS.md Extensions）：同样只注册两个固定函数，
+                            // 独立 Tool Extension 对所有助手开放（扩展启用 + Tool 全局启用 +
+                            // 权限授权即开放）；Mini App 内 Tool 额外受 assistant.enabledMiniAppIds
+                            // 第三层开关限制。可用性在执行入口完整复查；临时会话由
+                            // TemporarySessionToolRules 双层拦截。
+                            addAll(buildExtensionAgentTools(extensionRegistry, extensionToolRuntime, assistant))
 
                         },
                         lastArchivedMessageTime = 0L,

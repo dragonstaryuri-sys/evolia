@@ -70,6 +70,10 @@ object TemporarySessionToolRules {
         // RadioStation（按需 Schema 固定双工具）
         "get_radio_tool_schema",
         "call_radio_tool",
+        // Extensions（按需 Schema 固定双工具）：扩展工具可能修改正式 Mini App
+        // 数据 / 扩展配置 / 外部业务数据，第一阶段默认禁止临时会话调用（详设 10.5）
+        "get_extension_tool_schema",
+        "call_extension_tool",
         // 记忆写入（记忆只读原则）
         "create_memory",
         "edit_memory",

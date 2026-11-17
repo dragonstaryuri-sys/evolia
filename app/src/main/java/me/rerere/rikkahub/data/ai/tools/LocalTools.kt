@@ -360,16 +360,22 @@ class LocalTools(
                 )
             },
             execute = {
+                // Context 生命周期修复（Extensions 详设 9.2）：普通执行结束后必须
+                // destroy 释放；Highlighter 的持久 Context 不走此路径，不受影响
                 val context = QuickJSContext.create()
-                val code = it.jsonObject["code"]?.jsonPrimitive?.contentOrNull
-                val result = context.evaluate(code)
-                buildJsonObject {
-                    put(
-                        "result", when (result) {
-                            is QuickJSObject -> JsonPrimitive(result.stringify())
-                            else -> JsonPrimitive(result.toString())
-                        }
-                    )
+                try {
+                    val code = it.jsonObject["code"]?.jsonPrimitive?.contentOrNull
+                    val result = context.evaluate(code)
+                    buildJsonObject {
+                        put(
+                            "result", when (result) {
+                                is QuickJSObject -> JsonPrimitive(result.stringify())
+                                else -> JsonPrimitive(result.toString())
+                            }
+                        )
+                    }
+                } finally {
+                    runCatching { context.destroy() }
                 }
             }
         )

@@ -35,7 +35,7 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 -   **Tool Registration**: `data/ai/tools/LocalTools.kt`（本地工具，按 `Assistant.localTools` 选项装配）、`service/ChatService.kt` 内的 `createSearchTool`（联网搜索）、`data/ai/tools/McpAgentTools.kt`（MCP 固定工具）。
 -   **MCP**: `data/ai/mcp/McpManager.kt`（连接/同步/调用，Koin single）、`data/ai/mcp/McpConfig.kt`（数据模型）、`ui/pages/setting/McpToolDescVM.kt` + `SettingMcpToolDescPage.kt`（工具描述管理）。
 -   **Settings**: `data/datastore/PreferencesStore.kt`（`SettingsStore`：DataStore 持久化、`Settings` 模型、V1–V4 偏好迁移；DI 注册于 `di/DataSourceModule.kt`）。
--   **Room Database**: `data/db/AppDatabase.kt`（`version = 40`；新增 schema 变更必须新增 `MIGRATION_n_n` 并在 `di/DataSourceModule.kt` 的 `addMigrations` 中注册，禁止依赖 fallbackToDestructiveMigration）。
+-   **Room Database**: `data/db/AppDatabase.kt`（`version = 49`；新增 schema 变更必须新增 `MIGRATION_n_n` 并在 `di/DataSourceModule.kt` 的 `addMigrations` 中注册，禁止依赖 fallbackToDestructiveMigration）。
 -   **备份恢复**: `data/sync/WebdavSync.kt`（整库 zip 打包/覆盖 + `DatabaseSanitizer` 白名单重建）。**新增 Room 表必须同步登记进 `DatabaseSanitizer.kt` 的白名单（写蛇形物理表名，驼峰类名匹配不上），否则备份恢复时该表数据被静默丢弃**（曾致 `call_records` 通话记录恢复后消失；白名单匹配规则有单测固化）。录音目录 `call_recordings/` 有意不在 FILES 备份名单（体积大 + 7 天过期策略），恢复后详情页优雅降级为「无通话录音」。
 
 ## 4. Coding Standards & Best Practices
@@ -540,3 +540,82 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - 清零：ChatPage 进入组合及 `ON_RESUME` 调用 `markConversationAsRead(conversationId)`（DELETE 幂等）；按 conversationId 独立，**禁止**进入一个会话时清空该 Agent 的其他会话。
 - 临时会话永不产生未读记录（不落库），但必须登记/撤销「正在查看」，否则停留在临时会话期间其他正式会话的回复会被误判已读。
 - 备份恢复：`chat_unread_messages` 已登记 `DatabaseSanitizer` 白名单，并在外键重新开启前执行孤儿未读清理 SQL（恢复期间级联不生效）。
+
+## 17. Evolia Extensions（扩展体系，DB v49，2026-11-16）
+
+> 核心文件：`data/extensions/`（ExtensionConstants / ExtensionManifest / JsonSchemaValidator / ManifestValidator / ZipPackageReader / ExtensionRules / ExtensionInstaller / ExtensionRegistry / ExtensionToolRuntime / ExtensionSdkPrelude / MiniAppStorageService / MiniAppBridge / ExtensionNetworkService / ExtensionCreator / ExtensionTemplates）、`data/ai/tools/ExtensionAgentTools.kt` + `ToolDescriptionService.kt`、`ui/components/miniapp/MiniAppWebView.kt`、`ui/pages/extension/`（SettingMiniAppsPage / ExtensionDetailPage / ExtensionCreatorPage）、`ui/pages/miniapp/MiniAppPage.kt`、`assets/evolia/evolia-sdk.js`。
+
+### 17.1 规范冻结（Phase 0，禁止改动语义）
+
+- **扩展身份**：`app_id` 是唯一稳定身份（正则 `^[a-z][a-z0-9_]{2,63}(\.[a-z0-9_]+)*$`，`ExtensionConstants.APP_ID_REGEX`）。**禁止**通过 app_id 前缀/名称推断扩展是否内置——一律看 `extensions.is_builtin` 显式属性。Tool 唯一标识统一 `app_id:tool_id`。
+- **版本**：SemVer（major.minor.patch[-pre][+build]），比较走 `ExtensionRules.compareVersions`（纯函数有单测，prerelease < 正式版）。
+- **Manifest**（`ExtensionManifest`，@SerialName 手动 snake_case 映射，JsonInstant 不做策略转换）：`manifest_version=1` 支持范围冻结；安装前必须经 `ManifestValidator.validate`（纯函数，fileExists/parseSchemaFile 注入，有单测）；对不支持的 Schema 关键字**必须报错不得静默忽略**。
+- **JSON Schema 校验器**（`JsonSchemaValidator`）：支持 type/required/properties/items/enum/min/maximum/minLength/maxLength/minItems/maxItems/additionalProperties(false) + 注释类关键字（title/description/default/examples）。Manifest 校验、Tool 参数校验（ExtensionAgentTools）、Mini App 数据写入校验（MiniAppStorageService）三者复用同一个校验器。
+- **包格式**：`.evolia` = 标准 ZIP。安全限制集中在 `PackageLimits`（20MB 包 / 50MB 解压 / 2000 文件 / 10MB 单文件 / 100 倍压缩比），禁止散落硬编码。
+- **权限集合**（`ExtensionPermissions`）：storage.read / storage.write / network.request / ui.toast / ui.dialog。Manifest 声明只是申请，granted 由用户授权（`extension_permissions` 表）。
+
+### 17.2 数据模型（DB v49，六张新表，无 Room FK）
+
+- `extensions`（app_id 主键）/ `extension_tools`（UNIQUE(app_id,tool_id)，enable + custom_description 运行配置）/ `extension_permissions`（UNIQUE(app_id,permission)）/ `mini_app_data`（UNIQUE(app_id,collection,record_id)，data 存 JSON 字符串）/ `mini_app_versions`（数据 schema_version 与扩展版本独立管理）/ `extension_install_operations`（安装恢复记录）。
+- `MIGRATION_48_49` 已在 AppDatabase companion + DataSourceModule 注册；六张表全部登记 `DatabaseSanitizer` 白名单（蛇形表名）与测试副本（`DatabaseSanitizerWhitelistTest`；该测试副本此前缺 `background_tasks`/`chat_unread_messages` 的问题已一并修复并有断言固化）。
+- `source_type`（当前来源）与 `created_origin`（最初创建来源）分开：本地创建导出再导入，origin 仍是 LOCAL_CREATED。
+
+### 17.3 安装/更新/卸载与崩溃恢复（ExtensionInstaller，硬约束）
+
+- 流程：staging 解压+校验 → 安装操作记录（FILES_STAGED）→ 正式目录原子 rename（更新先备份）→ FILES_SWITCHED → Room withTransaction 提交（Registry+工具配置合并+权限合并+版本记录）→ DATABASE_COMMITTED → 清理 → COMPLETED 并删操作记录。
+- **同 ID 判定**（`ExtensionRules.decideInstallAction`，有单测）：类型不同禁止覆盖、同版本拒绝、降级默认禁止、更新保留用户配置。
+- **更新合并**（纯函数有单测）：`mergeToolConfigsOnUpdate`（保留仍存在 Tool 的 enable/custom_description，删已下线配置）、`mergePermissionsOnUpdate`（保留已声明权限的授权，**新增权限一律 granted=false** 不得自动授予）。
+- **崩溃恢复**：`EvoliaApp.onCreate` 异步 `recoverPendingOperations()`（幂等）——按 `ExtensionRules.decideRecovery`（纯函数有单测）对 PREPARING/FILES_STAGED 清 staging、FILES_SWITCHED/ROLLBACK_REQUIRED 恢复备份或删新目录、DATABASE_COMMITTED 仅清理；孤儿 staging/backup/安装目录一并清理。
+- 目录布局：`files/extensions/{installed,staging,backups,workspaces}/`，DB 只存相对路径（`/` 前缀绝对路径语义与其他模块一致）。
+- 卸载：先清 Room（工具配置/权限/版本/可选 mini_app_data/Registry）再删目录；**用户数据默认保留**，删除需 UI 显式勾选（详情页二次确认）。
+
+### 17.4 Extension Registry 与三层权限（13.3，口径唯一）
+
+- `ExtensionRegistry` 以 Room Flow（extensions + extension_tools + extension_permissions 三源 combine，InvalidationTracker 驱动）构建内存快照 `installedExtensions: StateFlow<List<InstalledExtension>>`（含 Manifest 解析/工具配置/授权集合），**Catalog 与可用性判定全部同步走快照，禁止在 systemPrompt 注入链路读盘/查库**（systemPrompt lambda 不可挂起）。manifest 缺失的扩展跳过并记日志（孤儿清理兜底）。
+- **三层权限**：① 扩展整体启用（extensions.is_enabled）→ ② Tool 全局启用（extension_tools.enable）→ ③ 助手级 Mini App 授权（`Assistant.enabledMiniAppIds: Set<String>`，core-data 模型新字段，默认空集合兼容历史数据）。判定纯函数 `ExtensionRules.isExtensionToolAvailable`（有单测矩阵）。
+- **独立 Tool Extension 不设助手级开关**（启用+Tool启用+权限授权后对所有助手开放）；Mini App 内 Tool 额外受第三层限制。助手详情页「Mini Apps」分组只展示 Mini App（不展示 Tool 详情/独立 Tool Extension 卡片）——`AssistantToolsSubPage` 已实现。
+- 执行入口必须完整复查（`ExtensionRegistry.checkToolCallable`，返回 ToolCallCheck 六态，映射 `ExtensionAgentTools.mapCheckError` 有单测）；**Schema 获取阶段的检查不能替代执行阶段检查**。
+
+### 17.5 Tool Runtime（ExtensionToolRuntime，QuickJS Spike 结论 + P0 风险）
+
+- **禁止**复用/包装 eval_javascript 作为扩展 Runtime（详设 9.2）；Runtime 独立实现：显式 `QuickJSLoader.init()`（不依赖 Highlighter）、每执行独立 Context+独立 daemon 线程、执行完 destroy、`setMemoryLimit(64MB)` + `setMaxStackSize(512KB)`、console 捕获（≤20 行）、15s 超时、结构化结果 {success, data, error:{code,message}}。
+- **QuickJS wrapper 3.2.3 Spike 结论（2026-11-16 实测）**：`setInterruptHandler` **不存在**——CPU 密集无限循环无法强制中断；`setMemoryLimit`/`setMaxStackSize` 可用；`evaluate` 同步返回无事件循环泵（Promise/setTimeout 不可用）；`globalObject.setProperty(name, JSCallFunction)` 同步回调可用。**P0 已知风险**：超时后放弃线程（daemon 随进程退出，泄漏受 maxToolRounds 会话上限约束）；进程内 QuickJS 不是进程级安全沙箱，第一阶段仅限用户显式安装的本地扩展，**不得**对不可信第三方默认开放高权限。
+- **工具代码是同步代码**：SDK 经 `ExtensionSdkPrelude`（JSON 字符串进出 + {ok,value|code,message} 信封）包装为同步 `evolia.network/storage/ui` API；原生调用在 JSCallFunction 内 `runBlocking` 到 IO 线程完成（QuickJS 专线程阻塞，无死锁）。
+- `ExtensionNetworkService`：受控网络（30s 超时 / 5MB 响应上限 / 仅 http/https / 结构化返回）；扩展代码不能获得任意网络能力，API Key 不进扩展包。
+- `ExtensionAgentTools`：MCP/Radio 同款按需 Schema 双固定工具（get_extension_tool_schema + call_extension_tool），目录 Prompt（`buildExtensionCatalogPrompt` 纯函数有单测）由 get_schema 的 systemPrompt 注入；无可用工具返回空列表不注册。装配位置：`ChatService.handleMessageComplete` buildList 尾部（RadioAgentTools 之后），`buildExtensionAgentTools` 为顶层函数（与 buildMcpAgentTools 同约定）。
+- **临时会话双层拦截**：`TemporarySessionToolRules.blockedToolNames` 已登记 get_extension_tool_schema / call_extension_tool（扩展工具可写正式 Mini App 数据/外部业务数据，第一阶段全禁，详设 10.5；后续若放开只读工具须按权限区分，不得默认放行）。扩展工具不走助手 localTools 开关（无新 LocalToolOption）。
+- eval_javascript Context 泄漏已顺手修复（try/finally destroy，不影响 Highlighter 持久 Context）。
+
+### 17.6 Mini App Runtime 与 SDK（WebView 隔离，硬约束）
+
+- **禁止**复用通用 `WebView` composable 充当 Mini App 容器：`MiniAppWebView`（`ui/components/miniapp/`）独立实现——`androidx.webkit`（新增依赖，1.14.0）`WebViewAssetLoader` 受控资源域 `https://appassets.androidplatform.net/app/{app_id}/...`（自定义 PathHandler：safe-path 校验 + canonical 包含性检查，越界/其他扩展/缺失一律 404）；settings.allowFileAccess=false、fileURLs 全禁。
+- **Bridge**：`WebViewCompat.addWebMessageListener`（注意 webkit 1.14 的 onPostMessage 是 **5 参数**（WebView 打头），reply proxy 类型是顶层 `JavaScriptReplyProxy` 且 postMessage 直接收 String）+ `addDocumentStartJavaScript` 注入 SDK（注意：该 API 收**单个 String** 非 List）+ Origin Rules 限定受控域。子 frame 一律拒绝；外部 http/https 经系统浏览器打开，绝不继承 Bridge。
+- `MiniAppBridgeSession`：一次页面进入 = 一个会话实例；**每次调用**完整校验（扩展存在/启用/实例 active/来源域/主 frame/权限/参数，详设 12.3，禁止只查一次）；页面 dispose/扩展停用即 `invalidate()`，旧实例调用立即失效。权限未授权 → 触发页面 ConfirmDialog（Manifest 申请与授权分离），拒绝返回 PERMISSION_DENIED。
+- SDK（`assets/evolia/evolia-sdk.js`）：Promise 式 Evolia.storage.get/list/insert/update/delete（自动绑定 app_id，**前端不可指定 app_id**）、Evolia.ui.toast/dialog（dialog 走 pendingCalls 等用户点击回复）、Evolia.navigation.close、生命周期事件。回复走注入对象 onmessage（非 window message）。
+- `MiniAppStorageService`：全操作绑定 app_id；集合必须在 Manifest 声明否则拒绝；写入统一过 JsonSchemaValidator；单条 ≤256KB；list 分页（≤100/页）。扩展**不得**直接执行 SQL。
+- 数据迁移（详设 14.4）第一阶段为 no-op：仅记录 mini_app_versions.schema_version，数据原样保留（Manifest 未定义迁移脚本语法；后续扩展时补）。
+
+### 17.7 本地创建 / 导入导出（Phase 5）
+
+- `ExtensionCreator`：草稿在 `extensions/workspaces/{draftId}/`（目录结构即包规范），与已安装严格分离（草稿不能被 Agent 调用）；创建向导自动生成 app_id + 模板脚手架；校验与安装共用 ManifestValidator / ExtensionInstaller.installFromDirectory（同一统一安装链）。
+- `ExtensionImportExport`：导出 = 安装目录打 ZIP（包规范天然不含 mini_app_data/凭证）；导入经 SAF OpenDocument → 临时文件 → installer.installFromZip(LOCAL_IMPORT)，更新判定/回滚全走 Installer。
+- 内置模板（`ExtensionTemplates`）：空白 Tool/Mini App + **天气查询 Tool 示例**（Open-Meteo）+ **个人论坛 Mini App 示例**（posts 集合 CRUD + Toast）。
+
+### 17.8 ToolDescriptionService（MCP/扩展共用，详设 18.5）
+
+- `data/ai/tools/ToolDescriptionService.kt`：描述简化的共用服务——纯函数（buildSingleSimplifyPrompt/buildBatchSimplifyPrompt/buildBatchInput/chunkBySize/parseBatchSimplifyResponse，有单测）+ generateWithBackgroundModel（全局后台模型，与 McpToolDescVM 原实现同语义）。
+- `McpToolDescVM` 已改为委托该服务（internal 顶层函数签名保留，既有 McpOnDemandToolsTest 断言不变通过）；扩展详情页「AI 简化」按钮走 simplifySingle(kind="扩展") + 预览确认。
+
+### 17.9 测试与验收
+
+- 纯 JVM 单测（app/src/test 下 data/extensions/ + data/ai/tools/）：JsonSchemaValidator（13 例）/ ExtensionRules（版本/判定/合并/恢复/可用性矩阵/路径安全/Manifest 校验，22 例）/ ZipPackageReader（ZIP Slip/重复/炸弹/缺 manifest，10 例，其中重复条目用例**手写 raw ZIP**——Java ZipOutputStream 自身拒绝重复条目）/ ExtensionAgentTools（目录 Prompt/错误映射/参数解析）/ ToolDescriptionService（解析/分批/Prompt）。
+- 验证命令：`./gradlew :app:compileDebugKotlin` + `./gradlew :app:testDebugUnitTest`（2026-11-16：399 全绿）。
+- **模拟器实测已通过（2026-11-17，EvoliaTest AVD）**：创建→校验→安装→打开 Mini App→权限三连（read/write/toast 逐项运行时授权弹窗）→发帖→Room 落库核验→重开持久化→停用禁用入口→卸载保留数据→重装恢复数据（场景 D）→深色渲染，全程零崩溃。**修复**：首次安装 `stagingDir.renameTo(targetDir)` 因 `extensions/installed|backups` 父目录未创建静默返回 false（rename(2) ENOENT）——Installer 在切换前必须 mkdirs 父目录，禁止回退。
+- 临时会话拦截规则在 TemporarySessionToolRulesTest 固化；QuickJS Tool Runtime 的工具执行（ExtensionAgentTools 调用链）仍待真机/配置 Provider 后验证。
+
+### 17.10 已知边界与后续（不回退清单）
+
+- QuickJS interrupt handler 缺失（P0 风险见 17.5）；扩展工具暂不支持 Promise/异步代码。
+- 备份第一阶段过渡：扩展六表随整库备份恢复，无独立「小应用」勾选分类（详设 17.3 过渡口径）；后续独立分类需备份侧按表过滤能力。
+- Settings/SettingsStore 未新增扩展字段（权限/启用状态全部在 Room），助手授权经 Assistant.enabledMiniAppIds 走既有 settingsStore.update 原子事务。
+- 后续 GitHub/市场/Agent 自动生成扩展必须复用 Manifest/Package/Installer/Registry/Runtime，禁止另起第二套机制。
