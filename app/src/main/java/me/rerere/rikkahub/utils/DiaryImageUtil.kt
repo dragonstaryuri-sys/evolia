@@ -139,6 +139,13 @@ object DiaryImageUtil {
     }
 
     /**
+     * 按存储规则定位日记图片文件：filesDir/diary_images/<diaryId>/<imageId>.webp
+     * 供备份恢复对账复用（DiaryImageBackup / WebdavSync），保证路径规则单一来源。
+     */
+    fun getDiaryImageFile(context: Context, diaryId: String, imageId: String): File =
+        File(context.filesDir, "$IMAGE_DIR/$diaryId/$imageId.webp")
+
+    /**
      * 保存日记图片到内部存储。
      *
      * 路径：filesDir/diary_images/<diaryId>/<imageId>.webp
@@ -155,10 +162,8 @@ object DiaryImageUtil {
         imageId: String,
         bitmap: Bitmap
     ): String = withContext(Dispatchers.IO) {
-        val dir = File(context.filesDir, "$IMAGE_DIR/$diaryId")
-        if (!dir.exists()) dir.mkdirs()
-
-        val file = File(dir, "$imageId.webp")
+        val file = getDiaryImageFile(context, diaryId, imageId)
+        file.parentFile?.let { if (!it.exists()) it.mkdirs() }
         val bytes = compressToWebp(bitmap)
         file.writeBytes(bytes)
         file.absolutePath

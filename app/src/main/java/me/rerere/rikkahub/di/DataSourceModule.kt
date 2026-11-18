@@ -242,7 +242,8 @@ val dataSourceModule = module {
             secretKeyManager = get(),
             conversationRepo = get(),
             callRecordRepository = get(),
-            radioRepository = get()
+            radioRepository = get(),
+            diaryRepository = get()
         )
     }
     single<Retrofit> {

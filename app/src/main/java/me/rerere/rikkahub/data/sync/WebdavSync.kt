@@ -15,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import me.rerere.rikkahub.core.data.db.entity.DiaryImage
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.SecureStore
@@ -27,6 +29,8 @@ import me.rerere.rikkahub.data.radio.RadioRepository
 import me.rerere.rikkahub.service.voice.CallRecorder
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
+import me.rerere.rikkahub.core.data.repository.DiaryRepository
+import me.rerere.rikkahub.utils.DiaryImageUtil
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -56,6 +60,7 @@ class WebdavSync(
     private val conversationRepo: ConversationRepository,
     private val callRecordRepository: CallRecordRepository,
     private val radioRepository: RadioRepository,
+    private val diaryRepository: DiaryRepository,
 ) {
     suspend fun testWebdav(webDavConfig: WebDavConfig) {
         val davCollection = webDavConfig.requireCollection()
@@ -310,6 +315,10 @@ class WebdavSync(
             }
         }
 
+        // 扫描日记图片备份统计（FILES 项勾选时由 packDiaryImagesStrictly 填充；
+        // 默认值 isComplete=true，未勾选 FILES 不参与完整性闸门）
+        var diaryImageStats = DiaryImageBackup.BackupStats()
+
         ZipOutputStream(FileOutputStream(backupFile)).use { zipOut ->
             val settings = secretKeyManager.populateSecretsForExport(settingsStore.settingsFlow.value)
             addVirtualFileToZip(zipOut, "settings.json", json.encodeToString(settings))
@@ -350,6 +359,7 @@ class WebdavSync(
                 // - python_sandbox：Agent 沙盒工作文件（eval_python，按会话子目录组织，必须递归）
                 // - images：Agent 生图产物（GenMedia 媒体库与消息 Markdown 引用 images/<uuid>）
                 // zip 条目 = <folder>/<相对路径>；恢复侧通用分支按 FILES 项还原任意目录
+                // 注意：diary_images（扫描日记图片）不在此列，走下方专项打包（统计 + 严格失败上报）
                 val foldersToBackup = listOf(
                     "upload", "avatars", "lorebook_attachments", "app_locks",
                     "python_sandbox", "images",
@@ -375,6 +385,12 @@ class WebdavSync(
                         }
                     }
                 }
+
+                // ===== 扫描日记图片（diary_images）：专项打包，统计 + 严格失败上报（AGENTS.md 12.7）=====
+                // 不并入通用循环：通用打包吞异常，单张图片读取失败会静默生成不完整备份。
+                // 直接复制 WebP 二进制，不重新解码/压缩/转格式；zip 条目 = diary_images/<diaryId>/<imageId>.webp
+                diaryImageStats = packDiaryImagesStrictly(zipOut)
+                LogUtil.i(TAG, "Diary images backup stats: $diaryImageStats")
             }
 
             if (webDavConfig.items.contains(WebDavConfig.BackupItem.TTS_CACHE)) {
@@ -423,7 +439,89 @@ class WebdavSync(
                 LogUtil.i(TAG, "Added $count radio audio files to backup")
             }
         }
+
+        // ===== 扫描日记图片完整性闸门（AGENTS.md 12.7）=====
+        // zip 已写完再判定：任一引用图片缺失（历史遗留）或打包失败（本次 IO 异常）
+        // → 备份不得静默标记为完整成功，删除半截 zip 并抛可识别异常，由各备份入口给出明确提示。
+        if (!diaryImageStats.isComplete) {
+            if (backupFile.exists()) backupFile.delete()
+            throw DiaryImageBackup.IncompleteBackupException(diaryImageStats)
+        }
         backupFile
+    }
+
+    /**
+     * 扫描日记图片专项打包（FILES 项，严格模式）：
+     * - 递归 filesDir/diary_images，zip 条目 = diary_images/<相对路径>（相对 filesDir 语义一致）；
+     * - 直接复制 WebP 二进制，不重新解码/压缩/转格式，不改命名规则；
+     * - 单张读取/写入异常计入 failedPaths，不吞异常（通用 addFileToZip 行为不变）；
+     * - 对账 DB 引用：引用但磁盘缺失 → missingPaths（备份前已缺失，历史遗留）；
+     *   文件存在但不在 diary_images 布局下 → outsidePaths（无法按规则打包）。
+     */
+    private suspend fun packDiaryImagesStrictly(zipOut: ZipOutputStream): DiaryImageBackup.BackupStats {
+        val root = File(context.filesDir, DiaryImageBackup.ZIP_DIR)
+        val diskFiles = if (root.exists() && root.isDirectory) {
+            root.walkTopDown().filter { it.isFile }.toList()
+        } else {
+            emptyList()
+        }
+
+        var packedCount = 0
+        var totalBytes = 0L
+        val failedPaths = mutableListOf<String>()
+        diskFiles.forEach { file ->
+            val entryName = "${DiaryImageBackup.ZIP_DIR}/${file.toRelativeString(root)}"
+            try {
+                FileInputStream(file).use { fis ->
+                    zipOut.putNextEntry(ZipEntry(entryName))
+                    fis.copyTo(zipOut)
+                    zipOut.closeEntry()
+                }
+                packedCount++
+                totalBytes += file.length()
+            } catch (e: Exception) {
+                failedPaths.add(entryName)
+                LogUtil.e(TAG, "Diary image pack failed: $entryName", e)
+            }
+        }
+
+        // 对账 DB 引用：数据库引用的图片必须都能在磁盘找到，否则备份不完整（单独归类，便于排查）
+        val missingPaths = mutableListOf<String>()
+        val outsidePaths = mutableListOf<String>()
+        var dbImageCount = 0
+        diaryRepository.getAllDiaries().first().forEach { diary ->
+            diary.images.forEach { image ->
+                dbImageCount++
+                val exists = image.imagePath.isNotBlank() && File(image.imagePath).exists()
+                when (DiaryImageBackup.classifyRef(image.imagePath, context.filesDir.absolutePath, exists)) {
+                    is DiaryImageBackup.RefFileStatus.Packable -> {}
+                    DiaryImageBackup.RefFileStatus.Missing -> {
+                        missingPaths.add(image.imagePath)
+                        LogUtil.w(TAG, "diary image referenced but missing on disk: diary=${diary.id}, image=${image.id}, path=${image.imagePath}")
+                    }
+                    DiaryImageBackup.RefFileStatus.OutsideDiaryDir -> {
+                        outsidePaths.add(image.imagePath)
+                        LogUtil.w(TAG, "diary image outside diary_images layout: diary=${diary.id}, image=${image.id}, path=${image.imagePath}")
+                    }
+                }
+            }
+        }
+
+        LogUtil.i(
+            TAG,
+            "Diary images: dbRefs=$dbImageCount, diskFiles=${diskFiles.size}, packed=$packedCount, " +
+                "failed=${failedPaths.size}, missing=${missingPaths.size}, outside=${outsidePaths.size}, bytes=$totalBytes"
+        )
+        return DiaryImageBackup.BackupStats(
+            dbImageCount = dbImageCount,
+            diskFileCount = diskFiles.size,
+            packedCount = packedCount,
+            failedCount = failedPaths.size,
+            totalBytes = totalBytes,
+            missingPaths = missingPaths,
+            failedPaths = failedPaths,
+            outsidePaths = outsidePaths,
+        )
     }
 
     private suspend fun restoreFromBackupFile(backupFile: File, webDavConfig: WebDavConfig): RestoreResult =
@@ -434,6 +532,8 @@ class WebdavSync(
             val tempDir = File(context.cacheDir, "restore_${System.currentTimeMillis()}").apply { mkdirs() }
             var sanitization = DatabaseSanitizer.SanitizationResult()
             val restoredCallAudio = mutableSetOf<String>()
+            // 恢复侧统计：zip 中实际还原的扫描日记图片文件数（历史备份无该目录时为 0，属正常兼容）
+            var restoredDiaryImageCount = 0
 
             try {
                 var restoredSettings: Settings? = null
@@ -494,11 +594,15 @@ class WebdavSync(
                                         val fileName = ze.name.substringAfter("/")
                                         val targetFolder = File(context.filesDir, folderName).apply { mkdirs() }
                                         val targetFile = File(targetFolder, fileName)
-                                        // 兼容嵌套目录条目（如 python_sandbox/<会话ID>/<文件>），父目录存在才能写入
+                                        // 兼容嵌套目录条目（如 python_sandbox/<会话ID>/<文件>、diary_images/<日记ID>/<图片>.webp），
+                                        // 父目录存在才能写入
                                         targetFile.parentFile?.mkdirs()
                                         // 防 Zip Slip：条目名不得上跳目录（完整 canonical 校验为遗留加固项）
                                         if (!fileName.contains("..")) {
                                             FileOutputStream(targetFile).use { zipIn.copyTo(it) }
+                                            if (folderName == DiaryImageBackup.ZIP_DIR) {
+                                                restoredDiaryImageCount++
+                                            }
                                         } else {
                                             LogUtil.w(TAG, "Skipped suspicious zip entry: ${ze.name}")
                                         }
@@ -548,6 +652,9 @@ class WebdavSync(
                 triggerDataMigration()
                 // 媒体资产对账：改写绝对路径 / 清理缺失文件引用（AGENTS.md 12.7）
                 repairRestoredMedia(restoredCallAudio)
+                // 扫描日记图片对账：文件恢复（zip 解压）已完成，此处修复 DB 图片路径 / 校验引用（AGENTS.md 12.7）
+                // 内部用独立裸 SQLite 连接读最终 DB（Room 旧连接页缓存指向恢复前状态），异常自捕获不影响恢复主流程
+                repairDiaryImagePaths(restoredDiaryImageCount)
                 RestoreResult(sanitization, settingsCleanup.copy(unsupportedZipEntriesBytes = unsupportedBytes))
             } catch (e: Exception) {
                 LogUtil.e(TAG, "Error during restore process", e)
@@ -605,6 +712,102 @@ class WebdavSync(
                 }
             }
         }.onFailure { LogUtil.e(TAG, "radio audio repair failed", it) }
+    }
+
+    /**
+     * 恢复后的扫描日记图片对账（AGENTS.md 12.7）：
+     * - DB imagePath 失效（跨设备 filesDir 变化）但可按 diaryId/imageId 在恢复目录重建 → 修复 DB 路径；
+     * - 文件确实不存在 → 保留图片元数据与 OCR 结果，仅记录警告（绝不删除日记/图片记录）；
+     * - 历史备份无 diary_images 条目时同样安全（引用全部 Keep 或 Missing，仅日志，不影响恢复流程）。
+     *
+     * 实现注意：必须用**独立裸 SQLite 连接**读磁盘上的最终 DB，禁止走 Room——
+     * `cleanDb.copyTo(finalDb)` 在 Room 连接存活期间覆盖了 DB 文件，Room 旧连接的页缓存
+     * 仍指向恢复前状态（实测：d2d 自动恢复的旧数据被当作当前数据，修复全部失效）。
+     * 应用随后强制重启，重启后 Room 重开文件即可读到修复结果。
+     *
+     * @param restoredCount zip 中实际还原的 diary_images 文件数（仅日志统计用）
+     */
+    private fun repairDiaryImagePaths(restoredCount: Int) {
+        val dbFile = context.getDatabasePath("rikka_hub")
+        if (!dbFile.exists()) return
+        var dbRefs = 0
+        var valid = 0
+        var repaired = 0
+        var missing = 0
+        var parseFailures = 0
+        try {
+            SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+                val ids = mutableListOf<String>()
+                val imagesList = mutableListOf<List<DiaryImage>>()
+                db.rawQuery("SELECT id, images FROM AgentDiaryEntity WHERE images IS NOT NULL", null).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getString(0)
+                        val imagesJson = cursor.getString(1) ?: continue
+                        val images = runCatching {
+                            json.decodeFromString<List<DiaryImage>>(imagesJson)
+                        }.getOrNull()
+                        if (images == null) {
+                            parseFailures++
+                            LogUtil.w(TAG, "diary images JSON parse failed, skip repair: diary=$id")
+                            continue
+                        }
+                        if (images.isEmpty()) continue
+                        ids.add(id)
+                        imagesList.add(images)
+                    }
+                }
+                ids.forEachIndexed { index, diaryId ->
+                    val images = imagesList[index]
+                    var diaryModified = false
+                    val newImages = images.map { image ->
+                        dbRefs++
+                        val storedExists = image.imagePath.isNotBlank() && File(image.imagePath).exists()
+                        val expectedFile = DiaryImageUtil.getDiaryImageFile(context, diaryId, image.id)
+                        when (val repair = DiaryImageBackup.decideRepair(
+                            storedImagePath = image.imagePath,
+                            storedFileExists = storedExists,
+                            expectedAbsolutePath = expectedFile.absolutePath,
+                            expectedFileExists = expectedFile.exists()
+                        )) {
+                            DiaryImageBackup.ImageRepair.Keep -> image.also { valid++ }
+                            is DiaryImageBackup.ImageRepair.Rewrite -> {
+                                repaired++
+                                diaryModified = true
+                                LogUtil.i(
+                                    TAG,
+                                    "diary image path repaired: diary=$diaryId, image=${image.id}, " +
+                                        "${image.imagePath} -> ${repair.absolutePath}"
+                                )
+                                image.copy(imagePath = repair.absolutePath)
+                            }
+                            DiaryImageBackup.ImageRepair.Missing -> {
+                                missing++
+                                LogUtil.w(
+                                    TAG,
+                                    "diary image missing after restore (metadata & OCR kept): " +
+                                        "diary=$diaryId, image=${image.id}, path=${image.imagePath}"
+                                )
+                                image
+                            }
+                        }
+                    }
+                    if (diaryModified) {
+                        db.execSQL(
+                            "UPDATE AgentDiaryEntity SET images = ? WHERE id = ?",
+                            arrayOf(json.encodeToString(newImages), diaryId)
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            LogUtil.e(TAG, "diary image repair failed", e)
+            return
+        }
+        LogUtil.i(
+            TAG,
+            "Diary image repair: restoredFromZip=$restoredCount, dbRefs=$dbRefs, valid=$valid, " +
+                "repaired=$repaired, missing=$missing, parseFailures=$parseFailures"
+        )
     }
 
     data class RestoreResult(
