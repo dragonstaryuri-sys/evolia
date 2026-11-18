@@ -40,7 +40,6 @@ import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.ui.components.ui.ChatModelWarningBanner
 import me.rerere.rikkahub.ui.components.ui.ProviderConfigWarningCard
-import me.rerere.rikkahub.common.countImageFiles
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.data.sandboxfile.SandboxFileRepository
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -403,9 +402,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     val chatStorageState by produceState(-1 to 0L) {
                         value = context.countChatFiles()
                     }
-                    val imageStorageState by produceState(-1 to 0L) {
-                        value = context.countImageFiles()
-                    }
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_chat_storage),
@@ -427,11 +423,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_clear_cache),
-                        subtitle = if (imageStorageState.first > 0) {
-                            "${stringResource(R.string.setting_page_clear_cache_desc)} (${imageStorageState.first} 张图, %.2f MB)".format(imageStorageState.second.toDouble() / 1024 / 1024)
-                        } else {
-                            stringResource(R.string.setting_page_clear_cache_desc)
-                        },
+                        subtitle = stringResource(R.string.setting_page_clear_cache_desc),
                         icon = { Icon(Icons.Rounded.DeleteSweep, null, modifier = Modifier.size(20.dp)) },
                         onClick = { showClearCacheDialog = true }
                     )

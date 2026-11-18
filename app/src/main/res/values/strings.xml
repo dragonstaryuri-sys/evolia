@@ -538,8 +538,14 @@
   <string name="sandbox_file_save_all_failed">Failed to save files</string>
   <string name="sandbox_file_open_failed">No app can open this file type. Try saving it to your device first.</string>
   <string name="sandbox_file_file_missing">File no longer exists: %1$s</string>
+  <string name="sandbox_file_copy_path">Copy path</string>
+  <string name="sandbox_file_path_copied">Path copied</string>
+  <string name="sandbox_file_copy_path_failed">Failed to copy path</string>
   <string name="sandbox_file_menu_save">Save to device</string>
   <string name="sandbox_file_menu_delete">Delete</string>
+  <string name="sandbox_file_group_generated_images">Generated Images</string>
+  <string name="sandbox_file_group_root">Sandbox Root</string>
+  <string name="sandbox_file_group_unknown_dir">Folder %1$s</string>
   <string name="setting_page_data_settings">Data Settings</string>
   <string name="setting_page_default_model">Default Models</string>
   <string name="setting_page_default_model_desc">Set default models for features</string>
@@ -1833,9 +1839,9 @@
   <string name="setting_provider_minimax_realtime_voice_hint">Example: ash, dedicated timbre for real-time interface</string>
   <!-- Clear Cache -->
   <string name="setting_page_clear_cache">Clear Cache</string>
-  <string name="setting_page_clear_cache_desc">Delete all generated images and chat attachments to free up space</string>
+  <string name="setting_page_clear_cache_desc">Delete chat attachments and transient call recordings to free up space. Agent-created files are managed in Agent Files.</string>
   <string name="setting_page_clear_cache_confirm_title">Confirm Clear Cache?</string>
-  <string name="setting_page_clear_cache_confirm_message">This will permanently delete all generated images (Gallery) and files uploaded in chats. These will also be removed from future backups. This action cannot be undone.</string>
+  <string name="setting_page_clear_cache_confirm_message">This will permanently delete files uploaded in chats and transient call recordings. Agent-created files are NOT affected and are managed in Agent Files. These will also be removed from future backups. This action cannot be undone.</string>
   <string name="setting_page_clear_cache_success">Cache cleared successfully</string>
   <string name="backup_permission_wifi">Modify the Wi-Fi connection status</string>
   <string name="permission_check_wifi">Wi-Fi permission</string>

@@ -511,8 +511,14 @@
   <string name="sandbox_file_save_all_failed">保存失败</string>
   <string name="sandbox_file_open_failed">没有应用可以打开该类型文件，可保存到本地后查看</string>
   <string name="sandbox_file_file_missing">文件已不存在：%1$s</string>
+  <string name="sandbox_file_copy_path">复制路径</string>
+  <string name="sandbox_file_path_copied">路径已复制</string>
+  <string name="sandbox_file_copy_path_failed">复制路径失败</string>
   <string name="sandbox_file_menu_save">保存到本地</string>
   <string name="sandbox_file_menu_delete">删除</string>
+  <string name="sandbox_file_group_generated_images">Agent 生图</string>
+  <string name="sandbox_file_group_root">沙箱根目录</string>
+  <string name="sandbox_file_group_unknown_dir">目录 %1$s</string>
   <string name="setting_page_data_settings">数据设置</string>
   <string name="setting_page_default_model">默认模型</string>
   <string name="setting_page_default_model_desc">设置各个功能的默认模型</string>
@@ -1823,9 +1829,9 @@
   <string name="setting_provider_minimax_realtime_voice_hint">例如: ash, 实时接口专用音色</string>
   <!-- 清理缓存相关 -->
   <string name="setting_page_clear_cache">清理缓存</string>
-  <string name="setting_page_clear_cache_desc">删除所有已生成的图片和聊天附件以释放空间</string>
+  <string name="setting_page_clear_cache_desc">删除聊天附件与未永久保存的通话录音以释放空间；Agent 创建的文件请到「Agent 文件」管理</string>
   <string name="setting_page_clear_cache_confirm_title">确认清理缓存？</string>
-  <string name="setting_page_clear_cache_confirm_message">这将永久删除所有已生成的图片和对话中上传的文件。这些内容也将从未来的备份包中移除，操作不可撤销。</string>
+  <string name="setting_page_clear_cache_confirm_message">这将永久删除对话中上传的文件与未永久保存的通话录音；Agent 创建的文件不受影响，可在「Agent 文件」中管理。这些内容也将从未来的备份包中移除，操作不可撤销。</string>
   <string name="setting_page_clear_cache_success">缓存清理完成</string>
   <string name="backup_permission_wifi">修改wifi连接状态</string>
   <string name="permission_check_wifi">wifi开关权限</string>
