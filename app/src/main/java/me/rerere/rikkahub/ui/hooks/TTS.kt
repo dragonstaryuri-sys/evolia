@@ -38,8 +38,12 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "TTS"
 
-// Refined regex to match emojis without being too aggressive on standard full-width punctuation
-private val EMOJI_REGEX = Regex("[\\uD83C-\\uDBFF\\uDC00-\\uDFFF]|[\\u2600-\\u27BF]")
+// 只匹配 emoji 实际所在的 Unicode 区块。
+// 注意：不要写成 [\uD83C-\uDBFF\uDC00-\uDFFF]——JDK/Android 正则会把该字符类解析成
+// [\uD83C-\uFFFF]，从而误删全角标点（U+FF00–FFEF）、全角字母数字与生僻字。
+internal val EMOJI_REGEX = Regex(
+    "[\\x{1F000}-\\x{1FAFF}]|[\\u2600-\\u27BF]|[\\u2B00-\\u2BFF]|[\\uFE0F\\u20E3]|[\\x{E0020}-\\x{E007F}]"
+)
 
 /**
  * Composable function to remember and manage custom TTS state.
