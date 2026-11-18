@@ -83,6 +83,18 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 -   **共用组件只做一份适配**：同一交互（例如删除通话记录弹窗）必须抽成共用 Composable，由调用方复用，避免各页面各自实现导致深浅色行为不一致。
 -   **验收**：切换深/浅色后无白底黑字刺眼、无浅底白字不可见、无与主题割裂的纯黑/纯白块；深色下层级（surfaceContainerLow → High）仍需可辨。
 
+### 动态主题架构（2026-11 重构，强制）
+-   **唯一实现入口** `app/src/main/java/me/rerere/rikkahub/ui/theme/DynamicThemeColors.kt`，全局主题与智能体独立主题都必须复用它，禁止再各自维护解码/Palette/配色代码：
+    -   `extractSeedColorFromImage(context, source)`：图片来源 → 种子色。支持 `content://`、`file://`、`android.resource://`、`http(s)://`、本地路径；解码与 Palette 在 `Dispatchers.IO`；先按 `inSampleSize` 降采样再缩放到 128px；Swatch 优先级 `vibrant → dominant → muted → lightVibrant → darkVibrant → lightMuted → darkMuted`；失败返回 null；Bitmap 在 `finally` 中回收（缩放返回同一对象时只回收一次）。
+    -   `resolveAssistantThemeBackground(dynamicColorEnabled, background)`：聊天页主题的来源判定——全局动态颜色开启且当前智能体有背景图才返回该背景，否则返回 null（继承全局主题）。
+    -   `buildDynamicColorScheme(seedColor, darkTheme)`：唯一的配色算法，按 `ui/theme/presets/*` 的版式生成**完整色板**——中性表面/正文使用固定中性灰阶（浅色 #FCFCFC 底 / #1B1B1D 字，深色 #121212 底 / #E6E6E6 字），不随图片染色；只有 primary / secondary（降饱和）/ tertiary（色相 +45°）及其容器由种子色相派生；error 沿用 M3 标准红。禁止再用 lerp 与某个预设主题混色，也禁止把樱花粉当作配色基底。
+    -   `Color.isUsableThemeSeed()`：饱和度 < 8% 的近纯灰图片视为无有效主题色，取色结果按失败处理。
+    -   `ColorScheme.withAmoledDarkCanvas(darkTheme)`：AMOLED 纯黑 `background` / `surface` 的唯一入口。
+-   **全局「动态颜色」不再使用系统壁纸与 `dynamicLight/DarkColorScheme`，也不再要求 Android 12+**：开启时只读主智能体（`Settings.getMainAssistant()`，即 `isMain`）的聊天背景图并生成完整动态色板；主智能体无背景图 / 加载失败 / 取色失败（含近纯灰）→ 直接使用樱花粉 `SakuraThemePreset`；关闭时仍使用 `settings.themeId` 预设。樱花粉只做失败回退，不参与配色生成。禁止用主智能体头像、当前会话智能体背景或系统壁纸作为全局取色来源。
+-   **聊天页智能体主题（`AssistantChatTheme`）**：全局「动态颜色」开启时，当前智能体有自己的聊天背景图就自动用该背景取色生成完整色板（无需任何开关）；没有背景图 / 取色失败 / 全局动态颜色关闭 → 不覆盖，继承全局主题。头像不参与取色；`useAssistantMaterialYouColors` 字段已废弃（仅保留用于旧数据反序列化），助手详情页的「从角色取色」开关已移除。禁止聊天页主题反向覆盖全局主题。
+-   **缓存与异步约束**：`ThemeSeedColorCache` 以图片 URI（含 `android.resource://` 归一化后的 URI）为 key 做 LRU 缓存；背景图每次重选都会生成新的 `files/upload/<uuid>` 文件名，URI 变化即缓存失效。取色统一用 `produceState`（key = 图片 URI），明暗模式切换只重算 `ColorScheme`，不得重复解码；禁止在 Composable 重组路径或主线程解码图片，切换图片时旧协程必须被取消，避免旧颜色覆盖新主题。
+-   **DataStore 兼容**：不修改 `dynamicColor` / `themeId` 字段结构，不新增必须迁移的配置项；旧用户开启动态颜色的行为按上述新规则直接生效。
+
 ### 共享 UI 组件与豁免口径（2026-10 UI 统一）
 -   **共享组件优先（禁止再手写等价物）**：确认弹窗用 common 的 `ConfirmDialog`（`dangerous = true` 时确认按钮为 error 色，删除类操作必须用）；文本输入弹窗用 `InputDialog`；空态用 `EmptyPlaceholder`；行内加载用 `InlineSpinner`（24dp 默认 / 16dp 紧凑两档，禁止手抄不同尺寸的 CircularProgressIndicator）；FAB 用 `AppFab`（统一 `AppShapes.CardLarge` + PremiumHaptics）；日期/时间选择用 `EvoliaDatePickerDialog` / `EvoliaTimePickerDialog`，**禁止使用 android.app 平台对话框**（深色模式不受主题控制）。
 -   **浮层配色合规路径**：ModalBottomSheet 必须显式传 `containerColor = surfaceContainerHigh` 与 `shape = AppShapes.BottomSheet`；DropdownMenu 必须显式传 `containerColor = surfaceContainerHigh` 与 `shape = AppShapes.ButtonSquared`；不落入共享组件的 AlertDialog 必须显式传 containerColor / titleContentColor / textContentColor 及按钮色。

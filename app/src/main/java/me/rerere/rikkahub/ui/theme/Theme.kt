@@ -1,34 +1,31 @@
 package me.rerere.rikkahub.ui.theme
 
 import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import kotlinx.serialization.Serializable
-
+import me.rerere.rikkahub.data.datastore.getMainAssistant
 import me.rerere.rikkahub.ui.hooks.rememberColorMode
 import me.rerere.rikkahub.ui.hooks.rememberUserSettingsState
+import me.rerere.rikkahub.ui.theme.presets.SakuraThemePreset
 
 private val ExtendLightColors = lightExtendColors()
 private val ExtendDarkColors = darkExtendColors()
 val LocalExtendColors = compositionLocalOf { ExtendLightColors }
 
 val LocalDarkMode = compositionLocalOf { false }
-
-private val AMOLED_DARK_BACKGROUND = Color(0xFF000000)
 
 @Serializable
 enum class ColorMode {
@@ -50,24 +47,42 @@ fun RikkahubTheme(
         ColorMode.DARK -> true
     }
 
+    // 全局动态颜色：不再使用系统壁纸，只取主智能体的聊天背景图。
+    // 主智能体没有背景图、图片加载失败或取色失败时，统一回退到樱花粉预设主题。
+    val mainAssistantBackground = if (settings.dynamicColor) {
+        settings.getMainAssistant()?.background
+    } else {
+        null
+    }
+    val context = LocalContext.current
+    val seedColor by produceState<Color?>(
+        initialValue = mainAssistantBackground?.let { ThemeSeedColorCache.get(it) },
+        mainAssistantBackground,
+    ) {
+        val source = mainAssistantBackground
+        if (source == null) {
+            value = null
+            return@produceState
+        }
+        value = extractSeedColorFromImage(context, source)
+    }
 
     val colorScheme = when {
-        settings.dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        settings.dynamicColor -> {
+            // 樱花粉只作为「无背景图 / 取色失败」的回退，不参与配色生成
+            seedColor?.let { seed ->
+                buildDynamicColorScheme(
+                    seedColor = seed,
+                    darkTheme = darkTheme,
+                )
+            } ?: SakuraThemePreset.getColorScheme(dark = darkTheme)
         }
+
         darkTheme -> findPresetTheme(settings.themeId).getColorScheme(dark = true)
         else -> findPresetTheme(settings.themeId).getColorScheme(dark = false)
     }
     val colorSchemeConverted = remember(darkTheme, colorScheme) {
-        if (darkTheme) {
-            colorScheme.copy(
-                background = AMOLED_DARK_BACKGROUND,
-                surface = AMOLED_DARK_BACKGROUND,
-            )
-        } else {
-            colorScheme
-        }
+        colorScheme.withAmoledDarkCanvas(darkTheme)
     }
     val extendColors = if (darkTheme) ExtendDarkColors else ExtendLightColors
 

@@ -842,6 +842,12 @@ fun Settings.getCurrentAssistant(): Assistant =
     assistants.find { it.id == assistantId } ?: assistants.find { it.isMain } ?: assistants.firstOrNull()
     ?: DEFAULT_ASSISTANTS.first()
 
+/**
+ * 主智能体（isMain）：全局动态颜色只读取它的聊天背景图。
+ * 注意与 [getCurrentAssistant] 区分——后者是当前聊天选中的智能体。
+ */
+fun Settings.getMainAssistant(): Assistant? = assistants.find { it.isMain }
+
 fun Settings.getAssistantById(id: Uuid): Assistant? = assistants.find { it.id == id }
 fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySetting {
     val ui = (assistant ?: getCurrentAssistant()).uiSettings

@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
-import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.TagsInput
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
@@ -130,25 +129,7 @@ fun AssistantProfileSubPage(
         // APPEARANCE GROUP
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = "外观与展示") {
-            val hasImageSource = assistant.background != null ||
-                assistant.avatar is Avatar.Image ||
-                assistant.avatar is Avatar.Resource
-
-            if (hasImageSource) {
-                SettingGroupItem(
-                    title = stringResource(R.string.assistant_page_material_you_from_character),
-                    subtitle = stringResource(R.string.assistant_page_material_you_from_character_desc),
-                    trailing = {
-                        HapticSwitch(
-                            checked = assistant.useAssistantMaterialYouColors,
-                            onCheckedChange = { enabled ->
-                                onUpdate(assistant.copy(useAssistantMaterialYouColors = enabled))
-                            }
-                        )
-                    }
-                )
-            }
-
+            // 聊天页主题由聊天背景图自动决定（全局动态颜色开启时），不再提供独立取色开关
             // Background Picker
             BackgroundPicker(
                 background = assistant.background,
