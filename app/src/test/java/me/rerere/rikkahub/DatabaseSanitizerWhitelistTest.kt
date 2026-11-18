@@ -23,7 +23,10 @@ class DatabaseSanitizerWhitelistTest {
         "assistant_extended_state", "favorites", "profile_history",
         "chat_messages", "chat_message_nodes", "app_locks",
         "schedule_events", "call_records",
-        "radio_channels", "radio_episodes", "radio_audio_assets", "radio_episode_deletion_logs"
+        "radio_channels", "radio_episodes", "radio_audio_assets", "radio_episode_deletion_logs",
+        "background_tasks", "chat_unread_messages",
+        "extensions", "extension_tools", "extension_permissions",
+        "mini_app_data", "mini_app_versions", "extension_install_operations"
     )
 
     @Test
@@ -62,6 +65,24 @@ class DatabaseSanitizerWhitelistTest {
         assertTrue(isWhitelistedTable(whiteList, "radio_episodes"))
         assertTrue(isWhitelistedTable(whiteList, "radio_audio_assets"))
         assertTrue(isWhitelistedTable(whiteList, "radio_episode_deletion_logs"))
+    }
+
+    @Test
+    fun `extension tables are whitelisted (DB v49)`() {
+        // 扩展体系 6 张新表必须全部登记，否则备份恢复时被静默丢弃
+        assertTrue(isWhitelistedTable(whiteList, "extensions"))
+        assertTrue(isWhitelistedTable(whiteList, "extension_tools"))
+        assertTrue(isWhitelistedTable(whiteList, "extension_permissions"))
+        assertTrue(isWhitelistedTable(whiteList, "mini_app_data"))
+        assertTrue(isWhitelistedTable(whiteList, "mini_app_versions"))
+        assertTrue(isWhitelistedTable(whiteList, "extension_install_operations"))
+    }
+
+    @Test
+    fun `background_tasks and chat_unread_messages are whitelisted`() {
+        // 2026-11-16 修复：测试白名单副本此前落后于生产白名单，缺这两张表
+        assertTrue(isWhitelistedTable(whiteList, "background_tasks"))
+        assertTrue(isWhitelistedTable(whiteList, "chat_unread_messages"))
     }
 
     @Test

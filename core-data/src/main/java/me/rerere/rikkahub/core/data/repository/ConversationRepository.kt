@@ -686,6 +686,13 @@ class ConversationRepository(
         chatMessageDAO.syncConversationMessages(convId, nodeEntities, messageEntities)
     }
 
+    /**
+     * 轻量查询会话标题（单列 SQL，不水合消息/节点）。
+     * 会话不存在时返回 null。
+     */
+    suspend fun getConversationTitleById(conversationId: Uuid): String? =
+        conversationDAO.getConversationTitleById(conversationId.toString())
+
     suspend fun deleteConversation(conversation: Conversation, deleteFiles: Boolean = true) {
         conversationDAO.delete(conversationToConversationEntity(conversation))
         chatEpisodeDAO.deleteEpisodeByConversationId(conversation.id.toString())

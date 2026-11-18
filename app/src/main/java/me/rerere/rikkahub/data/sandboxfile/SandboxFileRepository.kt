@@ -164,7 +164,7 @@ class SandboxFileRepository(private val context: Context) {
                 lastModified = file.lastModified(),
                 mimeType = mimeType,
                 extension = extension,
-                conversationId = SandboxFileRules.deriveConversationId(relativePath),
+                topLevelDir = SandboxFileRules.deriveTopLevelDir(relativePath),
                 source = source,
                 category = category
             )

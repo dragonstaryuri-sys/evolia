@@ -103,6 +103,15 @@ val repositoryModule = module {
     }
 
     single {
+        ExtensionRepository(
+            extensionDAO = get(),
+            toolConfigDAO = get(),
+            miniAppDataDAO = get(),
+            miniAppVersionDAO = get()
+        )
+    }
+
+    single {
         SandboxFileRepository(get())
     }
 }

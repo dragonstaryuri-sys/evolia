@@ -49,10 +49,11 @@ object SandboxFileRules {
     }
 
     /**
-     * 从根目录下相对路径推导所属会话目录名（第一级目录）。
+     * 从来源根目录下相对路径推导第一级子目录名。
      * 文件直接位于根目录（无目录层级）时返回 null。
+     * 子目录语义随布局演进：新沙箱布局为助手 id，旧布局为会话 id。
      */
-    fun deriveConversationId(relativePath: String): String? {
+    fun deriveTopLevelDir(relativePath: String): String? {
         val normalized = normalizeRelativePath(relativePath)
         val segments = normalized.split('/')
         return if (segments.size >= 2) segments.first() else null
@@ -170,5 +171,51 @@ object SandboxFileRules {
             } -> SandboxFileCategory.OTHER
             else -> null
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 分组展示（按来源 + 第一级子目录聚簇）
+    // ------------------------------------------------------------------
+
+    /** 生图来源的分组键（平铺无子目录，整源一组） */
+    const val GROUP_KEY_GENERATED_IMAGES = "img"
+
+    /** python_sandbox 根目录直属文件的分组键（罕见，兜底组） */
+    const val GROUP_KEY_SANDBOX_ROOT = "sandbox-root"
+
+    /**
+     * 分组键：来源 + 第一级子目录。
+     * - 生图来源 → [GROUP_KEY_GENERATED_IMAGES]
+     * - 沙箱根目录直属文件 → [GROUP_KEY_SANDBOX_ROOT]
+     * - 沙箱子目录文件 → "sandbox:<dirName>"（新布局 dirName=助手 id，旧布局=会话 id）
+     */
+    fun groupKeyOf(file: SandboxFileInfo): String {
+        return when (file.source) {
+            SandboxFileSource.GENERATED_IMAGE -> GROUP_KEY_GENERATED_IMAGES
+            SandboxFileSource.PYTHON_SANDBOX -> {
+                val dir = file.topLevelDir
+                if (dir.isNullOrBlank()) GROUP_KEY_SANDBOX_ROOT else "sandbox:$dir"
+            }
+        }
+    }
+
+    /**
+     * 构建分组列表（纯函数，标签由调用方注入）：
+     * - 组内文件按最后修改时间倒序；
+     * - 组间按组内最新文件时间倒序（最近活跃的组在前）。
+     */
+    fun buildGroups(
+        files: List<SandboxFileInfo>,
+        labelOf: (groupKey: String) -> String
+    ): List<SandboxFileGroup> {
+        return files.groupBy { groupKeyOf(it) }
+            .map { (key, groupFiles) ->
+                SandboxFileGroup(
+                    key = key,
+                    label = labelOf(key),
+                    files = groupFiles.sortedByDescending { it.lastModified }
+                )
+            }
+            .sortedByDescending { group -> group.files.maxOf { it.lastModified } }
     }
 }

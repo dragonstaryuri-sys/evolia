@@ -19,7 +19,6 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.service.voice.CallRecorder
 import me.rerere.rikkahub.utils.IconStorageManager
 import me.rerere.rikkahub.common.deleteAllChatFiles
-import me.rerere.rikkahub.common.deleteAllImageFiles
 import okhttp3.OkHttpClient
 
 class SettingVM(
@@ -85,15 +84,18 @@ class SettingVM(
     }
 
     /**
-     * 清理缓存：聊天上传的文件、生成的图片，以及未永久保存的通话录音。
+     * 清理缓存：聊天上传的文件，以及未永久保存的通话录音。
+     *
+     * Agent 生图（files/images/）与 Python 沙箱文件不在此范围——
+     * 两者均为用户可见的 Agent 产物，由「Agent 文件」页交由用户自主删除。
      *
      * 通话录音只删音频文件并清空 audio 字段，通话记录与转写完整保留；
      * 已永久保存（导出到公共目录）的录音不受影响。
      */
     fun clearCache(onComplete: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
+            // Agent 生图（files/images/）不再纳入缓存清理：已由「Agent 文件」页交由用户自主管理
             context.deleteAllChatFiles()
-            context.deleteAllImageFiles()
 
             val removedAudioPaths = runCatching {
                 callRecordRepository.clearTransientAudio()

@@ -103,6 +103,9 @@ class TemporarySessionToolRulesTest {
             "camera_capture",
             "get_radio_tool_schema",
             "call_radio_tool",
+            // Extensions 双固定工具（临时会话禁止写正式 Mini App 数据，详设 10.5）
+            "get_extension_tool_schema",
+            "call_extension_tool",
             "create_memory",
             "edit_memory",
             "delete_memory",

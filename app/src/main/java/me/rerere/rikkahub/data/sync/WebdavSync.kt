@@ -356,7 +356,7 @@ class WebdavSync(
 
                 // 备份文件目录（FILES 项，全部递归打包）：
                 // - upload：聊天附件 + 聊天背景图（BackgroundPicker 经 createChatFilesByContents 落盘到 upload/）
-                // - python_sandbox：Agent 沙盒工作文件（eval_python，按会话子目录组织，必须递归）
+                // - python_sandbox：Agent 沙盒工作文件（eval_python，按助手子目录组织，旧备份为会话子目录，必须递归）
                 // - images：Agent 生图产物（GenMedia 媒体库与消息 Markdown 引用 images/<uuid>）
                 // zip 条目 = <folder>/<相对路径>；恢复侧通用分支按 FILES 项还原任意目录
                 // 注意：diary_images（扫描日记图片）不在此列，走下方专项打包（统计 + 严格失败上报）

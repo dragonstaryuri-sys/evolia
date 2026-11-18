@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -32,10 +33,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderZip
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
@@ -91,7 +94,9 @@ import me.rerere.rikkahub.common.ui.components.EmptyPlaceholder
 import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import me.rerere.rikkahub.data.sandboxfile.SandboxFileCategory
 import me.rerere.rikkahub.data.sandboxfile.SandboxFileInfo
+import me.rerere.rikkahub.data.sandboxfile.SandboxFileGroup
 import me.rerere.rikkahub.data.sandboxfile.SandboxFileRepository
+import me.rerere.rikkahub.data.sandboxfile.SandboxFileRules
 import me.rerere.rikkahub.data.sandboxfile.SandboxFileSource
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
@@ -126,6 +131,14 @@ fun SettingSandboxFilePage(vm: SandboxFileVM = koinViewModel()) {
     }
     val otherFiles = remember(state.files) {
         state.files.filter { it.category == SandboxFileCategory.OTHER }
+    }
+
+    // 按第一级子目录分组（新沙箱布局=助手目录，旧布局=会话目录，生图=整源一组）
+    val imageGroups = remember(imageFiles, state.groupLabels) {
+        SandboxFileRules.buildGroups(imageFiles) { key -> state.groupLabels[key] ?: key }
+    }
+    val otherGroups = remember(otherFiles, state.groupLabels) {
+        SandboxFileRules.buildGroups(otherFiles) { key -> state.groupLabels[key] ?: key }
     }
 
     // 单文件导出：ACTION_CREATE_DOCUMENT，由用户选择目标位置（保存不影响沙箱原文件）
@@ -240,7 +253,7 @@ fun SettingSandboxFilePage(vm: SandboxFileVM = koinViewModel()) {
 
                 else -> when (tabIndex) {
                     0 -> SandboxImageGrid(
-                        files = imageFiles,
+                        groups = imageGroups,
                         resolveFile = { file -> repository.resolveFile(file) },
                         selectionMode = state.selectionMode,
                         selectedIds = state.selectedIds,
@@ -253,7 +266,7 @@ fun SettingSandboxFilePage(vm: SandboxFileVM = koinViewModel()) {
                     )
 
                     else -> SandboxOtherFileList(
-                        files = otherFiles,
+                        groups = otherGroups,
                         selectionMode = state.selectionMode,
                         selectedIds = state.selectedIds,
                         onItemClick = { file ->
@@ -262,6 +275,7 @@ fun SettingSandboxFilePage(vm: SandboxFileVM = koinViewModel()) {
                         onItemLongClick = { file ->
                             if (!state.selectionMode) vm.enterSelectionMode(file)
                         },
+                        onMenuCopyPath = { file -> vm.copyPath(file) },
                         onMenuSave = { file ->
                             pendingExportFile = file
                             createDocumentLauncher.launch(file.name)
@@ -284,6 +298,7 @@ fun SettingSandboxFilePage(vm: SandboxFileVM = koinViewModel()) {
                 file = previewTarget,
                 imagePath = previewFile.absolutePath,
                 onDismiss = { vm.closePreview() },
+                onCopyPath = { vm.copyPath(previewTarget) },
                 onSave = {
                     pendingExportFile = previewTarget
                     createDocumentLauncher.launch(previewTarget.name)
@@ -383,14 +398,15 @@ private fun SandboxFileSelectionTopBar(
  */
 @Composable
 private fun SandboxImageGrid(
-    files: List<SandboxFileInfo>,
+    groups: List<SandboxFileGroup>,
     resolveFile: (SandboxFileInfo) -> File?,
     selectionMode: Boolean,
     selectedIds: Set<String>,
     onItemClick: (SandboxFileInfo) -> Unit,
     onItemLongClick: (SandboxFileInfo) -> Unit
 ) {
-    if (files.isEmpty()) {
+    val totalFiles = groups.sumOf { it.files.size }
+    if (totalFiles == 0) {
         EmptyPlaceholder(
             text = stringResource(R.string.sandbox_file_images_empty),
             icon = Icons.Rounded.Image,
@@ -407,18 +423,24 @@ private fun SandboxImageGrid(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(
-            items = files,
-            key = { it.id }
-        ) { file ->
-            SandboxImageGridItem(
-                file = file,
-                resolveFile = resolveFile,
-                selectionMode = selectionMode,
-                isSelected = file.id in selectedIds,
-                onClick = { onItemClick(file) },
-                onLongClick = { onItemLongClick(file) }
-            )
+        groups.forEach { group ->
+            // 分组头：占满整行（助手名/会话标题/生图）
+            item(key = "header_${group.key}", span = { GridItemSpan(maxLineSpan) }) {
+                SandboxGroupHeader(group = group)
+            }
+            items(
+                items = group.files,
+                key = { it.id }
+            ) { file ->
+                SandboxImageGridItem(
+                    file = file,
+                    resolveFile = resolveFile,
+                    selectionMode = selectionMode,
+                    isSelected = file.id in selectedIds,
+                    onClick = { onItemClick(file) },
+                    onLongClick = { onItemLongClick(file) }
+                )
+            }
         }
     }
 }
@@ -511,15 +533,17 @@ private fun SandboxImageGridItem(
  */
 @Composable
 private fun SandboxOtherFileList(
-    files: List<SandboxFileInfo>,
+    groups: List<SandboxFileGroup>,
     selectionMode: Boolean,
     selectedIds: Set<String>,
     onItemClick: (SandboxFileInfo) -> Unit,
     onItemLongClick: (SandboxFileInfo) -> Unit,
+    onMenuCopyPath: (SandboxFileInfo) -> Unit,
     onMenuSave: (SandboxFileInfo) -> Unit,
     onMenuDelete: (SandboxFileInfo) -> Unit
 ) {
-    if (files.isEmpty()) {
+    val totalFiles = groups.sumOf { it.files.size }
+    if (totalFiles == 0) {
         EmptyPlaceholder(
             text = stringResource(R.string.sandbox_file_others_empty),
             icon = Icons.Rounded.InsertDriveFile,
@@ -534,19 +558,25 @@ private fun SandboxOtherFileList(
         ),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        items(
-            items = files,
-            key = { it.id }
-        ) { file ->
-            SandboxOtherFileItem(
-                file = file,
-                selectionMode = selectionMode,
-                isSelected = file.id in selectedIds,
-                onClick = { onItemClick(file) },
-                onLongClick = { onItemLongClick(file) },
-                onMenuSave = { onMenuSave(file) },
-                onMenuDelete = { onMenuDelete(file) }
-            )
+        groups.forEach { group ->
+            item(key = "header_${group.key}") {
+                SandboxGroupHeader(group = group)
+            }
+            items(
+                items = group.files,
+                key = { it.id }
+            ) { file ->
+                SandboxOtherFileItem(
+                    file = file,
+                    selectionMode = selectionMode,
+                    isSelected = file.id in selectedIds,
+                    onClick = { onItemClick(file) },
+                    onLongClick = { onItemLongClick(file) },
+                    onMenuCopyPath = { onMenuCopyPath(file) },
+                    onMenuSave = { onMenuSave(file) },
+                    onMenuDelete = { onMenuDelete(file) }
+                )
+            }
         }
     }
 }
@@ -559,6 +589,7 @@ private fun SandboxOtherFileItem(
     isSelected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onMenuCopyPath: () -> Unit,
     onMenuSave: () -> Unit,
     onMenuDelete: () -> Unit
 ) {
@@ -644,6 +675,14 @@ private fun SandboxOtherFileItem(
                 shape = AppShapes.ButtonSquared
             ) {
                 DropdownMenuItem(
+                    text = { Text(stringResource(R.string.sandbox_file_copy_path)) },
+                    leadingIcon = { Icon(Icons.Rounded.ContentCopy, contentDescription = null) },
+                    onClick = {
+                        menuExpanded = false
+                        onMenuCopyPath()
+                    }
+                )
+                DropdownMenuItem(
                     text = { Text(stringResource(R.string.sandbox_file_menu_save)) },
                     leadingIcon = { Icon(Icons.Rounded.Download, contentDescription = null) },
                     onClick = {
@@ -679,6 +718,7 @@ private fun SandboxImagePreviewDialog(
     file: SandboxFileInfo,
     imagePath: String,
     onDismiss: () -> Unit,
+    onCopyPath: () -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -728,7 +768,12 @@ private fun SandboxImagePreviewDialog(
                         color = Color.White.copy(alpha = 0.7f)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SandboxPreviewActionButton(
+                            icon = Icons.Rounded.ContentCopy,
+                            label = stringResource(R.string.sandbox_file_copy_path),
+                            onClick = onCopyPath
+                        )
                         SandboxPreviewActionButton(
                             icon = Icons.Rounded.Download,
                             label = stringResource(R.string.sandbox_file_save),
@@ -807,4 +852,38 @@ private fun formatSandboxFileTime(lastModified: Long): String {
     return Instant.ofEpochMilli(lastModified)
         .atZone(ZoneId.systemDefault())
         .format(sandboxFileDateFormatter)
+}
+
+/**
+ * 分组头：文件夹图标 + 展示名 + 组内文件数。
+ */
+@Composable
+private fun SandboxGroupHeader(group: SandboxFileGroup) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Rounded.Folder,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = group.label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = group.files.size.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+        )
+    }
 }

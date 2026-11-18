@@ -141,6 +141,10 @@ interface ConversationDAO {
     @Query("DELETE FROM conversationentity WHERE assistant_id = :assistantId")
     suspend fun deleteConversationsByAssistant(assistantId: String)
 
+    /** 单列轻量查询：仅取会话标题（Agent 文件页旧会话目录分组展示用，禁止全量水合）。 */
+    @Query("SELECT title FROM conversationentity WHERE id = :conversationId LIMIT 1")
+    suspend fun getConversationTitleById(conversationId: String): String?
+
     @Query("SELECT * FROM conversationentity WHERE is_pinned = 1 ORDER BY update_at DESC")
     fun getPinnedConversations(): Flow<List<ConversationEntity>>
 

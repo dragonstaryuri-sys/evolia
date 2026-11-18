@@ -360,16 +360,22 @@ class LocalTools(
                 )
             },
             execute = {
+                // Context 生命周期修复（Extensions 详设 9.2）：普通执行结束后必须
+                // destroy 释放；Highlighter 的持久 Context 不走此路径，不受影响
                 val context = QuickJSContext.create()
-                val code = it.jsonObject["code"]?.jsonPrimitive?.contentOrNull
-                val result = context.evaluate(code)
-                buildJsonObject {
-                    put(
-                        "result", when (result) {
-                            is QuickJSObject -> JsonPrimitive(result.stringify())
-                            else -> JsonPrimitive(result.toString())
-                        }
-                    )
+                try {
+                    val code = it.jsonObject["code"]?.jsonPrimitive?.contentOrNull
+                    val result = context.evaluate(code)
+                    buildJsonObject {
+                        put(
+                            "result", when (result) {
+                                is QuickJSObject -> JsonPrimitive(result.stringify())
+                                else -> JsonPrimitive(result.toString())
+                            }
+                        )
+                    }
+                } finally {
+                    runCatching { context.destroy() }
                 }
             }
         )
@@ -377,14 +383,16 @@ class LocalTools(
 
     private val pythonSandbox by lazy { PythonSandbox(context) }
 
-    fun getPythonTools(conversationId: Uuid, userImageUrls: List<String> = emptyList()): List<Tool> {
-        val workingDir = pythonSandbox.getConversationDir(conversationId).absolutePath
+    // 沙箱以助手为边界（2026-11-18 起新文件按 <assistantId> 组织，旧会话目录不迁移）：
+    // 同一助手的 list/read/write/delete/import 工具跨会话共享同一目录
+    fun getPythonTools(assistantId: Uuid, userImageUrls: List<String> = emptyList()): List<Tool> {
+        val workingDir = pythonSandbox.getWorkDir(assistantId).absolutePath
 
         val preloadedFiles = mutableListOf<String>()
         userImageUrls.forEachIndexed { index, url ->
             runCatching {
                 val filename = "attachment_$index.png"
-                pythonSandbox.importFile(conversationId, android.net.Uri.parse(url), filename)
+                pythonSandbox.importFile(assistantId, android.net.Uri.parse(url), filename)
                 preloadedFiles.add(filename)
             }.onFailure { e ->
                 android.util.Log.w("LocalTools", "Failed to auto-import attachment $index: ${e.message}")
@@ -413,7 +421,7 @@ class LocalTools(
                 execute = {
                     val code = it.jsonObject["code"]?.jsonPrimitive?.contentOrNull ?: ""
                     try {
-                        val filesBefore = pythonSandbox.listFiles(conversationId)
+                        val filesBefore = pythonSandbox.listFiles(assistantId)
                         val beforeMap = filesBefore.associateBy { it.name }
 
                         val python = com.chaquo.python.Python.getInstance()
@@ -421,7 +429,7 @@ class LocalTools(
                         val resultJson = executor.callAttr("execute", code, workingDir).toString()
                         val baseResultObj = kotlinx.serialization.json.Json.parseToJsonElement(resultJson).jsonObject
 
-                        val filesAfter = pythonSandbox.listFiles(conversationId)
+                        val filesAfter = pythonSandbox.listFiles(assistantId)
                         val generatedFiles = filesAfter
                             .filter { file ->
                                 val before = beforeMap[file.name]
@@ -429,7 +437,7 @@ class LocalTools(
                                 before == null || file.lastModified > (before.lastModified + 500) // 容差 500ms
                             }
                             .map { file ->
-                                val uri = pythonSandbox.getFileUri(conversationId, file.name)
+                                val uri = pythonSandbox.getFileUri(assistantId, file.name)
                                 buildJsonObject {
                                     put("name", file.name)
                                     put("size", file.size)
@@ -476,7 +484,7 @@ class LocalTools(
             ),
             Tool(
                 name = "list_sandbox_files",
-                description = "列出此对话的 Python 沙盒中的所有文件。返回文件名、大小、是否为图像以及可以直接包含在回复中的 markdown 链接。",
+                description = "列出此助手的 Python 沙盒中的所有文件（沙盒以助手为边界，跨会话共享）。返回文件名、大小、是否为图像以及可以直接包含在回复中的 markdown 链接。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject { },
@@ -485,13 +493,13 @@ class LocalTools(
                 },
                 execute = {
                     try {
-                        val files = pythonSandbox.listFiles(conversationId)
+                        val files = pythonSandbox.listFiles(assistantId)
                         buildJsonObject {
                             put(
                                 "files", kotlinx.serialization.json.JsonArray(
                                     files.map { file ->
                                         buildJsonObject {
-                                            val uri = pythonSandbox.getFileUri(conversationId, file.name)
+                                            val uri = pythonSandbox.getFileUri(assistantId, file.name)
                                             put("name", file.name)
                                             put("size", file.size)
                                             put("is_image", file.isImage)
@@ -512,7 +520,7 @@ class LocalTools(
             ),
             Tool(
                 name = "read_sandbox_file",
-                description = "从 Python 沙盒中读取文本文件的具体内容。",
+                description = "从此助手的 Python 沙盒中读取文本文件的具体内容（沙盒以助手为边界，跨会话共享）。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -538,7 +546,7 @@ class LocalTools(
             ),
             Tool(
                 name = "write_sandbox_file",
-                description = "向 Python 沙盒中的文件写入内容。返回 `markdown_link`，你必须将其包含在回复中，以便用户下载该文件。",
+                description = "向此助手的 Python 沙盒中的文件写入内容（跨会话共享）。返回 `markdown_link`，你必须将其包含在回复中，以便用户下载该文件。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -565,7 +573,7 @@ class LocalTools(
 
                         if (resultObj["success"]?.jsonPrimitive?.booleanOrNull == true) {
                             val relativePath = resultObj["path"]?.jsonPrimitive?.contentOrNull ?: path
-                            val uri = pythonSandbox.getFileUri(conversationId, relativePath)
+                            val uri = pythonSandbox.getFileUri(assistantId, relativePath)
                             kotlinx.serialization.json.buildJsonObject {
                                 resultObj.forEach { (k, v) -> put(k, v) }
                                 put("uri", uri.toString())
@@ -596,7 +604,7 @@ class LocalTools(
                 execute = {
                     val path = it.jsonObject["path"]?.jsonPrimitive?.contentOrNull ?: ""
                     try {
-                        val deleted = pythonSandbox.deleteFile(conversationId, path)
+                        val deleted = pythonSandbox.deleteFile(assistantId, path)
                         buildJsonObject {
                             put("success", deleted)
                             put("path", path)
@@ -608,7 +616,7 @@ class LocalTools(
             ),
             Tool(
                 name = "import_attachment",
-                description = "将用户在消息中上传的附件文件导入到 Python 沙盒中以便后续处理。返回文件在沙盒中的相对路径。",
+                description = "将用户在消息中上传的附件文件导入到此助手的 Python 沙盒中以便后续处理（跨会话共享）。返回文件在沙盒中的相对路径。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -629,8 +637,8 @@ class LocalTools(
                     val filename = it.jsonObject["filename"]?.jsonPrimitive?.contentOrNull ?: ""
                     try {
                         val uriArg = android.net.Uri.parse(url)
-                        val relativePath = pythonSandbox.importFile(conversationId, uriArg, filename)
-                        val fileUri = pythonSandbox.getFileUri(conversationId, relativePath)
+                        val relativePath = pythonSandbox.importFile(assistantId, uriArg, filename)
+                        val fileUri = pythonSandbox.getFileUri(assistantId, relativePath)
                         buildJsonObject {
                             put("success", true)
                             put("path", relativePath)
@@ -3051,7 +3059,7 @@ class LocalTools(
             tools.addAll(getDeviceControlTools(assistantId, conversationId))
             tools.addAll(getCameraCaptureTool())
         }
-        if (options.contains(LocalToolOption.PythonEngine)) tools.addAll(getPythonTools(conversationId, userImageUrls))
+        if (options.contains(LocalToolOption.PythonEngine)) tools.addAll(getPythonTools(assistantId, userImageUrls))
         if (options.contains(LocalToolOption.ScheduleManagement)) tools.addAll(getScheduleTools(assistantId))
         if (options.contains(LocalToolOption.AgentAutomation)) tools.addAll(getAgentTaskTools(assistantId))
         if (options.contains(LocalToolOption.EmailService)) tools.addAll(getEmailTools())

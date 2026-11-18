@@ -94,6 +94,10 @@ import me.rerere.rikkahub.ui.pages.call.HistoryCallPage
 import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.menu.MenuPage
+import me.rerere.rikkahub.ui.pages.extension.ExtensionCreatorPage
+import me.rerere.rikkahub.ui.pages.extension.ExtensionDetailPage
+import me.rerere.rikkahub.ui.pages.extension.SettingMiniAppsPage
+import me.rerere.rikkahub.ui.pages.miniapp.MiniAppPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
@@ -596,6 +600,22 @@ class RouteActivity : AppCompatActivity() {
                     }
                     composable<Screen.RadioHome> {
                         RadioHomePage()
+                    }
+                    // ---------- Evolia Extensions ----------
+                    composable<Screen.SettingMiniApps> {
+                        SettingMiniAppsPage(navController = navBackStack)
+                    }
+                    composable<Screen.ExtensionDetail> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.ExtensionDetail>()
+                        ExtensionDetailPage(appId = route.appId, navController = navBackStack)
+                    }
+                    composable<Screen.ExtensionCreator> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.ExtensionCreator>()
+                        ExtensionCreatorPage(draftId = route.draftId, navController = navBackStack)
+                    }
+                    composable<Screen.MiniApp> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.MiniApp>()
+                        MiniAppPage(appId = route.appId, navController = navBackStack)
                     }
                     composable<Screen.RadioChannel> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.RadioChannel>()

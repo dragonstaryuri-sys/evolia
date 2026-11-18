@@ -8,7 +8,8 @@ import kotlin.uuid.Uuid
 
 /**
  * Manages sandboxed directories for Python execution.
- * Each conversation gets its own isolated directory.
+ * Each assistant gets its own isolated directory (shared across that assistant's conversations).
+ * Legacy layouts may still contain per-conversation directories; they are not migrated.
  */
 class PythonSandbox(private val context: Context) {
     private val baseDir = File(context.filesDir, "python_sandbox")
@@ -20,11 +21,12 @@ class PythonSandbox(private val context: Context) {
     }
 
     /**
-     * Get the sandbox directory for a specific conversation.
+     * Get the sandbox working directory for a specific assistant.
      * Creates the directory if it doesn't exist.
+     * 目录名即助手 id；同一助手跨会话共享沙箱（历史遗留的会话目录不迁移、不影响）。
      */
-    fun getConversationDir(conversationId: Uuid): File {
-        val dir = File(baseDir, conversationId.toString())
+    fun getWorkDir(assistantId: Uuid): File {
+        val dir = File(baseDir, assistantId.toString())
         if (!dir.exists()) {
             dir.mkdirs()
         }
@@ -34,8 +36,8 @@ class PythonSandbox(private val context: Context) {
     /**
      * Save output from Python to a file and return its content URI.
      */
-    fun saveOutputFile(conversationId: Uuid, filename: String, data: ByteArray): Uri {
-        val dir = getConversationDir(conversationId)
+    fun saveOutputFile(dirId: Uuid, filename: String, data: ByteArray): Uri {
+        val dir = getWorkDir(dirId)
         val file = File(dir, filename)
         file.writeBytes(data)
         return FileProvider.getUriForFile(
@@ -49,8 +51,8 @@ class PythonSandbox(private val context: Context) {
      * Copy a user-provided file into the sandbox for Python to access.
      * Returns the path within the sandbox (relative to the conversation directory).
      */
-    fun importFile(conversationId: Uuid, sourceUri: Uri, filename: String): String {
-        val dir = getConversationDir(conversationId)
+    fun importFile(dirId: Uuid, sourceUri: Uri, filename: String): String {
+        val dir = getWorkDir(dirId)
         val destFile = File(dir, filename)
 
         context.contentResolver.openInputStream(sourceUri)?.use { input ->
@@ -65,16 +67,16 @@ class PythonSandbox(private val context: Context) {
     /**
      * Get File object for a path within the sandbox.
      */
-    fun getFile(conversationId: Uuid, relativePath: String): File {
-        val dir = getConversationDir(conversationId)
+    fun getFile(dirId: Uuid, relativePath: String): File {
+        val dir = getWorkDir(dirId)
         return File(dir, relativePath)
     }
 
     /**
      * List all files in a conversation's sandbox.
      */
-    fun listFiles(conversationId: Uuid): List<FileInfo> {
-        val dir = getConversationDir(conversationId)
+    fun listFiles(dirId: Uuid): List<FileInfo> {
+        val dir = getWorkDir(dirId)
         if (!dir.exists()) return emptyList()
 
         return dir.walkTopDown()
@@ -95,8 +97,8 @@ class PythonSandbox(private val context: Context) {
      * Delete a specific file from the sandbox.
      * Returns true if the file was deleted, false if it didn't exist.
      */
-    fun deleteFile(conversationId: Uuid, relativePath: String): Boolean {
-        val dir = getConversationDir(conversationId)
+    fun deleteFile(dirId: Uuid, relativePath: String): Boolean {
+        val dir = getWorkDir(dirId)
         val file = File(dir, relativePath)
 
         // Security: ensure file is within sandbox directory
@@ -126,8 +128,8 @@ class PythonSandbox(private val context: Context) {
     /**
      * Get content URI for a file in the sandbox (for sharing/downloading).
      */
-    fun getFileUri(conversationId: Uuid, relativePath: String): Uri {
-        val file = getFile(conversationId, relativePath)
+    fun getFileUri(dirId: Uuid, relativePath: String): Uri {
+        val file = getFile(dirId, relativePath)
         return FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",

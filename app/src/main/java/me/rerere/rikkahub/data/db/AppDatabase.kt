@@ -47,9 +47,15 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         RadioAudioAssetEntity::class,
         RadioEpisodeDeletionLogEntity::class,
         BackgroundTaskEntity::class,
-        ChatUnreadMessageEntity::class
+        ChatUnreadMessageEntity::class,
+        ExtensionEntity::class,
+        ExtensionToolEntity::class,
+        ExtensionPermissionEntity::class,
+        MiniAppDataEntity::class,
+        MiniAppVersionEntity::class,
+        ExtensionInstallOperationEntity::class
     ],
-    version = 48,
+    version = 49,
     exportSchema = true
 )
 @TypeConverters(
@@ -85,9 +91,112 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun radioEpisodeDeletionLogDao(): RadioEpisodeDeletionLogDao
     abstract fun backgroundTaskDao(): BackgroundTaskDao
     abstract fun chatUnreadDao(): ChatUnreadDAO
+    abstract fun extensionDao(): ExtensionDAO
+    abstract fun extensionToolConfigDao(): ExtensionToolConfigDAO
+    abstract fun miniAppDataDao(): MiniAppDataDAO
+    abstract fun miniAppVersionDao(): MiniAppVersionDAO
 
     companion object {
         const val TAG = "AppDatabase"
+
+        /**
+         * 48 -> 49: 新建 Evolia Extensions 六张表
+         * （extensions / extension_tools / extension_permissions / mini_app_data /
+         *   mini_app_versions / extension_install_operations）。
+         *
+         * 不使用 Room FK（关联完整性由 ExtensionInstaller 业务校验，
+         * 参照 radio_* 表的既有约定）；全部表已登记 DatabaseSanitizer 白名单。
+         */
+        val MIGRATION_48_49 = object : Migration(48, 49) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 48->49 迁移：新建扩展体系六张表")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `extensions` (
+                        `app_id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `extension_type` TEXT NOT NULL,
+                        `version` TEXT NOT NULL,
+                        `source_type` TEXT NOT NULL,
+                        `source_uri` TEXT,
+                        `created_origin` TEXT NOT NULL,
+                        `manifest_version` INTEGER NOT NULL,
+                        `install_path` TEXT NOT NULL,
+                        `package_hash` TEXT NOT NULL,
+                        `is_enabled` INTEGER NOT NULL DEFAULT 1,
+                        `is_builtin` INTEGER NOT NULL DEFAULT 0,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        `installed_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`app_id`)
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `extension_tools` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `app_id` TEXT NOT NULL,
+                        `tool_id` TEXT NOT NULL,
+                        `enable` INTEGER NOT NULL DEFAULT 1,
+                        `custom_description` TEXT,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_extension_tools_app_id` ON `extension_tools` (`app_id`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_extension_tools_app_id_tool_id` ON `extension_tools` (`app_id`, `tool_id`)")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `extension_permissions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `app_id` TEXT NOT NULL,
+                        `permission` TEXT NOT NULL,
+                        `granted` INTEGER NOT NULL DEFAULT 0,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_extension_permissions_app_id` ON `extension_permissions` (`app_id`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_extension_permissions_app_id_permission` ON `extension_permissions` (`app_id`, `permission`)")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `mini_app_data` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `app_id` TEXT NOT NULL,
+                        `collection` TEXT NOT NULL,
+                        `record_id` TEXT NOT NULL,
+                        `data` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_mini_app_data_app_id_collection_record_id` ON `mini_app_data` (`app_id`, `collection`, `record_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_mini_app_data_app_id_collection` ON `mini_app_data` (`app_id`, `collection`)")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `mini_app_versions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `app_id` TEXT NOT NULL,
+                        `version` TEXT NOT NULL,
+                        `schema_version` INTEGER NOT NULL,
+                        `installed_at` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_mini_app_versions_app_id` ON `mini_app_versions` (`app_id`)")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `extension_install_operations` (
+                        `operation_id` TEXT NOT NULL,
+                        `app_id` TEXT NOT NULL,
+                        `operation_type` TEXT NOT NULL,
+                        `old_version` TEXT,
+                        `target_version` TEXT,
+                        `staging_path` TEXT,
+                        `backup_path` TEXT,
+                        `operation_state` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`operation_id`)
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_extension_install_operations_app_id` ON `extension_install_operations` (`app_id`)")
+            }
+        }
 
         /**
          * 25 -> 26: 新建 profile_history 表

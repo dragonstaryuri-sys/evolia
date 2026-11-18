@@ -87,7 +87,9 @@ object DatabaseSanitizer {
                 "chat_messages", "chat_message_nodes", "app_locks",
                 "schedule_events", "call_records",
                 "radio_channels", "radio_episodes", "radio_audio_assets", "radio_episode_deletion_logs",
-                "background_tasks", "chat_unread_messages"
+                "background_tasks", "chat_unread_messages",
+                "extensions", "extension_tools", "extension_permissions",
+                "mini_app_data", "mini_app_versions", "extension_install_operations"
             )
 
             for (sourceTableName in sourceTables) {

@@ -103,6 +103,18 @@ class EvoliaApp : Application() {
             Log.e(TAG, "Failed to initialize BackgroundTaskManager recovery", e)
         }
 
+        // 扩展安装操作启动恢复（异步，不阻塞启动）：扫描未完成的安装/更新操作，
+        // 按操作状态恢复文件与 Registry 一致（详设 8.3），并清理孤儿 staging/backup/安装目录
+        try {
+            val extensionInstaller: me.rerere.rikkahub.data.extensions.ExtensionInstaller = get()
+            get<AppScope>().launch(Dispatchers.IO) {
+                runCatching { extensionInstaller.recoverPendingOperations() }
+                    .onFailure { Log.e(TAG, "ExtensionInstaller.recoverPendingOperations failed", it) }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize extension install recovery", e)
+        }
+
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "spontaneous_notification",
             ExistingPeriodicWorkPolicy.UPDATE,

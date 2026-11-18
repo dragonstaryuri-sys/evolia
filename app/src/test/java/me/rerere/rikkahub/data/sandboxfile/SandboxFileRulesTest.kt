@@ -71,10 +71,10 @@ class SandboxFileRulesTest {
     }
 
     @Test
-    fun `derive conversation id from first level dir`() {
-        assertEquals("conv1", SandboxFileRules.deriveConversationId("conv1/out.png"))
-        assertEquals("conv1", SandboxFileRules.deriveConversationId("conv1/sub/out.png"))
-        assertNull(SandboxFileRules.deriveConversationId("direct_under_root.png"))
+    fun `derive top level dir from first level dir`() {
+        assertEquals("conv1", SandboxFileRules.deriveTopLevelDir("conv1/out.png"))
+        assertEquals("conv1", SandboxFileRules.deriveTopLevelDir("conv1/sub/out.png"))
+        assertNull(SandboxFileRules.deriveTopLevelDir("direct_under_root.png"))
     }
 
     // ------------------------------------------------------------------
@@ -231,4 +231,65 @@ class SandboxFileRulesTest {
         assertFalse(SandboxFileRules.isImageExtension("pdf"))
         assertFalse(SandboxFileRules.isImageExtension(null))
     }
+
+    // ------------------------------------------------------------------
+    // groupKeyOf / buildGroups：分组展示
+    // ------------------------------------------------------------------
+
+    private fun fileOf(
+        id: String,
+        relativePath: String,
+        source: SandboxFileSource,
+        lastModified: Long = 0L
+    ): SandboxFileInfo {
+        val dir = SandboxFileRules.deriveTopLevelDir(relativePath)
+        return SandboxFileInfo(
+            id = id,
+            name = relativePath.substringAfterLast('/'),
+            relativePath = relativePath,
+            size = 1L,
+            lastModified = lastModified,
+            mimeType = null,
+            extension = null,
+            topLevelDir = dir,
+            source = source,
+            category = SandboxFileCategory.OTHER
+        )
+    }
+
+    @Test
+    fun `group key by source and top level dir`() {
+        assertEquals(
+            "img",
+            SandboxFileRules.groupKeyOf(fileOf("a", "x.webp", SandboxFileSource.GENERATED_IMAGE))
+        )
+        assertEquals(
+            "sandbox:assistantA",
+            SandboxFileRules.groupKeyOf(fileOf("b", "assistantA/out.png", SandboxFileSource.PYTHON_SANDBOX))
+        )
+        // 根目录直属文件兜底组
+        assertEquals(
+            SandboxFileRules.GROUP_KEY_SANDBOX_ROOT,
+            SandboxFileRules.groupKeyOf(fileOf("c", "loose.txt", SandboxFileSource.PYTHON_SANDBOX))
+        )
+    }
+
+    @Test
+    fun `build groups orders by latest activity and sorts inside`() {
+        val files = listOf(
+            fileOf("1", "assistantA/old.png", SandboxFileSource.PYTHON_SANDBOX, lastModified = 100L),
+            fileOf("2", "assistantA/new.png", SandboxFileSource.PYTHON_SANDBOX, lastModified = 900L),
+            fileOf("3", "x.webp", SandboxFileSource.GENERATED_IMAGE, lastModified = 500L),
+            fileOf("4", "assistantB/mid.txt", SandboxFileSource.PYTHON_SANDBOX, lastModified = 700L)
+        )
+        val groups = SandboxFileRules.buildGroups(files) { key -> "label:$key" }
+        // 组间按组内最新时间倒序：assistantA(900) > assistantB(700) > img(500)
+        assertEquals(listOf("sandbox:assistantA", "sandbox:assistantB", "img"), groups.map { it.key })
+        // 组内按时间倒序
+        assertEquals(listOf("2", "1"), groups[0].files.map { it.id })
+        // 标签由调用方注入
+        assertEquals("label:sandbox:assistantA", groups[0].label)
+        assertEquals(1, groups[2].files.size)
+    }
+
 }
