@@ -159,9 +159,9 @@ sealed interface Screen {
     @Serializable
     data object SettingMiniApps : Screen
 
-    /** 扩展详情页（Tool 管理 / 权限授权 / 更新 / 卸载）。 */
+    /** 应用中心（发现页）：扩展创建 / 导入 / 权限授权 / 更新 / 导出 / 卸载。 */
     @Serializable
-    data class ExtensionDetail(val appId: String) : Screen
+    data object ExtensionWorkshop : Screen
 
     /** 本地扩展创建工作区（草稿编辑器）。 */
     @Serializable

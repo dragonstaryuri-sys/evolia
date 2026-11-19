@@ -586,8 +586,8 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 ### 17.4 Extension Registry 与三层权限（13.3，口径唯一）
 
 - `ExtensionRegistry` 以 Room Flow（extensions + extension_tools + extension_permissions 三源 combine，InvalidationTracker 驱动）构建内存快照 `installedExtensions: StateFlow<List<InstalledExtension>>`（含 Manifest 解析/工具配置/授权集合），**Catalog 与可用性判定全部同步走快照，禁止在 systemPrompt 注入链路读盘/查库**（systemPrompt lambda 不可挂起）。manifest 缺失的扩展跳过并记日志（孤儿清理兜底）。
-- **三层权限**：① 扩展整体启用（extensions.is_enabled）→ ② Tool 全局启用（extension_tools.enable）→ ③ 助手级 Mini App 授权（`Assistant.enabledMiniAppIds: Set<String>`，core-data 模型新字段，默认空集合兼容历史数据）。判定纯函数 `ExtensionRules.isExtensionToolAvailable`（有单测矩阵）。
-- **独立 Tool Extension 不设助手级开关**（启用+Tool启用+权限授权后对所有助手开放）；Mini App 内 Tool 额外受第三层限制。助手详情页「Mini Apps」分组只展示 Mini App（不展示 Tool 详情/独立 Tool Extension 卡片）——`AssistantToolsSubPage` 已实现。
+- **三层权限**：① 扩展整体启用（extensions.is_enabled）→ ② Tool 全局启用（extension_tools.enable）→ ③ 助手级扩展授权：Mini App 用 `Assistant.enabledMiniAppIds`、Tool 类扩展用 `Assistant.enabledToolExtensionIds`（2026-11-18 按用户需求升级，覆盖详设 13.2「独立 Tool Extension 对所有助手开放」的第一阶段规则，默认空集合兼容历史数据）。判定纯函数 `ExtensionRules.isExtensionToolAvailable`（有单测矩阵）。
+- **助手详情页入口（2026-11-18 改版）**：「MiniApps & Tools」分组（`AssistantToolsSubPage`）为 MCP 服务器同款交互——`ExtensionPickerButton`（ToggleSurface 图标 + 徽标=已启用扩展数）点击弹出 `ExtensionPicker` 抽屉，Mini App 与 Tool 类扩展分组列出、各自开关写入 `enabledMiniAppIds` / `enabledToolExtensionIds`（组件在 `ui/components/ai/ExtensionPicker.kt`）。
 - 执行入口必须完整复查（`ExtensionRegistry.checkToolCallable`，返回 ToolCallCheck 六态，映射 `ExtensionAgentTools.mapCheckError` 有单测）；**Schema 获取阶段的检查不能替代执行阶段检查**。
 
 ### 17.5 Tool Runtime（ExtensionToolRuntime，QuickJS Spike 结论 + P0 风险）
@@ -597,6 +597,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **工具代码是同步代码**：SDK 经 `ExtensionSdkPrelude`（JSON 字符串进出 + {ok,value|code,message} 信封）包装为同步 `evolia.network/storage/ui` API；原生调用在 JSCallFunction 内 `runBlocking` 到 IO 线程完成（QuickJS 专线程阻塞，无死锁）。
 - `ExtensionNetworkService`：受控网络（30s 超时 / 5MB 响应上限 / 仅 http/https / 结构化返回）；扩展代码不能获得任意网络能力，API Key 不进扩展包。
 - `ExtensionAgentTools`：MCP/Radio 同款按需 Schema 双固定工具（get_extension_tool_schema + call_extension_tool），目录 Prompt（`buildExtensionCatalogPrompt` 纯函数有单测）由 get_schema 的 systemPrompt 注入；无可用工具返回空列表不注册。装配位置：`ChatService.handleMessageComplete` buildList 尾部（RadioAgentTools 之后），`buildExtensionAgentTools` 为顶层函数（与 buildMcpAgentTools 同约定）。
+- **目录 Prompt 措辞中性化（2026-11-18 用户要求）**：`buildExtensionCatalogPrompt` 标题为「## 更多可用工具（按需 Schema）」，分组标题用扩展名本身，**禁止出现「扩展工具」分类字样**——不向模型区分扩展工具与普通工具，模型只需知道有工具可调（按需 Schema 机制说明保留）。扩展工具 description 同步中性化。有单测断言固化。
 - **临时会话双层拦截**：`TemporarySessionToolRules.blockedToolNames` 已登记 get_extension_tool_schema / call_extension_tool（扩展工具可写正式 Mini App 数据/外部业务数据，第一阶段全禁，详设 10.5；后续若放开只读工具须按权限区分，不得默认放行）。扩展工具不走助手 localTools 开关（无新 LocalToolOption）。
 - eval_javascript Context 泄漏已顺手修复（try/finally destroy，不影响 Highlighter 持久 Context）。
 
@@ -611,9 +612,10 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ### 17.7 本地创建 / 导入导出（Phase 5）
 
-- `ExtensionCreator`：草稿在 `extensions/workspaces/{draftId}/`（目录结构即包规范），与已安装严格分离（草稿不能被 Agent 调用）；创建向导自动生成 app_id + 模板脚手架；校验与安装共用 ManifestValidator / ExtensionInstaller.installFromDirectory（同一统一安装链）。
+- **页面职责拆分（2026-11-18 用户需求）**：设置 → 小应用（`SettingMiniAppsPage`）**只做运行控制**——扩展卡片列表（名称/类型/版本/N/M tools/启用开关），点卡片弹出抽屉展示工具列表（开关/自定义描述/AI 简化/恢复默认，与 MCP 工具页签同款能力，无基础设置）；发现 → 应用中心（`ExtensionWorkshopPage`，DiscoverPage 新入口）**承载开发管理**——创建向导（模板弹窗）/ 导入 .evolia / 权限授权 / 打开小应用 / 更新 / 导出 / 卸载（数据保留选择）。原 `ExtensionDetailPage` 已删除。
+- `ExtensionCreator`：草稿在 `extensions/workspaces/{draftId}/`（目录结构即包规范），与已安装严格分离（草稿不能被 Agent 调用）；创建向导自动生成 app_id + 模板脚手架；校验与安装共用 ManifestValidator / ExtensionInstaller.installFromDirectory（同一统一安装链）。**显示名称（extension name / tool name）允许中文**（仅展示与模型上下文文本，JSON 存储/调用键不受影响）；唯一标识 app_id / tool_id 已冻结为英文小写正则。
 - `ExtensionImportExport`：导出 = 安装目录打 ZIP（包规范天然不含 mini_app_data/凭证）；导入经 SAF OpenDocument → 临时文件 → installer.installFromZip(LOCAL_IMPORT)，更新判定/回滚全走 Installer。
-- 内置模板（`ExtensionTemplates`）：空白 Tool/Mini App + **天气查询 Tool 示例**（Open-Meteo）+ **个人论坛 Mini App 示例**（posts 集合 CRUD + Toast）。
+- 内置模板（`ExtensionTemplates`）：空白 Tool/Mini App + **天气查询 Tool 示例**（Open-Meteo，内联 Schema + 中英文城市映射）+ **番茄钟 Mini App 示例**（25/5 循环 + sessions 集合统计 + Toast，2026-11-18 按用户需求替换个人论坛）。**模板 JS 坑**：局部变量不得命名为与函数相同的 `today` 等（var 提升遮蔽函数 → 'not a function'，实测踩坑）；Mini App 页面输入框键盘遮挡用 `Modifier.imePadding()`（Compose 通用方案，无需自定义组件）。
 
 ### 17.8 ToolDescriptionService（MCP/扩展共用，详设 18.5）
 

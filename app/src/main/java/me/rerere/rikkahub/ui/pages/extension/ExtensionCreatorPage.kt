@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -177,7 +178,7 @@ private fun DraftListScreen(navController: NavController) {
 }
 
 @Composable
-private fun CreateDraftDialog(
+internal fun CreateDraftDialog(
     onDismiss: () -> Unit,
     onConfirm: (name: String, type: String, templateId: String) -> Unit,
 ) {
@@ -284,7 +285,7 @@ private fun DraftEditorScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding).imePadding()) {
             // 文件树（横向 chips 列表）
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
@@ -348,7 +349,7 @@ private fun DraftEditorScreen(
                             }.onSuccess { ext ->
                                 installing = false
                                 snackbarHostState.showSnackbar("已安装 ${ext.name} v${ext.version}")
-                                navController.navigate(Screen.ExtensionDetail(ext.appId))
+                                navController.navigate(Screen.ExtensionWorkshop)
                             }.onFailure { e ->
                                 installing = false
                                 validationErrors = listOf(e.message ?: "安装失败")

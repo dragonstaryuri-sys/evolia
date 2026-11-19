@@ -65,7 +65,7 @@ object ExtensionTemplates {
     const val TEMPLATE_EMPTY_TOOL = "empty_tool"
     const val TEMPLATE_EMPTY_MINIAPP = "empty_miniapp"
     const val TEMPLATE_WEATHER_TOOL = "weather_tool"
-    const val TEMPLATE_FORUM_MINIAPP = "forum_miniapp"
+    const val TEMPLATE_POMODORO_MINIAPP = "pomodoro_miniapp"
 
     data class TemplateDef(val id: String, val name: String, val type: String)
 
@@ -73,13 +73,13 @@ object ExtensionTemplates {
         TemplateDef(TEMPLATE_EMPTY_TOOL, "空白 Tool Extension", ExtensionType.TOOL),
         TemplateDef(TEMPLATE_EMPTY_MINIAPP, "空白 Mini App", ExtensionType.MINI_APP),
         TemplateDef(TEMPLATE_WEATHER_TOOL, "示例：天气查询工具", ExtensionType.TOOL),
-        TemplateDef(TEMPLATE_FORUM_MINIAPP, "示例：个人论坛", ExtensionType.MINI_APP),
+        TemplateDef(TEMPLATE_POMODORO_MINIAPP, "示例：番茄钟", ExtensionType.MINI_APP),
     )
 
     fun scaffold(name: String, appId: String, extensionType: String, templateId: String): Map<String, String> {
         return when (templateId) {
             TEMPLATE_WEATHER_TOOL -> weatherTool(name, appId)
-            TEMPLATE_FORUM_MINIAPP -> forumMiniApp(name, appId)
+            TEMPLATE_POMODORO_MINIAPP -> pomodoroMiniApp(name, appId)
             TEMPLATE_EMPTY_MINIAPP -> emptyMiniApp(name, appId)
             else -> emptyTool(name, appId)
         }
@@ -245,34 +245,33 @@ run(typeof arguments === "object" ? arguments : {});
 
     // ---------- 示例：个人论坛 Mini App ----------
 
-    private fun forumMiniApp(name: String, appId: String): Map<String, String> = mapOf(
+    private fun pomodoroMiniApp(name: String, appId: String): Map<String, String> = mapOf(
         "manifest.json" to """
 {
   "manifest_version": 1,
   "app_id": "$appId",
   "name": "$name",
-  "description": "用于管理个人帖子和讨论内容（示例小应用）",
+  "description": "番茄钟专注计时小应用（示例），支持 25/5 循环与完成记录",
   "extension_type": "mini_app",
   "version": "1.0.0",
   "frontend": { "entry": "web/index.html" },
   "storage": {
     "schema_version": 1,
     "collections": [
-      { "name": "posts", "schema": "schemas/posts.schema.json" }
+      {
+        "name": "sessions",
+        "schema": {
+          "type": "object",
+          "required": ["date", "minutes"],
+          "properties": {
+            "date": { "type": "string" },
+            "minutes": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
     ]
   },
   "permissions": ["storage.read", "storage.write", "ui.toast"]
-}
-""".trimIndent(),
-        "schemas/posts.schema.json" to """
-{
-  "type": "object",
-  "required": ["title", "content"],
-  "properties": {
-    "title": { "type": "string", "minLength": 1, "maxLength": 100 },
-    "content": { "type": "string" },
-    "author": { "type": "string" }
-  }
 }
 """.trimIndent(),
         "web/index.html" to """
@@ -283,89 +282,96 @@ run(typeof arguments === "object" ? arguments : {});
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>$name</title>
   <style>
-    body { font-family: sans-serif; margin: 0; padding: 16px; background: #f5f5f5; }
-    h1 { font-size: 20px; }
-    .card { background: #fff; border-radius: 12px; padding: 12px 16px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    .card h3 { margin: 0 0 6px; font-size: 16px; }
-    .card p { margin: 0; color: #555; font-size: 14px; white-space: pre-wrap; }
-    .meta { color: #999; font-size: 12px; margin-top: 6px; }
-    form { background: #fff; border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; }
-    input, textarea { width: 100%; box-sizing: border-box; padding: 8px; margin: 6px 0; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
-    button { width: 100%; padding: 10px; background: #4f6ef7; color: #fff; border: none; border-radius: 8px; font-size: 15px; }
-    .empty { text-align: center; color: #999; padding: 32px 0; }
+    body { font-family: sans-serif; margin: 0; padding: 16px; background: #1e1b2e; color: #eee; text-align: center; }
+    .timer { font-size: 56px; font-weight: bold; margin: 24px 0; font-variant-numeric: tabular-nums; }
+    .phase { font-size: 14px; color: #aaa; margin-bottom: 8px; }
+    button { padding: 10px 18px; margin: 6px; border: none; border-radius: 10px; font-size: 15px; }
+    .primary { background: #7c6cf7; color: #fff; }
+    .ghost { background: #333; color: #ddd; }
+    .stats { margin-top: 24px; font-size: 14px; color: #bbb; }
+    h1 { font-size: 18px; }
   </style>
 </head>
 <body>
-  <h1>$name</h1>
-  <form id="postForm">
-    <input id="title" placeholder="帖子标题" required>
-    <textarea id="content" placeholder="帖子内容" rows="3" required></textarea>
-    <button type="submit">发布帖子</button>
-  </form>
-  <div id="list"><div class="empty">加载中…</div></div>
+  <h1>🍅 $name</h1>
+  <div class="phase" id="phase">专注 25 分钟</div>
+  <div class="timer" id="timer">25:00</div>
+  <button class="primary" id="startBtn">开始</button>
+  <button class="ghost" id="resetBtn">重置</button>
+  <div class="stats" id="stats">今日完成番茄：加载中…</div>
   <script>
-    var listEl = document.getElementById('list');
+    var WORK = 25 * 60, REST = 5 * 60;
+    var remaining = WORK, resting = false, tickId = null;
+    var timerEl = document.getElementById('timer');
+    var phaseEl = document.getElementById('phase');
+    var startBtn = document.getElementById('startBtn');
 
-    function render(posts) {
-      if (!posts.length) {
-        listEl.innerHTML = '<div class="empty">还没有帖子，发第一篇吧</div>';
-        return;
-      }
-      listEl.innerHTML = '';
-      posts.forEach(function (p) {
-        var card = document.createElement('div');
-        card.className = 'card';
-        var h = document.createElement('h3');
-        h.textContent = p.title;
-        var body = document.createElement('p');
-        body.textContent = p.content;
-        var meta = document.createElement('div');
-        meta.className = 'meta';
-        meta.textContent = (p.author || '匿名') + ' · ' + new Date(p.created_at || Date.now()).toLocaleString();
-        var del = document.createElement('button');
-        del.textContent = '删除';
-        del.style.background = '#eee';
-        del.style.color = '#c00';
-        del.style.marginTop = '8px';
-        del.onclick = function () { remove(p.id); };
-        card.appendChild(h); card.appendChild(body); card.appendChild(meta); card.appendChild(del);
-        listEl.appendChild(card);
-      });
+    function render() {
+      var m = Math.floor(remaining / 60), s = remaining % 60;
+      timerEl.textContent = (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+      phaseEl.textContent = resting ? '休息 ' + (REST / 60) + ' 分钟' : '专注 ' + (WORK / 60) + ' 分钟';
     }
+    function today() { return new Date().toISOString().slice(0, 10); }
 
-    function load() {
-      Evolia.storage.list('posts', 1, 50).then(function (page) {
-        render(page.items);
+    function loadStats() {
+      // 注意：局部变量不能命名为 today（会遮蔽 today() 函数，模拟器实测踩坑）
+      Evolia.storage.list('sessions', 1, 100).then(function (page) {
+        var day = today();
+        var count = 0, minutes = 0;
+        page.items.forEach(function (it) {
+          if (it.date === day) { count++; minutes += (it.minutes || 0); }
+        });
+        document.getElementById('stats').textContent =
+          '今日完成番茄：' + count + ' 个（' + minutes + ' 分钟）';
       }).catch(function (e) {
-        listEl.innerHTML = '<div class="empty">' + e.message + '</div>';
+        document.getElementById('stats').textContent = e.message;
       });
     }
 
-    function remove(id) {
-      Evolia.storage.delete('posts', id).then(load);
-    }
+    function stop() { if (tickId) { clearInterval(tickId); tickId = null; } startBtn.textContent = '开始'; }
 
-    document.getElementById('postForm').addEventListener('submit', function (ev) {
-      ev.preventDefault();
-      var title = document.getElementById('title').value.trim();
-      var content = document.getElementById('content').value.trim();
-      if (!title || !content) return;
-      Evolia.storage.insert('posts', { title: title, content: content, author: '我', created_at: Date.now() })
-        .then(function () {
-          document.getElementById('title').value = '';
-          document.getElementById('content').value = '';
-          Evolia.ui.toast('发布成功');
-          load();
-        })
-        .catch(function (e) { Evolia.ui.toast('发布失败：' + e.message); });
+    startBtn.addEventListener('click', function () {
+      if (tickId) { stop(); return; }
+      startBtn.textContent = '暂停';
+      tickId = setInterval(function () {
+        remaining--;
+        if (remaining <= 0) {
+          stop();
+          if (!resting) {
+            Evolia.storage.insert('sessions', { date: today(), minutes: WORK / 60 })
+              .then(function () { return Evolia.ui.toast('完成一个番茄，休息一下！'); })
+              .then(function () {
+                resting = true; remaining = REST; render(); loadStats();
+                tickId = setInterval(countdown, 1000); startBtn.textContent = '暂停';
+              });
+            return;
+          } else {
+            resting = false; remaining = WORK;
+          }
+        }
+        render();
+      }, 1000);
     });
 
-    if (window.Evolia) { load(); }
-    else { listEl.innerHTML = '<div class="empty">Evolia SDK 不可用</div>'; }
+    function countdown() {
+      remaining--;
+      if (remaining <= 0) { stop(); resting = false; remaining = WORK; }
+      render();
+    }
+
+    document.getElementById('resetBtn').addEventListener('click', function () {
+      stop(); resting = false; remaining = WORK; render();
+    });
+
+    if (window.Evolia) { render(); loadStats(); }
   </script>
 </body>
 </html>
 """.trimIndent(),
-        "README.md" to "# $name\n\n示例 Mini App：个人论坛（posts 集合 CRUD + 原生 Toast）。\n",
+        "README.md" to """
+# $name
+
+示例 Mini App：番茄钟（25/5 循环计时 + 今日完成统计，数据存 sessions 集合）。
+""".trimIndent(),
     )
 }

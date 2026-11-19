@@ -502,37 +502,24 @@ fun AssistantToolsSubPage(
             }
         }
         // ═══════════════════════════════════════════════════════════════════
-        // MINI APPS GROUP（详设 13.1 第三层权限：只展示已安装 Mini App，
-        // 不展示 Tool 详情与独立 Tool Extension；开关 = 该助手是否可调用
-        // 该 Mini App 内已全局启用的 Tools）
+        // MINIAPPS & TOOLS GROUP（2026-11-18 需求：Mini App 与 Tool 类扩展
+        // 统一在此管理，MCP 服务器卡片+抽屉同款交互；开关 = 该助手是否可调用
+        // 对应扩展内已全局启用的 Tools）
         // ═══════════════════════════════════════════════════════════════════
         val extensionRegistry = koinInject<me.rerere.rikkahub.data.extensions.ExtensionRegistry>()
-        val installedExtensions by extensionRegistry.installedExtensions.collectAsStateWithLifecycle()
-        val miniApps = installedExtensions.filter {
-            it.extensionType == me.rerere.rikkahub.data.extensions.ExtensionType.MINI_APP
-        }
-        if (miniApps.isNotEmpty()) {
-            SettingsGroup(title = "Mini Apps") {
-                miniApps.forEach { miniApp ->
-                    val enabled = assistant.enabledMiniAppIds.contains(miniApp.appId)
-                    SettingGroupItem(
-                        title = miniApp.name,
-                        subtitle = miniApp.description.ifBlank { miniApp.appId },
-                        trailing = {
-                            HapticSwitch(
-                                checked = enabled,
-                                onCheckedChange = { value ->
-                                    val newIds = if (value) {
-                                        assistant.enabledMiniAppIds + miniApp.appId
-                                    } else {
-                                        assistant.enabledMiniAppIds - miniApp.appId
-                                    }
-                                    onUpdate(assistant.copy(enabledMiniAppIds = newIds))
-                                }
-                            )
-                        }
-                    )
-                }
+        if (extensionRegistry.installedExtensions.value.isNotEmpty()) {
+            SettingsGroup(title = "MiniApps & Tools") {
+                SettingGroupItem(
+                    title = "MiniApps & Tools",
+                    subtitle = "Enable extensions for this assistant",
+                    trailing = {
+                        me.rerere.rikkahub.ui.components.ai.ExtensionPickerButton(
+                            assistant = assistant,
+                            registry = extensionRegistry,
+                            onUpdateAssistant = onUpdate,
+                        )
+                    }
+                )
             }
         }
         // ═══════════════════════════════════════════════════════════════════

@@ -42,7 +42,10 @@ object ExtensionAgentTools {
         toolRuntime: ExtensionToolRuntime,
         assistant: Assistant,
     ): List<Tool> {
-        val catalog = registry.getAvailableCatalog(assistant.enabledMiniAppIds)
+        val catalog = registry.getAvailableCatalog(
+            assistantEnabledMiniAppIds = assistant.enabledMiniAppIds,
+            assistantEnabledToolExtensionIds = assistant.enabledToolExtensionIds,
+        )
         if (catalog.isEmpty()) return emptyList()
         return listOf(
             buildGetExtensionToolSchemaTool(registry, assistant, catalog),
@@ -55,17 +58,18 @@ object ExtensionAgentTools {
     internal fun buildExtensionCatalogPrompt(entries: List<ExtensionCatalogEntry>): String {
         if (entries.isEmpty()) return ""
         val builder = StringBuilder()
-        builder.appendLine("## 扩展工具目录")
+        // 措辞中性化（2026-11-18 用户要求）：不向模型区分「扩展工具/普通工具」，
+        // 只按「按需 Schema」机制说明调用方式；分组标题使用来源名称本身。
+        builder.appendLine("## 更多可用工具（按需 Schema）")
         builder.appendLine(
-            "以下扩展工具已安装可用。它们的完整参数定义(Schema)不会随请求常驻，调用前必须先执行 " +
+            "以下工具已可用。它们的完整参数定义(Schema)不会随请求常驻，调用前必须先执行 " +
                 "`get_extension_tool_schema`(传入 app_id + tool_id) 获取参数定义，再通过 " +
                 "`call_extension_tool` 执行。Tool 唯一标识格式为 `app_id:tool_id`。"
         )
         entries.groupBy { it.appId }.forEach { (appId, group) ->
             val ext = group.first()
             builder.appendLine()
-            builder.appendLine("### 扩展「${ext.extensionName}」(app_id: $appId)")
-            builder.appendLine("扩展简介：${ext.extensionDescription.replace("\n", " ")}")
+            builder.appendLine("### ${ext.extensionName}")
             group.forEach { entry ->
                 val description = entry.description.trim()
                 if (description.isBlank()) {
@@ -86,7 +90,7 @@ object ExtensionAgentTools {
         catalog: List<ExtensionCatalogEntry>,
     ): Tool = Tool(
         name = TOOL_GET_EXTENSION_TOOL_SCHEMA,
-        description = "查询扩展工具的完整参数定义(Schema)。调用扩展工具前必须先执行此工具获取参数定义，" +
+        description = "查询工具的完整参数定义(Schema)。调用目录中的工具前必须先执行此工具获取参数定义，" +
             "再按 Schema 组织参数通过 call_extension_tool 执行。",
         parameters = {
             InputSchema.Obj(
@@ -129,7 +133,12 @@ object ExtensionAgentTools {
         val (installed, resolved) = resolvedPair
 
         // Schema 获取阶段同样做可用性检查（与目录一致），但不替代执行阶段复查
-        val check = registry.checkToolCallable(appId, toolId, assistant.enabledMiniAppIds)
+        val check = registry.checkToolCallable(
+            appId = appId,
+            toolId = toolId,
+            assistantEnabledMiniAppIds = assistant.enabledMiniAppIds,
+            assistantEnabledToolExtensionIds = assistant.enabledToolExtensionIds,
+        )
         if (check != ToolCallCheck.OK) {
             return errorResult(mapCheckError(check), checkMessage(check, installed.name, resolved.name))
         }
@@ -161,7 +170,7 @@ object ExtensionAgentTools {
         assistant: Assistant,
     ): Tool = Tool(
         name = TOOL_CALL_EXTENSION_TOOL,
-        description = "执行扩展提供的工具。执行前必须先通过 get_extension_tool_schema 获取参数定义，" +
+        description = "执行目录中的工具。执行前必须先通过 get_extension_tool_schema 获取参数定义，" +
             "并按 Schema 组织 arguments。",
         parameters = {
             InputSchema.Obj(
@@ -209,7 +218,12 @@ object ExtensionAgentTools {
         val (installed, resolved) = resolvedPair
 
         // 执行前完整复查（三层权限），不可被 Schema 阶段检查替代
-        val check = registry.checkToolCallable(appId, toolId, assistant.enabledMiniAppIds)
+        val check = registry.checkToolCallable(
+            appId = appId,
+            toolId = toolId,
+            assistantEnabledMiniAppIds = assistant.enabledMiniAppIds,
+            assistantEnabledToolExtensionIds = assistant.enabledToolExtensionIds,
+        )
         if (check != ToolCallCheck.OK) {
             return errorResult(mapCheckError(check), checkMessage(check, installed.name, resolved.name))
         }
@@ -271,7 +285,7 @@ object ExtensionAgentTools {
             ToolCallCheck.EXTENSION_DISABLED -> "扩展「$extensionName」已被停用"
             ToolCallCheck.TOOL_DISABLED -> "工具「$toolName」已被全局关闭"
             ToolCallCheck.ASSISTANT_NOT_AUTHORIZED ->
-                "当前助手尚未启用 Mini App「$extensionName」，请在助手详情 → 工具与搜索 → Mini Apps 中开启"
+                "当前助手尚未启用「$extensionName」，请在助手详情 → 工具与搜索 → MiniApps & Tools 中开启"
             ToolCallCheck.PERMISSION_DENIED ->
                 "扩展「$extensionName」缺少执行「$toolName」所需权限，请在设置中授权"
             ToolCallCheck.OK -> ""

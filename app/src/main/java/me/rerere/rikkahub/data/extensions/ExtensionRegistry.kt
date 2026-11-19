@@ -179,11 +179,13 @@ class ExtensionRegistry(
      * 状态与权限均取自快照（Room Flow 实时驱动，等同最新库态）。
      *
      * @param assistantEnabledMiniAppIds 该助手已启用的 Mini App 集合
+     * @param assistantEnabledToolExtensionIds 该助手已启用的 Tool 类扩展集合（2026-11-18 需求升级）
      */
     fun checkToolCallable(
         appId: String,
         toolId: String,
         assistantEnabledMiniAppIds: Set<String>,
+        assistantEnabledToolExtensionIds: Set<String> = emptySet(),
     ): ToolCallCheck {
         val installed = getInstalled(appId) ?: return ToolCallCheck.EXTENSION_NOT_FOUND
         val tool = installed.tools.firstOrNull { it.toolId == toolId } ?: return ToolCallCheck.TOOL_NOT_FOUND
@@ -194,7 +196,12 @@ class ExtensionRegistry(
         if (config?.enable != true) return ToolCallCheck.TOOL_DISABLED
 
         val isMiniAppTool = installed.extensionType == ExtensionType.MINI_APP
-        if (isMiniAppTool && appId !in assistantEnabledMiniAppIds) {
+        val assistantEnabled = if (isMiniAppTool) {
+            appId in assistantEnabledMiniAppIds
+        } else {
+            appId in assistantEnabledToolExtensionIds
+        }
+        if (!assistantEnabled) {
             return ToolCallCheck.ASSISTANT_NOT_AUTHORIZED
         }
 
@@ -210,11 +217,13 @@ class ExtensionRegistry(
      */
     fun getAvailableCatalog(
         assistantEnabledMiniAppIds: Set<String>,
+        assistantEnabledToolExtensionIds: Set<String> = emptySet(),
     ): List<ExtensionCatalogEntry> {
         val result = mutableListOf<ExtensionCatalogEntry>()
         installedExtensions.value.forEach { installed ->
             if (!installed.isEnabled) return@forEach
             val isMiniApp = installed.extensionType == ExtensionType.MINI_APP
+            val assistantEnabledIds = if (isMiniApp) assistantEnabledMiniAppIds else assistantEnabledToolExtensionIds
             installed.tools.forEach { tool ->
                 val config = installed.toolConfigs[tool.toolId]
                 val available = ExtensionRules.isExtensionToolAvailable(
@@ -223,7 +232,7 @@ class ExtensionRegistry(
                     toolConfigEnable = config?.enable,
                     permissionsGranted = tool.permissions.all { it in installed.grantedPermissions },
                     isMiniAppTool = isMiniApp,
-                    assistantEnabled = installed.appId in assistantEnabledMiniAppIds,
+                    assistantEnabled = installed.appId in assistantEnabledIds,
                 )
                 if (available) {
                     result.add(

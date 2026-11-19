@@ -95,7 +95,7 @@ import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.menu.MenuPage
 import me.rerere.rikkahub.ui.pages.extension.ExtensionCreatorPage
-import me.rerere.rikkahub.ui.pages.extension.ExtensionDetailPage
+import me.rerere.rikkahub.ui.pages.extension.ExtensionWorkshopPage
 import me.rerere.rikkahub.ui.pages.extension.SettingMiniAppsPage
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
@@ -605,9 +605,8 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.SettingMiniApps> {
                         SettingMiniAppsPage(navController = navBackStack)
                     }
-                    composable<Screen.ExtensionDetail> { backStackEntry ->
-                        val route = backStackEntry.toRoute<Screen.ExtensionDetail>()
-                        ExtensionDetailPage(appId = route.appId, navController = navBackStack)
+                    composable<Screen.ExtensionWorkshop> {
+                        ExtensionWorkshopPage(navController = navBackStack)
                     }
                     composable<Screen.ExtensionCreator> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.ExtensionCreator>()

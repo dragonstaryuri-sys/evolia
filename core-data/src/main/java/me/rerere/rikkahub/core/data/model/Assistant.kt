@@ -78,11 +78,18 @@ data class Assistant(
     /**
      * 助手级 Mini App 授权（详设 13.1 第三层权限）：已启用 Mini App 的 app_id 集合。
      *
-     * 只影响 Mini App 内 Tools 的可调用性（第三层开关）；独立 Tool Extension 不受
-     * 此字段限制（整体启用 + Tool 全局启用后对所有助手开放）。默认空集合兼容
+     * 只影响 Mini App 内 Tools 的可调用性（第三层开关）。默认空集合兼容
      * 历史数据（JsonInstant 忽略未知 key，旧备份无缝反序列化）。
      */
     val enabledMiniAppIds: Set<String> = emptySet(),
+
+    /**
+     * 助手级 Tool Extension 授权（2026-11-18 按用户需求升级，覆盖详设 13.2 的
+     * 「独立 Tool Extension 对所有助手开放」第一阶段规则）：已启用 Tool 类扩展的
+     * app_id 集合。空集合 = 未启用任何 Tool 类扩展（默认关闭，需在助手详情
+     * 「MiniApps & Tools」中显式开启）。
+     */
+    val enabledToolExtensionIds: Set<String> = emptySet(),
 
     /**
      * 单次用户请求内允许的最大工具调用轮次（连续调用工具次数，一轮 = 一次包含工具调用的

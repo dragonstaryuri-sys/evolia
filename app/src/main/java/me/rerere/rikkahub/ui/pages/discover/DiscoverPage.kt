@@ -163,6 +163,18 @@ fun DiscoverPage() {
                     }
                 )
             }
+
+            // 8. 应用中心（扩展创建 / 导入 / 权限 / 卸载，2026-11-18 从设置-小应用拆分）
+            item {
+                DiscoverItem(
+                    title = "应用中心",
+                    description = "创建、导入与管理扩展工具和小应用",
+                    icon = { Icon(Icons.Rounded.Apps, null, tint = MaterialTheme.colorScheme.tertiary) },
+                    onClick = {
+                        navController.navigate(Screen.ExtensionWorkshop)
+                    }
+                )
+            }
         }
     }
 }

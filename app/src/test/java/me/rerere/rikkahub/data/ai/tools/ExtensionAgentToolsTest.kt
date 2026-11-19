@@ -7,6 +7,7 @@ import me.rerere.rikkahub.data.extensions.ExtensionCatalogEntry
 import me.rerere.rikkahub.data.extensions.ExtensionType
 import me.rerere.rikkahub.data.extensions.ToolCallCheck
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -39,10 +40,12 @@ class ExtensionAgentToolsTest {
     @Test
     fun `catalog prompt groups by extension and lists full ids`() {
         val prompt = ExtensionAgentTools.buildExtensionCatalogPrompt(listOf(entry()))
-        assertTrue(prompt.contains("## 扩展工具目录"))
+        // 2026-11-18 措辞中性化：不向模型区分「扩展工具/普通工具」
+        assertTrue(prompt.contains("## 更多可用工具（按需 Schema）"))
+        assertFalse(prompt.contains("扩展工具"))
         assertTrue(prompt.contains("get_extension_tool_schema"))
         assertTrue(prompt.contains("call_extension_tool"))
-        assertTrue(prompt.contains("### 扩展「个人论坛」(app_id: personal_forum)"))
+        assertTrue(prompt.contains("### 个人论坛"))
         assertTrue(prompt.contains("`personal_forum:create_post`"))
         assertTrue(prompt.contains("创建帖子"))
         assertTrue(prompt.contains("在个人论坛中创建一条帖子"))
@@ -62,8 +65,9 @@ class ExtensionAgentToolsTest {
                 entry(appId = "weather", extName = "天气", toolId = "get_weather"),
             )
         )
-        assertTrue(prompt.contains("app_id: forum"))
-        assertTrue(prompt.contains("app_id: weather"))
+        // 分组标题 = 来源名称本身（措辞中性化后不再标注 app_id/扩展字样）
+        assertTrue(prompt.contains("### 论坛"))
+        assertTrue(prompt.contains("### 天气"))
         assertTrue(prompt.contains("`forum:create`"))
         assertTrue(prompt.contains("`weather:get_weather`"))
     }
