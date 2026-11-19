@@ -598,7 +598,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **工具代码是同步代码**：SDK 经 `ExtensionSdkPrelude`（JSON 字符串进出 + {ok,value|code,message} 信封）包装为同步 `evolia.network/storage/ui` API；原生调用在 JSCallFunction 内 `runBlocking` 到 IO 线程完成（QuickJS 专线程阻塞，无死锁）。
 - `ExtensionNetworkService`：受控网络（30s 超时 / 5MB 响应上限 / 仅 http/https / 结构化返回）；扩展代码不能获得任意网络能力，API Key 不进扩展包。
 - `ExtensionAgentTools`：MCP/Radio 同款按需 Schema 双固定工具（get_extension_tool_schema + call_extension_tool），目录 Prompt（`buildExtensionCatalogPrompt` 纯函数有单测）由 get_schema 的 systemPrompt 注入；无可用工具返回空列表不注册。装配位置：`ChatService.handleMessageComplete` buildList 尾部（RadioAgentTools 之后），`buildExtensionAgentTools` 为顶层函数（与 buildMcpAgentTools 同约定）。
-- **目录 Prompt 措辞中性化（2026-11-18 用户要求）**：`buildExtensionCatalogPrompt` 标题为「## 更多可用工具（按需 Schema）」，分组标题用扩展名本身，**禁止出现「扩展工具」分类字样**——不向模型区分扩展工具与普通工具，模型只需知道有工具可调（按需 Schema 机制说明保留）。扩展工具 description 同步中性化。有单测断言固化。
+- **目录 Prompt 措辞中性化（2026-11-18 用户要求；2026-11-19 统一标题句式）**：三类目录标题统一为「## 可用工具 · <来源名>」（小机电台 / 外部服务 / 扩展），引导语使用同一句式、仅替换查询与执行工具名；分组标题用服务名/扩展名本身，**禁止出现「扩展工具」分类字样**——不向模型区分扩展工具与普通工具，模型只需知道有工具可调（按需 Schema 机制说明保留）。扩展工具 description 同步中性化。有单测断言固化。
 - **临时会话双层拦截**：`TemporarySessionToolRules.blockedToolNames` 已登记 get_extension_tool_schema / call_extension_tool（扩展工具可写正式 Mini App 数据/外部业务数据，第一阶段全禁，详设 10.5；后续若放开只读工具须按权限区分，不得默认放行）。扩展工具不走助手 localTools 开关（无新 LocalToolOption）。
 - eval_javascript Context 泄漏已顺手修复（try/finally destroy，不影响 Highlighter 持久 Context）。
 

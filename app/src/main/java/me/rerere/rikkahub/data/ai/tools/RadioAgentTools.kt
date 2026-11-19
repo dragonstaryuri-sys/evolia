@@ -106,9 +106,9 @@ fun getRadioCatalogSystemPrompt(radioService: RadioService): String {
 internal fun buildRadioCatalogPrompt(entries: List<RadioCatalogEntry>): String {
     if (entries.isEmpty()) return ""
     val builder = StringBuilder()
-    builder.appendLine("## 小机电台工具目录")
+    builder.appendLine("## 可用工具 · 小机电台")
     builder.appendLine(
-        "以下电台工具的完整参数定义(Schema)不会随请求常驻。调用前必须先执行 " +
+        "以下工具的完整参数定义(Schema)不会随请求常驻。调用前必须先执行 " +
             "`get_radio_tool_schema`(传入 tool_name) 获取参数定义，再通过 `call_radio_tool` 执行。"
     )
     entries.forEach { entry ->
@@ -131,7 +131,7 @@ private fun buildGetRadioToolSchemaTool(defs: List<RadioToolDef>): Tool {
                 properties = buildJsonObject {
                     put("tool_name", buildJsonObject {
                         put("type", JsonPrimitive("string"))
-                        put("description", JsonPrimitive("目标电台工具名称，来自小机电台工具目录"))
+                        put("description", JsonPrimitive("目标电台工具名称，来自工具目录"))
                     })
                 },
                 required = listOf("tool_name")

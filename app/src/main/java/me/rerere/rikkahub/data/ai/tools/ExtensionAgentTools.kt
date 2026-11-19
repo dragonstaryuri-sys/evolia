@@ -60,11 +60,11 @@ object ExtensionAgentTools {
         val builder = StringBuilder()
         // 措辞中性化（2026-11-18 用户要求）：不向模型区分「扩展工具/普通工具」，
         // 只按「按需 Schema」机制说明调用方式；分组标题使用来源名称本身。
-        builder.appendLine("## 更多可用工具（按需 Schema）")
+        builder.appendLine("## 可用工具 · 扩展")
         builder.appendLine(
-            "以下工具已可用。它们的完整参数定义(Schema)不会随请求常驻，调用前必须先执行 " +
+            "以下工具的完整参数定义(Schema)不会随请求常驻，调用前必须先执行 " +
                 "`get_extension_tool_schema`(传入 app_id + tool_id) 获取参数定义，再通过 " +
-                "`call_extension_tool` 执行。Tool 唯一标识格式为 `app_id:tool_id`。"
+                "`call_extension_tool` 执行。工具唯一标识格式为 `app_id:tool_id`。"
         )
         entries.groupBy { it.appId }.forEach { (appId, group) ->
             val ext = group.first()

@@ -35,7 +35,7 @@ fun buildMcpAgentTools(mcpManager: McpManager): List<Tool> {
 }
 
 /**
- * MCP 工具目录（名称 + 有效描述，按服务分组），通过 [Tool.systemPrompt] 注入系统提示。
+ * 外部服务工具目录（名称 + 有效描述，按服务分组），通过 [Tool.systemPrompt] 注入系统提示。
  * 只在存在可用工具时返回内容；目录出现一次，不随每个工具重复。
  */
 fun getMcpCatalogSystemPrompt(mcpManager: McpManager): String {
@@ -50,10 +50,11 @@ internal fun buildMcpCatalogPrompt(toolRefs: List<McpToolRef>): String {
     if (toolRefs.isEmpty()) return ""
 
     val catalogBuilder = StringBuilder()
-    catalogBuilder.appendLine("## MCP 工具目录")
+    catalogBuilder.appendLine("## 可用工具 · 外部服务")
     catalogBuilder.appendLine(
-        "以下 MCP 工具已连接可用。它们的完整参数定义(Schema)不会随请求常驻，调用前必须先执行 " +
-            "`get_mcp_tool_schema`(传入 server_id + tool_name) 获取参数定义，再通过 `call_mcp_tool` 执行。"
+        "以下工具的完整参数定义(Schema)不会随请求常驻，调用前必须先执行 " +
+            "`get_mcp_tool_schema`(传入 server_id + tool_name) 获取参数定义，再通过 `call_mcp_tool` 执行。" +
+            "server_id 见各服务标题。"
     )
     toolRefs.groupBy { it.serverId }.forEach { (serverId, refs) ->
         val serverName = refs.first().serverName

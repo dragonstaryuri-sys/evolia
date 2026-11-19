@@ -41,7 +41,7 @@ class ExtensionAgentToolsTest {
     fun `catalog prompt groups by extension and lists full ids`() {
         val prompt = ExtensionAgentTools.buildExtensionCatalogPrompt(listOf(entry()))
         // 2026-11-18 措辞中性化：不向模型区分「扩展工具/普通工具」
-        assertTrue(prompt.contains("## 更多可用工具（按需 Schema）"))
+        assertTrue(prompt.contains("## 可用工具 · 扩展"))
         assertFalse(prompt.contains("扩展工具"))
         assertTrue(prompt.contains("get_extension_tool_schema"))
         assertTrue(prompt.contains("call_extension_tool"))

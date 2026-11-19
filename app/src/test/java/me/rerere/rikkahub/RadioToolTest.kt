@@ -28,7 +28,7 @@ class RadioToolTest {
                 RadioCatalogEntry("save_episode", "保存节目文字稿\n支持创建与更新")
             )
         )
-        assertTrue(prompt.contains("## 小机电台工具目录"))
+        assertTrue(prompt.contains("## 可用工具 · 小机电台"))
         assertTrue(prompt.contains("get_radio_tool_schema"))
         assertTrue(prompt.contains("call_radio_tool"))
         assertTrue(prompt.contains("`get_channels`: 查询栏目"))
