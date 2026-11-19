@@ -17,10 +17,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -88,6 +86,7 @@ import me.rerere.rikkahub.core.data.model.AssistantRegex
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.QuickMessage
 import me.rerere.rikkahub.core.data.model.toMessageNode
+import me.rerere.rikkahub.ui.components.ime.ImeAwareScrollColumn
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.Select
@@ -127,13 +126,9 @@ fun AssistantPromptSubPage(
 
     val systemPromptTokenCount by vm.systemPromptTokenCount.collectAsStateWithLifecycle()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(0.dp)
-    ) {
+    // 2026-11-20：键盘避让统一走 ImeAware 通用组件（表单页滚动容器）——
+    // 获焦输入框经 BringIntoView 自动滚入键盘上方可视区
+    ImeAwareScrollColumn {
         // ═══════════════════════════════════════════════════════════════════
         // SYSTEM PROMPT
         // ═══════════════════════════════════════════════════════════════════

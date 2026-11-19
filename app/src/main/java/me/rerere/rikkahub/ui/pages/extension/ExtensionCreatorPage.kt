@@ -1,18 +1,13 @@
 package me.rerere.rikkahub.ui.pages.extension
 
-import android.view.WindowManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -47,14 +42,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogWindowProvider
 import androidx.navigation.NavController
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.Screen
@@ -66,6 +55,8 @@ import me.rerere.rikkahub.data.extensions.ExtensionTemplates
 import me.rerere.rikkahub.data.extensions.ExtensionType
 import me.rerere.rikkahub.ui.components.extension.ExtensionPermissionDialog
 import me.rerere.rikkahub.ui.components.extension.PendingExtensionPermissionRequest
+import me.rerere.rikkahub.ui.components.ime.DialogImeResizeEffect
+import me.rerere.rikkahub.ui.components.ime.ImeAwareEditorColumn
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -201,18 +192,9 @@ internal fun CreateDraftDialog(
     var name by remember { mutableStateOf("") }
     var selectedTemplate by remember { mutableStateOf(ExtensionTemplates.TEMPLATE_EMPTY_TOOL) }
 
-    // 2026-11-19：部分 ROM 对弹窗窗口默认 PAN 上推，叠加内容 imePadding 会
-    // 双重补偿，导致输入框顶部被裁切且滚不回顶。这里强制弹窗窗口随键盘
-    // RESIZE，配合内容 verticalScroll，任何机型上输入框都能完整滚入可视区。
-    val contentView = LocalView.current
-    androidx.compose.runtime.LaunchedEffect(contentView) {
-        var parent = contentView.parent
-        while (parent != null && parent !is DialogWindowProvider) {
-            parent = (parent as? android.view.View)?.parent
-        }
-        (parent as? DialogWindowProvider)?.window
-            ?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-    }
+    // 弹窗窗口随键盘 RESIZE（通用组件 DialogImeResizeEffect）：
+    // 输入框完整滚入可视区，不被键盘裁切
+    DialogImeResizeEffect()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -314,21 +296,10 @@ private fun DraftEditorScreen(
         loadSelectedFile(files.firstOrNull())
     }
 
-    // 2026-11-19：键盘弹出时页面上划，但只上划「必要量」——以编辑框底部
-    // 露出键盘顶为限，且编辑框顶部不越出屏幕。若按整个 IME 高度全量上移，
-    // 标题栏/文件条与编辑框上缘会被推出屏幕外，编辑框内容顶部无法滚回
-    // 可视区（实测坑）。坐标在键盘收起时测量（此时无位移，即静止布局位）。
-    var scaffoldHeightPx by remember { mutableStateOf(0f) }
-    var editorTopRestPx by remember { mutableStateOf(0f) }
-    var editorBottomRestPx by remember { mutableStateOf(0f) }
-    val imeBottomPx = with(LocalDensity.current) { WindowInsets.ime.getBottom(this).toFloat() }
-    val editorSlideUpPx = (editorBottomRestPx - (scaffoldHeightPx - imeBottomPx))
-        .coerceIn(0f, editorTopRestPx)
+    // 2026-11-20：键盘处理统一走 ImeAware 通用组件（参考
+    // FullScreenSystemPromptEditor）：编辑框完整落在键盘上方，
+    // 视口始终在屏幕内，长内容在编辑框内部滚动可完整滚到顶。
     Scaffold(
-        modifier = Modifier
-            .fillMaxSize()
-            .onGloballyPositioned { scaffoldHeightPx = it.size.height.toFloat() }
-            .graphicsLayer { translationY = -editorSlideUpPx },
         topBar = {
             OneUITopAppBar(
                 title = draftMeta?.name ?: "编辑草稿",
@@ -354,7 +325,7 @@ private fun DraftEditorScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        ImeAwareEditorColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
             // 文件树（横向 chips 列表）
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
@@ -385,17 +356,7 @@ private fun DraftEditorScreen(
                     fileContent = it
                     dirty = true
                 },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f)
-                    .padding(horizontal = 16.dp)
-                    .onGloballyPositioned { coords ->
-                        // 仅在键盘收起（无位移）时记录静止布局位置
-                        if (imeBottomPx == 0f) {
-                            editorTopRestPx = coords.boundsInWindow().top
-                            editorBottomRestPx = coords.boundsInWindow().bottom
-                        }
-                    },
+                modifier = Modifier.fillMaxSize().weight(1f).padding(horizontal = 16.dp),
                 textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 label = { Text(selectedFile ?: "未选择文件") },
             )

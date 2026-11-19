@@ -10,6 +10,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.text.KeyboardOptions
+import me.rerere.rikkahub.ui.components.ime.DialogImeResizeEffect
 import me.rerere.rikkahub.ui.theme.AppShapes
 
 /**
@@ -17,6 +18,8 @@ import me.rerere.rikkahub.ui.theme.AppShapes
  *
  * 收敛自「改标题 / 填写要求 / 添加标签」等各页手写实现。
  * onDismissRequest 由调用方决定语义（取消或保存），本组件不强制。
+ * 内置 DialogImeResizeEffect：弹窗窗口随键盘 RESIZE，输入框不会被
+ * 键盘遮挡裁切（2026-11-20 统一键盘避让，ImeAware 组件族）。
  */
 @Composable
 fun InputDialog(
@@ -33,6 +36,7 @@ fun InputDialog(
     singleLine: Boolean = false,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
+    DialogImeResizeEffect()
     AlertDialog(
         onDismissRequest = onDismissRequest,
         modifier = modifier,
