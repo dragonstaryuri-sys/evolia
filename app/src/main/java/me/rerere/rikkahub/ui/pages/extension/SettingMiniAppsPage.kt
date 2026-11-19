@@ -56,7 +56,7 @@ import org.koin.compose.koinInject
 /**
  * 设置 → 小应用（2026-11-18 职责拆分）：只做运行控制——扩展/工具启用开关、
  * 工具描述编辑与 AI 简化（MCP 设置页工具管理同款能力，无基础设置）。
- * 创建 / 导入 / 权限 / 更新 / 卸载等开发管理功能在「发现 → 应用中心」
+ * 创建 / 导入 / 权限 / 更新 / 卸载等开发管理功能在「发现 → 拓展中心」
  * （ExtensionWorkshopPage）。
  */
 @Composable
@@ -119,7 +119,7 @@ fun SettingMiniAppsPage(
                 Text("暂无已安装扩展", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "前往 发现 → 应用中心 创建或导入扩展",
+                    "前往 发现 → 拓展中心 创建或导入扩展",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

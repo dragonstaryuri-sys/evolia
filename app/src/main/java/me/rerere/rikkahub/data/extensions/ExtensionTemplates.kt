@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.data.extensions
 
-import me.rerere.rikkahub.core.data.db.entity.ExtensionEntity
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -38,22 +37,61 @@ object ExtensionImportExport {
     }
 
     /**
-     * 从 SAF Uri 导入：复制到临时文件后进入统一 Installer（staging/校验/回滚）。
+     * 从 SAF Uri 复制到临时 .evolia 文件（不安装）。调用方负责在安装
+     * （ExtensionInstaller.installFromZip）或放弃后删除临时文件。
      */
-    suspend fun importFromUri(
-        context: android.content.Context,
-        uri: android.net.Uri,
-    ): ExtensionEntity {
-        val installer = org.koin.java.KoinJavaComponent.getKoin().get<ExtensionInstaller>()
-        val tempFile = java.io.File.createTempFile("evolia_import_", ".evolia", context.cacheDir)
-        try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                tempFile.outputStream().use { input.copyTo(it) }
-            } ?: throw IllegalStateException("无法读取所选文件")
-            return installer.installFromZip(tempFile, ExtensionSourceType.LOCAL_IMPORT)
-        } finally {
-            tempFile.delete()
+    suspend fun copyToTempFile(context: android.content.Context, uri: android.net.Uri): java.io.File =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val tempFile = java.io.File.createTempFile("evolia_import_", ".evolia", context.cacheDir)
+            try {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    tempFile.outputStream().use { input.copyTo(it) }
+                } ?: throw IllegalStateException("无法读取所选文件")
+                tempFile
+            } catch (e: Throwable) {
+                tempFile.delete()
+                throw e
+            }
         }
+
+    /**
+     * 安装前预扫描：从 .evolia 包宽松解析 manifest（用于安装期权限确认弹窗）。
+     * 解析失败返回 null——调用方应直接走安装流程，由 Installer 给出准确错误。
+     */
+    suspend fun readManifestFromZip(zipFile: java.io.File): ExtensionManifest? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                java.util.zip.ZipFile(zipFile).use { zip ->
+                    val entry = zip.getEntry("manifest.json") ?: return@runCatching null
+                    zip.getInputStream(entry).use { input ->
+                        me.rerere.rikkahub.common.JsonInstant.decodeFromString<ExtensionManifest>(
+                            input.readBytes().decodeToString()
+                        )
+                    }
+                }
+            }.getOrNull()
+        }
+
+    /** 目录（本地创建工作区）版预扫描，语义同 [readManifestFromZip]。 */
+    suspend fun readManifestFromDirectory(dir: java.io.File): ExtensionManifest? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { ZipPackageReader().parseManifestFromDirectory(dir) }.getOrNull()
+        }
+
+    /**
+     * 计算安装/更新该包前需要向用户新申请的权限：全新安装 = 全部声明权限
+     * （manifest 顶层 + 全部 Tool）；更新 = 相对已装版本新增的权限。
+     */
+    fun permissionsNeedingGrant(manifest: ExtensionManifest, installed: List<InstalledExtension>): List<String> {
+        val previouslyDeclared = installed.find { it.appId == manifest.appId }
+            ?.let { it.manifest.permissions + it.manifest.tools.flatMap { tool -> tool.permissions } }
+            ?.toSet()
+            ?: emptySet()
+        return ExtensionRules.permissionsRequiringGrant(
+            previouslyDeclared = previouslyDeclared,
+            manifestPermissions = manifest.permissions,
+            toolPermissions = manifest.tools.flatMap { it.permissions },
+        )
     }
 }
 

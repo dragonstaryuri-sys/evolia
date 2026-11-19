@@ -40,7 +40,11 @@ import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
+import me.rerere.rikkahub.data.extensions.ExtensionRegistry
+import me.rerere.rikkahub.data.extensions.ExtensionType
+import me.rerere.rikkahub.ui.components.ai.ExtensionPickerButton
 import me.rerere.rikkahub.ui.components.ai.McpPickerButton
+import me.rerere.rikkahub.ui.components.ai.pickerCandidates
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
@@ -502,24 +506,45 @@ fun AssistantToolsSubPage(
             }
         }
         // ═══════════════════════════════════════════════════════════════════
-        // MINIAPPS & TOOLS GROUP（2026-11-18 需求：Mini App 与 Tool 类扩展
-        // 统一在此管理，MCP 服务器卡片+抽屉同款交互；开关 = 该助手是否可调用
-        // 对应扩展内已全局启用的 Tools）
+        // 拓展工具（2026-11-19 合并：Mini Apps 与 Tools 合并为一个模块，
+        // 模块内分「小应用 / 工具」两个条目；MCP 服务器卡片+抽屉同款交互；
+        // 开关 = 该助手是否可调用对应扩展内已全局启用的 Tools。无工具的
+        // Mini App 不在此展示——本页只配置助手可调用的工具）
         // ═══════════════════════════════════════════════════════════════════
-        val extensionRegistry = koinInject<me.rerere.rikkahub.data.extensions.ExtensionRegistry>()
-        if (extensionRegistry.installedExtensions.value.isNotEmpty()) {
-            SettingsGroup(title = "MiniApps & Tools") {
-                SettingGroupItem(
-                    title = "MiniApps & Tools",
-                    subtitle = "Enable extensions for this assistant",
-                    trailing = {
-                        me.rerere.rikkahub.ui.components.ai.ExtensionPickerButton(
-                            assistant = assistant,
-                            registry = extensionRegistry,
-                            onUpdateAssistant = onUpdate,
-                        )
-                    }
-                )
+        val extensionRegistry = koinInject<ExtensionRegistry>()
+        val installedExtensions = extensionRegistry.installedExtensions.value
+        if (pickerCandidates(installedExtensions, ExtensionType.MINI_APP).isNotEmpty() ||
+            pickerCandidates(installedExtensions, ExtensionType.TOOL).isNotEmpty()
+        ) {
+            SettingsGroup(title = "拓展工具") {
+                if (pickerCandidates(installedExtensions, ExtensionType.MINI_APP).isNotEmpty()) {
+                    SettingGroupItem(
+                        title = "Mini Apps",
+                        subtitle = "授权助手调用小应用内的工具",
+                        trailing = {
+                            ExtensionPickerButton(
+                                assistant = assistant,
+                                registry = extensionRegistry,
+                                kind = ExtensionType.MINI_APP,
+                                onUpdateAssistant = onUpdate,
+                            )
+                        }
+                    )
+                }
+                if (pickerCandidates(installedExtensions, ExtensionType.TOOL).isNotEmpty()) {
+                    SettingGroupItem(
+                        title = "Tools",
+                        subtitle = "授权助手调用扩展工具",
+                        trailing = {
+                            ExtensionPickerButton(
+                                assistant = assistant,
+                                registry = extensionRegistry,
+                                kind = ExtensionType.TOOL,
+                                onUpdateAssistant = onUpdate,
+                            )
+                        }
+                    )
+                }
             }
         }
         // ═══════════════════════════════════════════════════════════════════

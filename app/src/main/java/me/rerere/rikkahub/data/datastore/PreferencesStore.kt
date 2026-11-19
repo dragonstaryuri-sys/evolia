@@ -893,7 +893,20 @@ internal val DEFAULT_ASSISTANTS = listOf(
         temperature = 0.6f,
         systemPrompt = "你是用户创造的ai",
         isMain = true,
-        localTools = listOf(LocalToolOption.UpdateProfile, LocalToolOption.PeekUser, LocalToolOption.DeviceControl, LocalToolOption.TimeSense, LocalToolOption.RadioStation)
+        // 2026-11-19：本地工具一律跟随助手开关（Release 不再强制注入），
+        // 首装默认模板补齐原 Release 强制清单，保持默认能力不回退
+        localTools = listOf(
+            LocalToolOption.ScheduleManagement,
+            LocalToolOption.JavascriptEngine,
+            LocalToolOption.DeviceControl,
+            LocalToolOption.PythonEngine,
+            LocalToolOption.AgentAutomation,
+            LocalToolOption.WebPageReader,
+            LocalToolOption.PeekUser,
+            LocalToolOption.UpdateProfile,
+            LocalToolOption.TimeSense,
+            LocalToolOption.RadioStation,
+        )
     )
 )
 val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")

@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -41,21 +40,54 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 /**
- * 助手详情「MiniApps & Tools」入口按钮（McpPickerButton 同款交互）：
- * ToggleSurface 图标 + 徽标 = 当前助手已启用的扩展数量；点击弹出抽屉。
+ * 工具与搜索页的候选扩展（2026-11-19 拆卡需求）：
+ * - [ExtensionType.TOOL]：全部 Tool 类扩展；
+ * - [ExtensionType.MINI_APP]：仅列出声明了 Tool 的 Mini App——本页用于配置
+ *   助手可调用的工具，无工具的 Mini App 没有可授权项，不在此展示。
+ * 助手详情页卡片显隐与本选择器共用同一过滤，保证口径一致。
+ *
+ * @param kind ExtensionType.MINI_APP / ExtensionType.TOOL（String 常量）
+ */
+fun pickerCandidates(installed: List<InstalledExtension>, kind: String): List<InstalledExtension> {
+    return installed.filter {
+        it.extensionType == kind && (kind != ExtensionType.MINI_APP || it.tools.isNotEmpty())
+    }
+}
+
+private fun pickerTitle(kind: String): String = if (kind == ExtensionType.MINI_APP) {
+    "Mini Apps"
+} else {
+    "Tools"
+}
+
+private fun pickerEmptyText(kind: String): String = if (kind == ExtensionType.MINI_APP) {
+    "暂无包含工具的 Mini App"
+} else {
+    "暂未安装工具扩展"
+}
+
+/**
+ * 助手详情「Mini Apps / Tools」入口按钮（McpPickerButton 同款交互）：
+ * ToggleSurface 图标 + 徽标 = 当前助手已启用的该类扩展数量；点击弹出抽屉。
+ * Mini Apps 与 Tools 拆分为两张独立卡片，各自一个入口。
  */
 @Composable
 fun ExtensionPickerButton(
     assistant: Assistant,
     registry: ExtensionRegistry,
+    kind: String,
     modifier: Modifier = Modifier,
     onUpdateAssistant: (Assistant) -> Unit,
 ) {
     var showPicker by remember { mutableStateOf(false) }
     val installed by registry.installedExtensions.collectAsStateWithLifecycle()
-    val enabledCount = installed.count {
-        it.appId in assistant.enabledMiniAppIds || it.appId in assistant.enabledToolExtensionIds
+    val candidates = remember(installed, kind) { pickerCandidates(installed, kind) }
+    val enabledIds = if (kind == ExtensionType.MINI_APP) {
+        assistant.enabledMiniAppIds
+    } else {
+        assistant.enabledToolExtensionIds
     }
+    val enabledCount = candidates.count { it.appId in enabledIds }
     ToggleSurface(
         modifier = modifier,
         checked = enabledCount > 0,
@@ -74,7 +106,10 @@ fun ExtensionPickerButton(
                     }
                 }
             ) {
-                Icon(imageVector = Icons.Rounded.Apps, contentDescription = "MiniApps & Tools")
+                Icon(
+                    imageVector = if (kind == ExtensionType.MINI_APP) Icons.Rounded.Apps else Icons.Rounded.Build,
+                    contentDescription = pickerTitle(kind),
+                )
             }
         }
     }
@@ -93,14 +128,14 @@ fun ExtensionPickerButton(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    text = "MiniApps & Tools",
+                    text = pickerTitle(kind),
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 ExtensionPicker(
+                    kind = kind,
+                    candidates = candidates,
                     assistant = assistant,
-                    registry = registry,
-                    installed = installed,
                     onUpdateAssistant = onUpdateAssistant,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -112,14 +147,15 @@ fun ExtensionPickerButton(
 }
 
 /**
- * 抽屉内容：Mini App 与 Tool Extension 分组列出，每个扩展一张开关卡片
- * （McpPicker 同款样式）。开关写入对应的助手级授权集合。
+ * 抽屉内容：单个类别的扩展逐张开关卡片（McpPicker 同款样式）。
+ * 开关写入对应的助手级授权集合（Mini App → enabledMiniAppIds，
+ * Tool Extension → enabledToolExtensionIds）。
  */
 @Composable
 fun ExtensionPicker(
+    kind: String,
+    candidates: List<InstalledExtension>,
     assistant: Assistant,
-    registry: ExtensionRegistry,
-    installed: List<InstalledExtension>,
     modifier: Modifier = Modifier,
     onUpdateAssistant: (Assistant) -> Unit,
 ) {
@@ -127,67 +163,54 @@ fun ExtensionPicker(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        val miniApps = installed.filter { it.extensionType == ExtensionType.MINI_APP }
-        val toolExts = installed.filter { it.extensionType == ExtensionType.TOOL }
-        if (miniApps.isNotEmpty()) {
+        if (candidates.isEmpty()) {
             item {
                 Text(
-                    text = "Mini Apps",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp),
-                )
-            }
-        }
-        items(miniApps, key = { it.appId }) { ext ->
-            ExtensionPickerCard(
-                extension = ext,
-                icon = { Icon(Icons.Rounded.Apps, contentDescription = null) },
-                enabled = assistant.enabledMiniAppIds.contains(ext.appId),
-                onToggle = { value ->
-                    val newIds = if (value) {
-                        assistant.enabledMiniAppIds + ext.appId
-                    } else {
-                        assistant.enabledMiniAppIds - ext.appId
-                    }
-                    onUpdateAssistant(assistant.copy(enabledMiniAppIds = newIds))
-                },
-            )
-        }
-        if (toolExts.isNotEmpty()) {
-            item {
-                Text(
-                    text = "Tools",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp),
-                )
-            }
-        }
-        items(toolExts, key = { it.appId }) { ext ->
-            ExtensionPickerCard(
-                extension = ext,
-                icon = { Icon(Icons.Rounded.Build, contentDescription = null) },
-                enabled = assistant.enabledToolExtensionIds.contains(ext.appId),
-                onToggle = { value ->
-                    val newIds = if (value) {
-                        assistant.enabledToolExtensionIds + ext.appId
-                    } else {
-                        assistant.enabledToolExtensionIds - ext.appId
-                    }
-                    onUpdateAssistant(assistant.copy(enabledToolExtensionIds = newIds))
-                },
-            )
-        }
-        if (miniApps.isEmpty() && toolExts.isEmpty()) {
-            item {
-                Text(
-                    text = "No extensions installed",
+                    text = pickerEmptyText(kind),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(16.dp),
                 )
             }
+        }
+        items(candidates, key = { it.appId }) { ext ->
+            val enabled = if (kind == ExtensionType.MINI_APP) {
+                assistant.enabledMiniAppIds.contains(ext.appId)
+            } else {
+                assistant.enabledToolExtensionIds.contains(ext.appId)
+            }
+            ExtensionPickerCard(
+                extension = ext,
+                icon = {
+                    if (kind == ExtensionType.MINI_APP) {
+                        Icon(Icons.Rounded.Apps, contentDescription = null)
+                    } else {
+                        Icon(Icons.Rounded.Build, contentDescription = null)
+                    }
+                },
+                enabled = enabled,
+                onToggle = { value ->
+                    val newIds = if (value) {
+                        if (kind == ExtensionType.MINI_APP) {
+                            assistant.enabledMiniAppIds + ext.appId
+                        } else {
+                            assistant.enabledToolExtensionIds + ext.appId
+                        }
+                    } else {
+                        if (kind == ExtensionType.MINI_APP) {
+                            assistant.enabledMiniAppIds - ext.appId
+                        } else {
+                            assistant.enabledToolExtensionIds - ext.appId
+                        }
+                    }
+                    val updated = if (kind == ExtensionType.MINI_APP) {
+                        assistant.copy(enabledMiniAppIds = newIds)
+                    } else {
+                        assistant.copy(enabledToolExtensionIds = newIds)
+                    }
+                    onUpdateAssistant(updated)
+                },
+            )
         }
     }
 }

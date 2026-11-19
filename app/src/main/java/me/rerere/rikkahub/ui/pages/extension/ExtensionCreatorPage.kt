@@ -1,14 +1,18 @@
 package me.rerere.rikkahub.ui.pages.extension
 
+import android.view.WindowManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -43,17 +47,29 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.navigation.NavController
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.extensions.ExtensionCreator
+import me.rerere.rikkahub.data.extensions.ExtensionImportExport
 import me.rerere.rikkahub.data.extensions.ExtensionInstaller
+import me.rerere.rikkahub.data.extensions.ExtensionRegistry
 import me.rerere.rikkahub.data.extensions.ExtensionTemplates
 import me.rerere.rikkahub.data.extensions.ExtensionType
+import me.rerere.rikkahub.ui.components.extension.ExtensionPermissionDialog
+import me.rerere.rikkahub.ui.components.extension.PendingExtensionPermissionRequest
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.ToastType
+import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.compose.koinInject
 
@@ -185,13 +201,29 @@ internal fun CreateDraftDialog(
     var name by remember { mutableStateOf("") }
     var selectedTemplate by remember { mutableStateOf(ExtensionTemplates.TEMPLATE_EMPTY_TOOL) }
 
+    // 2026-11-19：部分 ROM 对弹窗窗口默认 PAN 上推，叠加内容 imePadding 会
+    // 双重补偿，导致输入框顶部被裁切且滚不回顶。这里强制弹窗窗口随键盘
+    // RESIZE，配合内容 verticalScroll，任何机型上输入框都能完整滚入可视区。
+    val contentView = LocalView.current
+    androidx.compose.runtime.LaunchedEffect(contentView) {
+        var parent = contentView.parent
+        while (parent != null && parent !is DialogWindowProvider) {
+            parent = (parent as? android.view.View)?.parent
+        }
+        (parent as? DialogWindowProvider)?.window
+            ?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = AppShapes.CardMedium,
         title = { Text("新建扩展草稿") },
         text = {
-            Column {
+            // 内容可滚动：窗口 RESIZE 后高度不足时仍可完整看到输入框
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -250,6 +282,28 @@ private fun DraftEditorScreen(
     var showNewFileDialog by remember { mutableStateOf(false) }
     var newFilePath by remember { mutableStateOf("") }
 
+    val registry = koinInject<ExtensionRegistry>()
+    val toaster = LocalToaster.current
+    // 安装权限确认（2026-11-19）：安装前预扫描 manifest，
+    // 需要新授权的权限先弹窗，被拒则放弃本次安装
+    var pendingPermissionRequest by remember { mutableStateOf<PendingExtensionPermissionRequest?>(null) }
+
+    suspend fun installDraft(dir: java.io.File, grantNewPermissions: Boolean) {
+        installing = true
+        runCatching { installer.installFromDirectory(dir, grantNewPermissions = grantNewPermissions) }
+            .onSuccess { ext ->
+                toaster.show(message = "已安装 ${ext.name} v${ext.version}", type = ToastType.Success)
+                // 安装成功：跳转拓展中心并关闭当前编辑页（从返回栈移除）
+                navController.navigate(Screen.ExtensionWorkshop) {
+                    popUpTo(Screen.ExtensionCreator(draftId)) { inclusive = true }
+                }
+            }
+            .onFailure { e ->
+                validationErrors = listOf(e.message ?: "安装失败")
+            }
+        installing = false
+    }
+
     fun loadSelectedFile(path: String?) {
         selectedFile = path
         fileContent = path?.let { creator.readFile(draftId, it) } ?: ""
@@ -260,10 +314,25 @@ private fun DraftEditorScreen(
         loadSelectedFile(files.firstOrNull())
     }
 
+    // 2026-11-19：键盘弹出时页面上划，但只上划「必要量」——以编辑框底部
+    // 露出键盘顶为限，且编辑框顶部不越出屏幕。若按整个 IME 高度全量上移，
+    // 标题栏/文件条与编辑框上缘会被推出屏幕外，编辑框内容顶部无法滚回
+    // 可视区（实测坑）。坐标在键盘收起时测量（此时无位移，即静止布局位）。
+    var scaffoldHeightPx by remember { mutableStateOf(0f) }
+    var editorTopRestPx by remember { mutableStateOf(0f) }
+    var editorBottomRestPx by remember { mutableStateOf(0f) }
+    val imeBottomPx = with(LocalDensity.current) { WindowInsets.ime.getBottom(this).toFloat() }
+    val editorSlideUpPx = (editorBottomRestPx - (scaffoldHeightPx - imeBottomPx))
+        .coerceIn(0f, editorTopRestPx)
     Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { scaffoldHeightPx = it.size.height.toFloat() }
+            .graphicsLayer { translationY = -editorSlideUpPx },
         topBar = {
             OneUITopAppBar(
                 title = draftMeta?.name ?: "编辑草稿",
+                largeTitle = false,
                 scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(),
                 navigationIcon = { BackButton { navController.popBackStack() } },
                 actions = {
@@ -285,7 +354,7 @@ private fun DraftEditorScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).imePadding()) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             // 文件树（横向 chips 列表）
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
@@ -316,7 +385,17 @@ private fun DraftEditorScreen(
                     fileContent = it
                     dirty = true
                 },
-                modifier = Modifier.fillMaxSize().weight(1f).padding(horizontal = 16.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+                    .padding(horizontal = 16.dp)
+                    .onGloballyPositioned { coords ->
+                        // 仅在键盘收起（无位移）时记录静止布局位置
+                        if (imeBottomPx == 0f) {
+                            editorTopRestPx = coords.boundsInWindow().top
+                            editorBottomRestPx = coords.boundsInWindow().bottom
+                        }
+                    },
                 textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 label = { Text(selectedFile ?: "未选择文件") },
             )
@@ -340,19 +419,30 @@ private fun DraftEditorScreen(
                         }
                         installing = true
                         scope.launch {
-                            runCatching {
-                                val dir = java.io.File(
-                                    ExtensionCreator.workspacesRoot(application),
-                                    draftId,
+                            val dir = java.io.File(
+                                ExtensionCreator.workspacesRoot(application),
+                                draftId,
+                            )
+                            val manifest = ExtensionImportExport.readManifestFromDirectory(dir)
+                            val needGrant = if (manifest != null) {
+                                ExtensionImportExport.permissionsNeedingGrant(
+                                    manifest,
+                                    registry.installedExtensions.value,
                                 )
-                                installer.installFromDirectory(dir)
-                            }.onSuccess { ext ->
+                            } else {
+                                emptyList()
+                            }
+                            if (manifest == null || needGrant.isEmpty()) {
+                                // 无需新授权（或预扫描失败走安装器报错）→ 直接安装
+                                installDraft(dir, grantNewPermissions = false)
+                            } else {
                                 installing = false
-                                snackbarHostState.showSnackbar("已安装 ${ext.name} v${ext.version}")
-                                navController.navigate(Screen.ExtensionWorkshop)
-                            }.onFailure { e ->
-                                installing = false
-                                validationErrors = listOf(e.message ?: "安装失败")
+                                pendingPermissionRequest = PendingExtensionPermissionRequest(
+                                    manifest = manifest,
+                                    permissions = needGrant,
+                                    isUpdate = registry.installedExtensions.value.any { it.appId == manifest.appId },
+                                    sourceDir = dir,
+                                )
                             }
                         }
                     },
@@ -382,6 +472,26 @@ private fun DraftEditorScreen(
             },
             confirmButton = {
                 TextButton(onClick = { validationErrors = null }) { Text("知道了") }
+            },
+        )
+    }
+
+    // 安装权限确认弹窗（拒绝则不安装）
+    pendingPermissionRequest?.let { request ->
+        ExtensionPermissionDialog(
+            request = request,
+            onConfirm = { confirmed ->
+                pendingPermissionRequest = null
+                val dir = confirmed.sourceDir
+                if (dir != null) {
+                    scope.launch { installDraft(dir, grantNewPermissions = true) }
+                }
+            },
+            onDismiss = { dismissed ->
+                pendingPermissionRequest = null
+                scope.launch {
+                    snackbarHostState.showSnackbar("需要授予权限才能安装，已取消")
+                }
             },
         )
     }

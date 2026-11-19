@@ -61,13 +61,18 @@ class ExtensionInstaller(
      * 安装或更新一个扩展包。
      *
      * @param sourceType LOCAL_CREATED / LOCAL_IMPORT / GITHUB / BUILTIN
+     * @param grantNewPermissions 新增权限是否随安装直接授权（仅用于 UI 在
+     *   安装/更新弹窗中获得用户明确同意的场景；默认 false = 新增权限待运行时申请）
      */
     suspend fun installFromZip(
         zipFile: File,
         sourceType: String,
         sourceUri: String? = null,
+        grantNewPermissions: Boolean = false,
     ): ExtensionEntity = installMutex.withLock {
-        withContext(Dispatchers.IO) { installInternal(zipFile = zipFile, sourceDir = null, sourceType, sourceUri) }
+        withContext(Dispatchers.IO) {
+            installInternal(zipFile = zipFile, sourceDir = null, sourceType, sourceUri, grantNewPermissions)
+        }
     }
 
     /**
@@ -77,8 +82,11 @@ class ExtensionInstaller(
     suspend fun installFromDirectory(
         sourceDir: File,
         sourceType: String = ExtensionSourceType.LOCAL_CREATED,
+        grantNewPermissions: Boolean = false,
     ): ExtensionEntity = installMutex.withLock {
-        withContext(Dispatchers.IO) { installInternal(zipFile = null, sourceDir = sourceDir, sourceType, null) }
+        withContext(Dispatchers.IO) {
+            installInternal(zipFile = null, sourceDir = sourceDir, sourceType, null, grantNewPermissions)
+        }
     }
 
     private suspend fun installInternal(
@@ -86,6 +94,7 @@ class ExtensionInstaller(
         sourceDir: File?,
         sourceType: String,
         sourceUri: String?,
+        grantNewPermissions: Boolean,
     ): ExtensionEntity {
         val now = System.currentTimeMillis()
         val operationId = Uuid.random().toString()
@@ -279,12 +288,16 @@ class ExtensionInstaller(
                 }
                 repository.deleteToolConfigsNotIn(manifest.appId, newToolIds.toList())
 
-                // 权限：保留仍声明权限的授权状态；新增权限重新申请（granted=false）
+                // 权限：保留仍声明权限的授权状态；新增权限默认重新申请
+                // （granted=false），UI 安装弹窗获用户同意后随安装直接授权。
+                // 声明范围 = manifest 顶层 + 全部 Tool（与运行时 checkToolCallable
+                // 的工具级校验对齐，避免只声明在 Tool 上的权限永远无行可授）
                 val mergedPermissions = ExtensionRules.mergePermissionsOnUpdate(
                     appId = manifest.appId,
                     oldPermissions = repository.getPermissions(manifest.appId),
-                    newPermissions = manifest.permissions,
+                    newPermissions = (manifest.permissions + resolvedTools.flatMap { it.permissions }).distinct(),
                     now = now,
+                    grantNew = grantNewPermissions,
                 )
                 mergedPermissions.forEach { repository.upsertPermission(it) }
 

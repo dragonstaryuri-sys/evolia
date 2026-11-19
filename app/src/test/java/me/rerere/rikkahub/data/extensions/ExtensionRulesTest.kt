@@ -130,6 +130,50 @@ class ExtensionRulesTest {
         assertTrue(merged.none { it.permission == "ui.toast" })
     }
 
+    @Test
+    fun `mergePermissionsOnUpdate grantNew authorizes new permissions`() {
+        val now = 1000L
+        val old = listOf(
+            ExtensionPermissionEntity(appId = "a", permission = "storage.read", granted = true, createdAt = 1, updatedAt = 1),
+        )
+        val merged = ExtensionRules.mergePermissionsOnUpdate(
+            "a", old, listOf("storage.read", "network.request"), now, grantNew = true
+        )
+        // 既有授权保留；用户已在安装弹窗中同意 → 新增权限随安装直接授权
+        assertTrue(merged.first { it.permission == "storage.read" }.granted)
+        assertTrue(merged.first { it.permission == "network.request" }.granted)
+    }
+
+    @Test
+    fun `permissionsRequiringGrant returns newly declared only`() {
+        // 全新安装：全部声明权限（manifest 顶层 + 工具级，去重）都需申请
+        assertEquals(
+            listOf("storage.read", "network.request", "ui.toast"),
+            ExtensionRules.permissionsRequiringGrant(
+                previouslyDeclared = emptySet(),
+                manifestPermissions = listOf("storage.read", "network.request"),
+                toolPermissions = listOf("network.request", "ui.toast"),
+            )
+        )
+        // 更新：只弹新增权限
+        assertEquals(
+            listOf("ui.toast"),
+            ExtensionRules.permissionsRequiringGrant(
+                previouslyDeclared = setOf("storage.read", "network.request"),
+                manifestPermissions = listOf("storage.read", "network.request"),
+                toolPermissions = listOf("ui.toast"),
+            )
+        )
+        // 无新增 → 空
+        assertTrue(
+            ExtensionRules.permissionsRequiringGrant(
+                previouslyDeclared = setOf("storage.read"),
+                manifestPermissions = listOf("storage.read"),
+                toolPermissions = emptyList(),
+            ).isEmpty()
+        )
+    }
+
     // ---------- 崩溃恢复决策 ----------
 
     @Test
@@ -180,17 +224,18 @@ class ExtensionRulesTest {
 
     @Test
     fun `tool availability matrix`() {
-        // 独立 Tool Extension：无需助手级开关
-        assertTrue(available())
-        // Mini App 工具：助手必须启用
+        // 2026-11-19：Mini App 工具与独立 Tool Extension 均需助手级授权
+        //（目录注入与执行路径使用同一判定，未授权工具的任何信息不进上下文）
+        assertTrue(available(assistantEnabled = true))
+        assertFalse(available(assistantEnabled = false))
         assertFalse(available(isMiniAppTool = true, assistantEnabled = false))
         assertTrue(available(isMiniAppTool = true, assistantEnabled = true))
         // 各层关闭都不行
-        assertFalse(available(extEnabled = false))
-        assertFalse(available(toolEnable = false))
-        assertFalse(available(toolEnable = null))
-        assertFalse(available(perms = false))
-        assertFalse(available(installed = false))
+        assertFalse(available(extEnabled = false, assistantEnabled = true))
+        assertFalse(available(toolEnable = false, assistantEnabled = true))
+        assertFalse(available(toolEnable = null, assistantEnabled = true))
+        assertFalse(available(perms = false, assistantEnabled = true))
+        assertFalse(available(installed = false, assistantEnabled = true))
     }
 
     @Test

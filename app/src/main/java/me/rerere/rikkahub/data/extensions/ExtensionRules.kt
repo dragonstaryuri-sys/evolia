@@ -107,13 +107,16 @@ object ExtensionRules {
 
     /**
      * 更新时合并权限记录：保留仍然声明权限的授权状态，
-     * 新增权限必须重新申请（granted = false），不得自动授予。
+     * 新增权限默认重新申请（granted = false），不得自动授予。
+     * [grantNew] = true 仅用于「用户在安装/更新弹窗中已明确授权」的场景，
+     * 此时新增权限随安装直接落为已授权。
      */
     fun mergePermissionsOnUpdate(
         appId: String,
         oldPermissions: List<ExtensionPermissionEntity>,
         newPermissions: List<String>,
         now: Long,
+        grantNew: Boolean = false,
     ): List<ExtensionPermissionEntity> {
         val oldMap = oldPermissions.associateBy { it.permission }
         return newPermissions.map { permission ->
@@ -124,12 +127,31 @@ object ExtensionRules {
                 ExtensionPermissionEntity(
                     appId = appId,
                     permission = permission,
-                    granted = false,
+                    granted = grantNew,
                     createdAt = now,
                     updatedAt = now,
                 )
             }
         }
+    }
+
+    // ---------- 安装/更新期权限确认（2026-11-19 需求） ----------
+
+    /**
+     * 计算安装/更新前需要用户授权的权限清单（纯函数）。
+     *
+     * 包声明权限 = manifest 顶层 permissions + 全部 Tool 的 permissions（去重）。
+     * 减去此前已声明过的权限（[previouslyDeclared]，全新安装传空集），
+     * 剩余即本次安装/更新需要向用户申明的新增权限。
+     */
+    fun permissionsRequiringGrant(
+        previouslyDeclared: Set<String>,
+        manifestPermissions: List<String>,
+        toolPermissions: List<String>,
+    ): List<String> {
+        return (manifestPermissions + toolPermissions)
+            .distinct()
+            .filter { it !in previouslyDeclared }
     }
 
     // ---------- 安装崩溃恢复决策（8.3，纯函数有单测） ----------
@@ -184,15 +206,17 @@ object ExtensionRules {
     // ---------- 工具可用性判定（13.3，三层权限） ----------
 
     /**
-     * 判定扩展 Tool 当前是否可被调用（不含会话级限制——临时会话由
-     * TemporarySessionToolRules / GenerationHandler 拦截）。
+     * 判定扩展 Tool 当前是否可被调用 / 是否可进入上下文目录（两者必须使用
+     * 同一判定，2026-11-19 修复：目录此前对独立 Tool Extension 跳过助手级
+     * 检查，导致未授权工具的描述仍注入上下文）。
      *
      * @param extensionInstalled 扩展已注册
      * @param extensionEnabled 扩展整体启用（第一层）
      * @param toolConfigEnable Tool 全局启用（第二层，null = 无配置行，按未启用处理）
      * @param permissionsGranted Tool 所需权限已全部授权
      * @param isMiniAppTool 是否属于 Mini App 的 Tool
-     * @param assistantEnabled 该助手是否启用了所属 Mini App（第三层；独立 Tool Extension 不检查）
+     * @param assistantEnabled 该助手是否启用了所属扩展（第三层：Mini App 看
+     *   enabledMiniAppIds，Tool Extension 看 enabledToolExtensionIds）
      */
     fun isExtensionToolAvailable(
         extensionInstalled: Boolean,
@@ -204,7 +228,7 @@ object ExtensionRules {
     ): Boolean {
         val installedAndEnabled = extensionInstalled && extensionEnabled
         val toolEnabled = toolConfigEnable == true
-        val assistantLevelOk = !isMiniAppTool || assistantEnabled
+        val assistantLevelOk = assistantEnabled
         return installedAndEnabled && toolEnabled && permissionsGranted && assistantLevelOk
     }
 

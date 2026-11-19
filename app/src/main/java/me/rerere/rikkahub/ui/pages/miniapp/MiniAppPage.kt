@@ -29,10 +29,10 @@ import androidx.navigation.NavController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import me.rerere.rikkahub.data.extensions.ExtensionPermissions
 import me.rerere.rikkahub.data.extensions.ExtensionRegistry
 import me.rerere.rikkahub.data.extensions.MiniAppBridgeSession
 import me.rerere.rikkahub.data.extensions.MiniAppStorageService
+import me.rerere.rikkahub.ui.components.extension.permissionDisplayName
 import me.rerere.rikkahub.ui.components.miniapp.MiniAppWebView
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
@@ -106,6 +106,7 @@ fun MiniAppPage(
         topBar = {
             OneUITopAppBar(
                 title = extension?.name ?: "小应用",
+                largeTitle = false,
                 scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(),
                 navigationIcon = { BackButton() },
             )
@@ -195,12 +196,3 @@ data class DialogRequest(
     val confirmText: String,
     val cancelText: String,
 )
-
-internal fun permissionDisplayName(permission: String): String = when (permission) {
-    ExtensionPermissions.STORAGE_READ -> "读取应用数据"
-    ExtensionPermissions.STORAGE_WRITE -> "写入应用数据"
-    ExtensionPermissions.NETWORK_REQUEST -> "网络请求"
-    ExtensionPermissions.UI_TOAST -> "显示提示（Toast）"
-    ExtensionPermissions.UI_DIALOG -> "显示对话框"
-    else -> permission
-}

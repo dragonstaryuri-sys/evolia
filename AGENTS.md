@@ -514,7 +514,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ### 15.3a 工具白名单（2026-11-12 与用户逐项确认，规则唯一事实源 `data/ai/tools/TemporarySessionToolRules.kt`，有单测）
 
-- **两层拦截**：① 装配层——`ChatService.handleMessageComplete` 组装 `targetOptions` 后按 `TemporarySessionToolRules.filterOptions` 过滤（Release 强制注入的 coreTools 与记忆联动的 MilestoneManagement 先组装完再统一过滤；RadioAgentTools 注入以 targetOptions 判定，过滤后自然跳过）；② 执行层——`GenerationHandler.TEMPORARY_BLOCKED_TOOLS` 引用 `TemporarySessionToolRules.blockedToolNames`，模型幻觉调用已下线工具时返回明确错误 ToolResult（助手人设引导调用被禁工具时会收到「不可用」提示，属预期行为）。
+- **两层拦截**：① 装配层——`ChatService.handleMessageComplete` 组装 `targetOptions` 后按 `TemporarySessionToolRules.filterOptions` 过滤（与记忆联动的 MilestoneManagement 先组装完再统一过滤；RadioAgentTools 注入以 targetOptions 判定，过滤后自然跳过）；② 执行层——`GenerationHandler.TEMPORARY_BLOCKED_TOOLS` 引用 `TemporarySessionToolRules.blockedToolNames`，模型幻觉调用已下线工具时返回明确错误 ToolResult（助手人设引导调用被禁工具时会收到「不可用」提示，属预期行为）。
 - **禁用清单**（写正式数据或现实副作用）：`CallControl`（call_records + 录音）、`AgentAutomation`（agent_task 落库 + 定时唤起）、`ScheduleManagement`（schedule_events + 联动提醒）、`UpdateProfile`（settingsStore 持久化档案）、`MilestoneManagement`（关系档案落库）、`RadioStation`（radio_* 表 + 音频）、`PeekUser`（agent_monitor_tasks 落库，**add/pause 是写不是读**）、`EmailService`（发真实邮件）、`DeviceControl`（锁屏/开 App/静默设系统闹钟）+ `CameraCapture`（已废弃，运行时等同 DeviceControl，getTools 同一开关连带注册设备工具组，必须同禁）。
 - **保留清单**（经用户确认）：沙盒计算（eval_python/eval_javascript + 沙盒文件四件套 + import_attachment）、`fetch_url_content`、`search_web`（开关为会话级内存态）、`generate_image`（写 GenMediaEntity 媒体库——用户接受残留）、`print_content`（opt-in）、MCP 双固定工具、`get/cancel_background_task`、`retrieve_memory`、TimeSense（systemPrompt 注入非工具）。
 
@@ -557,7 +557,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ## 17. Evolia Extensions（扩展体系，DB v49，2026-11-16）
 
-> 核心文件：`data/extensions/`（ExtensionConstants / ExtensionManifest / JsonSchemaValidator / ManifestValidator / ZipPackageReader / ExtensionRules / ExtensionInstaller / ExtensionRegistry / ExtensionToolRuntime / ExtensionSdkPrelude / MiniAppStorageService / MiniAppBridge / ExtensionNetworkService / ExtensionCreator / ExtensionTemplates）、`data/ai/tools/ExtensionAgentTools.kt` + `ToolDescriptionService.kt`、`ui/components/miniapp/MiniAppWebView.kt`、`ui/pages/extension/`（SettingMiniAppsPage / ExtensionDetailPage / ExtensionCreatorPage）、`ui/pages/miniapp/MiniAppPage.kt`、`assets/evolia/evolia-sdk.js`。
+> 核心文件：`data/extensions/`（ExtensionConstants / ExtensionManifest / JsonSchemaValidator / ManifestValidator / ZipPackageReader / ExtensionRules / ExtensionInstaller / ExtensionRegistry / ExtensionToolRuntime / ExtensionSdkPrelude / MiniAppStorageService / MiniAppBridge / ExtensionNetworkService / ExtensionCreator / ExtensionTemplates）、`data/ai/tools/ExtensionAgentTools.kt` + `ToolDescriptionService.kt`、`ui/components/miniapp/MiniAppWebView.kt`、`ui/components/extension/ExtensionPermissionDialog.kt`、`ui/pages/extension/`（SettingMiniAppsPage / ExtensionWorkshopPage / ExtensionCreatorPage）、`ui/pages/miniapp/MiniAppPage.kt`、`assets/evolia/evolia-sdk.js`。
 
 ### 17.1 规范冻结（Phase 0，禁止改动语义）
 
@@ -578,7 +578,8 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 - 流程：staging 解压+校验 → 安装操作记录（FILES_STAGED）→ 正式目录原子 rename（更新先备份）→ FILES_SWITCHED → Room withTransaction 提交（Registry+工具配置合并+权限合并+版本记录）→ DATABASE_COMMITTED → 清理 → COMPLETED 并删操作记录。
 - **同 ID 判定**（`ExtensionRules.decideInstallAction`，有单测）：类型不同禁止覆盖、同版本拒绝、降级默认禁止、更新保留用户配置。
-- **更新合并**（纯函数有单测）：`mergeToolConfigsOnUpdate`（保留仍存在 Tool 的 enable/custom_description，删已下线配置）、`mergePermissionsOnUpdate`（保留已声明权限的授权，**新增权限一律 granted=false** 不得自动授予）。
+- **更新合并**（纯函数有单测）：`mergeToolConfigsOnUpdate`（保留仍存在 Tool 的 enable/custom_description，删已下线配置）、`mergePermissionsOnUpdate`（保留已声明权限的授权，新增权限默认 granted=false 不得自动授予；`grantNew=true` 仅用于用户在安装/更新弹窗中明确同意的场景）。
+- **安装/更新期权限确认（2026-11-19，硬约束）**：三个安装入口（拓展中心导入/更新、创建页安装）安装前经 `ExtensionImportExport.readManifestFromZip/Directory` 预扫描 manifest，用 `ExtensionRules.permissionsRequiringGrant`（纯函数有单测）计算需新授权权限（更新只列新增）；非空必须弹 `ExtensionPermissionDialog`（`ui/components/extension/`），**被拒则不安装/放弃更新**并提示；同意后以 `installFromZip/installFromDirectory(grantNewPermissions = true)` 安装即授权（运行时不再重复弹窗）。权限落库范围 = manifest 顶层 + 全部 Tool 权限（与运行时工具级校验对齐，避免只声明在 Tool 上的权限永远无行可授）。
 - **崩溃恢复**：`EvoliaApp.onCreate` 异步 `recoverPendingOperations()`（幂等）——按 `ExtensionRules.decideRecovery`（纯函数有单测）对 PREPARING/FILES_STAGED 清 staging、FILES_SWITCHED/ROLLBACK_REQUIRED 恢复备份或删新目录、DATABASE_COMMITTED 仅清理；孤儿 staging/backup/安装目录一并清理。
 - 目录布局：`files/extensions/{installed,staging,backups,workspaces}/`，DB 只存相对路径（`/` 前缀绝对路径语义与其他模块一致）。
 - 卸载：先清 Room（工具配置/权限/版本/可选 mini_app_data/Registry）再删目录；**用户数据默认保留**，删除需 UI 显式勾选（详情页二次确认）。
@@ -586,8 +587,8 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 ### 17.4 Extension Registry 与三层权限（13.3，口径唯一）
 
 - `ExtensionRegistry` 以 Room Flow（extensions + extension_tools + extension_permissions 三源 combine，InvalidationTracker 驱动）构建内存快照 `installedExtensions: StateFlow<List<InstalledExtension>>`（含 Manifest 解析/工具配置/授权集合），**Catalog 与可用性判定全部同步走快照，禁止在 systemPrompt 注入链路读盘/查库**（systemPrompt lambda 不可挂起）。manifest 缺失的扩展跳过并记日志（孤儿清理兜底）。
-- **三层权限**：① 扩展整体启用（extensions.is_enabled）→ ② Tool 全局启用（extension_tools.enable）→ ③ 助手级扩展授权：Mini App 用 `Assistant.enabledMiniAppIds`、Tool 类扩展用 `Assistant.enabledToolExtensionIds`（2026-11-18 按用户需求升级，覆盖详设 13.2「独立 Tool Extension 对所有助手开放」的第一阶段规则，默认空集合兼容历史数据）。判定纯函数 `ExtensionRules.isExtensionToolAvailable`（有单测矩阵）。
-- **助手详情页入口（2026-11-18 改版）**：「MiniApps & Tools」分组（`AssistantToolsSubPage`）为 MCP 服务器同款交互——`ExtensionPickerButton`（ToggleSurface 图标 + 徽标=已启用扩展数）点击弹出 `ExtensionPicker` 抽屉，Mini App 与 Tool 类扩展分组列出、各自开关写入 `enabledMiniAppIds` / `enabledToolExtensionIds`（组件在 `ui/components/ai/ExtensionPicker.kt`）。
+- **三层权限**：① 扩展整体启用（extensions.is_enabled）→ ② Tool 全局启用（extension_tools.enable）→ ③ 助手级扩展授权：Mini App 用 `Assistant.enabledMiniAppIds`、Tool 类扩展用 `Assistant.enabledToolExtensionIds`（2026-11-18 按用户需求升级，覆盖详设 13.2「独立 Tool Extension 对所有助手开放」的第一阶段规则，默认空集合兼容历史数据）。判定纯函数 `ExtensionRules.isExtensionToolAvailable`（有单测矩阵）。**目录注入（systemPrompt）与执行路径（checkToolCallable）必须使用同一判定**：2026-11-19 修复目录对独立 Tool Extension 跳过助手级检查导致的「未授权工具描述仍进上下文」泄漏——未启用的扩展工具任何信息不得进入上下文，无可用扩展时不注册固定工具与目录。
+- **助手详情页入口（2026-11-19 拆卡）**：工具与搜索页为「Mini Apps」「Tools」两张独立卡片（`AssistantToolsSubPage`），MCP 服务器同款交互——各自 `ExtensionPickerButton(kind)`（ToggleSurface 图标 + 徽标=该类已启用数）点击弹出 `ExtensionPicker` 抽屉，开关写入 `enabledMiniAppIds` / `enabledToolExtensionIds`（组件在 `ui/components/ai/ExtensionPicker.kt`）。**Mini Apps 卡片只显示声明了工具的 Mini App**（`pickerCandidates` 过滤，卡片显隐与抽屉同口径）——该页用于配置助手可调用的工具，无工具的 Mini App 没有可授权项，不在此展示。
 - 执行入口必须完整复查（`ExtensionRegistry.checkToolCallable`，返回 ToolCallCheck 六态，映射 `ExtensionAgentTools.mapCheckError` 有单测）；**Schema 获取阶段的检查不能替代执行阶段检查**。
 
 ### 17.5 Tool Runtime（ExtensionToolRuntime，QuickJS Spike 结论 + P0 风险）
@@ -612,7 +613,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ### 17.7 本地创建 / 导入导出（Phase 5）
 
-- **页面职责拆分（2026-11-18 用户需求）**：设置 → 小应用（`SettingMiniAppsPage`）**只做运行控制**——扩展卡片列表（名称/类型/版本/N/M tools/启用开关），点卡片弹出抽屉展示工具列表（开关/自定义描述/AI 简化/恢复默认，与 MCP 工具页签同款能力，无基础设置）；发现 → 应用中心（`ExtensionWorkshopPage`，DiscoverPage 新入口）**承载开发管理**——创建向导（模板弹窗）/ 导入 .evolia / 权限授权 / 打开小应用 / 更新 / 导出 / 卸载（数据保留选择）。原 `ExtensionDetailPage` 已删除。
+- **页面职责拆分（2026-11-18 用户需求）**：设置 → 小应用（`SettingMiniAppsPage`）**只做运行控制**——扩展卡片列表（名称/类型/版本/N/M tools/启用开关），点卡片弹出抽屉展示工具列表（开关/自定义描述/AI 简化/恢复默认，与 MCP 工具页签同款能力，无基础设置）；发现 → 拓展中心（`ExtensionWorkshopPage`，DiscoverPage 新入口；2026-11-19 由「应用中心」改名，页面紧凑顶栏、卡片无开关带卸载按钮+二次确认、详情抽屉权限改基本信息只读展示）**承载开发管理**——创建向导（模板弹窗）/ 导入 .evolia / 权限授权 / 打开小应用 / 更新 / 导出 / 卸载（数据保留选择）。原 `ExtensionDetailPage` 已删除。
 - `ExtensionCreator`：草稿在 `extensions/workspaces/{draftId}/`（目录结构即包规范），与已安装严格分离（草稿不能被 Agent 调用）；创建向导自动生成 app_id + 模板脚手架；校验与安装共用 ManifestValidator / ExtensionInstaller.installFromDirectory（同一统一安装链）。**显示名称（extension name / tool name）允许中文**（仅展示与模型上下文文本，JSON 存储/调用键不受影响）；唯一标识 app_id / tool_id 已冻结为英文小写正则。
 - `ExtensionImportExport`：导出 = 安装目录打 ZIP（包规范天然不含 mini_app_data/凭证）；导入经 SAF OpenDocument → 临时文件 → installer.installFromZip(LOCAL_IMPORT)，更新判定/回滚全走 Installer。
 - 内置模板（`ExtensionTemplates`）：空白 Tool/Mini App + **天气查询 Tool 示例**（Open-Meteo，内联 Schema + 中英文城市映射）+ **番茄钟 Mini App 示例**（25/5 循环 + sessions 集合统计 + Toast，2026-11-18 按用户需求替换个人论坛）。**模板 JS 坑**：局部变量不得命名为与函数相同的 `today` 等（var 提升遮蔽函数 → 'not a function'，实测踩坑）；Mini App 页面输入框键盘遮挡用 `Modifier.imePadding()`（Compose 通用方案，无需自定义组件）。

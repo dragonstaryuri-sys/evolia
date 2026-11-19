@@ -45,6 +45,10 @@ import androidx.compose.ui.unit.sp
  * @param modifier Modifier for the app bar
  * @param navigationIcon The navigation icon (usually BackButton)
  * @param actions The action buttons
+ * @param titleMaxLines The max lines for the title
+ * @param largeTitle false = 紧凑模式：不渲染 30% 高度的大标题占位区，
+ *   仅保留状态栏 + 导航行（标题常驻），适用于内容较短、大标题区域
+ *   永远不会收起的页面（2026-11-19 应用中心 / Mini App 页反馈）
  */
 @Composable
 fun OneUITopAppBar(
@@ -54,6 +58,7 @@ fun OneUITopAppBar(
     navigationIcon: @Composable () -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
     titleMaxLines: Int = 2,
+    largeTitle: Boolean = true,
 ) {
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
@@ -64,7 +69,7 @@ fun OneUITopAppBar(
     val navBarHeight = 56.dp
 
     // Total expanded height is 30% of screen, INCLUDING status bar
-    val expandedHeight = screenHeight * 0.30f
+    val expandedHeight = if (largeTitle) screenHeight * 0.30f else statusBarHeight + navBarHeight
     val collapsedHeight = statusBarHeight + navBarHeight
 
     // The area available for the large title (below status bar + nav bar)
@@ -93,7 +98,10 @@ fun OneUITopAppBar(
     }
 
     // Collapsed title in top bar: fade in after we've scrolled past 80%
-    val collapsedTitleAlpha = if (collapseProgress > 0.80f) {
+    // (compact mode：标题常驻导航行)
+    val collapsedTitleAlpha = if (!largeTitle) {
+        1f
+    } else if (collapseProgress > 0.80f) {
         ((collapseProgress - 0.80f) / 0.20f).coerceIn(0f, 1f)
     } else {
         0f

@@ -31,8 +31,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,13 +51,19 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.extensions.ExtensionImportExport
 import me.rerere.rikkahub.data.extensions.ExtensionInstaller
+import me.rerere.rikkahub.data.extensions.ExtensionManifest
 import me.rerere.rikkahub.data.extensions.ExtensionRegistry
 import me.rerere.rikkahub.data.extensions.ExtensionRules
+import me.rerere.rikkahub.data.extensions.ExtensionSourceType
 import me.rerere.rikkahub.data.extensions.ExtensionType
 import me.rerere.rikkahub.data.extensions.InstalledExtension
+import me.rerere.rikkahub.ui.components.extension.ExtensionPermissionDialog
+import me.rerere.rikkahub.ui.components.extension.PendingExtensionPermissionRequest
+import me.rerere.rikkahub.ui.components.extension.permissionDisplayName
+import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.pages.miniapp.permissionDisplayName
+import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.compose.koinInject
 import java.io.File
@@ -81,7 +85,7 @@ fun ExtensionWorkshopPage(
     val creator = koinInject<me.rerere.rikkahub.data.extensions.ExtensionCreator>()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val snackbarHostState = remember { SnackbarHostState() }
+    val toaster = LocalToaster.current
 
     val extensions by registry.installedExtensions.collectAsState()
 
@@ -93,24 +97,63 @@ fun ExtensionWorkshopPage(
     var uninstallDeleteData by remember { mutableStateOf(false) }
     var updating by remember { mutableStateOf(false) }
     var updateError by remember { mutableStateOf<String?>(null) }
+    // 安装/更新权限确认（2026-11-19）：安装前预扫描 manifest，需要新授权的
+    // 权限先弹窗；被拒则放弃本次安装/更新
+    var pendingPermissionRequest by remember { mutableStateOf<PendingExtensionPermissionRequest?>(null) }
+    // 卡片上直接发起卸载的目标（与详情抽屉内的卸载共用同一确认弹窗）
+    var uninstallTarget by remember { mutableStateOf<InstalledExtension?>(null) }
+
+    /** 安装临时包并按结果提示；[grantNewPermissions] = 用户已在弹窗中同意授权 */
+    suspend fun installZipPackage(tempFile: File, isUpdate: Boolean, grantNewPermissions: Boolean) {
+        if (isUpdate) updating = true else importing = true
+        runCatching {
+            installer.installFromZip(
+                zipFile = tempFile,
+                sourceType = ExtensionSourceType.LOCAL_IMPORT,
+                grantNewPermissions = grantNewPermissions,
+            )
+        }.onSuccess { ext ->
+            toaster.show(
+                message = "已${if (isUpdate) "更新" else "安装"} ${ext.name} v${ext.version}",
+                type = ToastType.Success,
+            )
+        }.onFailure { e ->
+            if (isUpdate) updateError = e.message ?: "更新失败" else importError = e.message ?: "导入失败"
+        }
+        if (isUpdate) updating = false else importing = false
+        tempFile.delete()
+    }
+
+    /** 导入 .evolia：复制 → 预扫描权限 → 无新增权限直接安装，否则弹权限确认 */
+    suspend fun handlePackageUri(uri: android.net.Uri, isUpdate: Boolean) {
+        val tempFile = runCatching { ExtensionImportExport.copyToTempFile(context, uri) }
+            .onFailure { e ->
+                if (isUpdate) updateError = e.message ?: "更新失败" else importError = e.message ?: "导入失败"
+            }
+            .getOrNull() ?: return
+        val manifest = ExtensionImportExport.readManifestFromZip(tempFile)
+        if (manifest == null) {
+            // 预扫描失败：交给 Installer 完整校验，由其给出准确错误
+            installZipPackage(tempFile, isUpdate, grantNewPermissions = false)
+            return
+        }
+        val needGrant = ExtensionImportExport.permissionsNeedingGrant(manifest, extensions)
+        if (needGrant.isEmpty()) {
+            installZipPackage(tempFile, isUpdate, grantNewPermissions = false)
+        } else {
+            pendingPermissionRequest = PendingExtensionPermissionRequest(
+                manifest = manifest,
+                permissions = needGrant,
+                isUpdate = isUpdate,
+                tempZipFile = tempFile,
+            )
+        }
+    }
 
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let {
-            importing = true
-            scope.launch {
-                runCatching { ExtensionImportExport.importFromUri(context, it) }
-                    .onSuccess { ext ->
-                        importing = false
-                        snackbarHostState.showSnackbar("已安装 ${ext.name} v${ext.version}")
-                    }
-                    .onFailure { e ->
-                        importing = false
-                        importError = e.message ?: "导入失败"
-                    }
-            }
-        }
+        uri?.let { scope.launch { handlePackageUri(it, isUpdate = false) } }
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -126,9 +169,9 @@ fun ExtensionWorkshopPage(
                     }
                     tempFile.delete()
                 }.onSuccess {
-                    snackbarHostState.showSnackbar("已导出扩展包")
+                    toaster.show(message = "已导出扩展包", type = ToastType.Success)
                 }.onFailure { e ->
-                    snackbarHostState.showSnackbar("导出失败：${e.message}")
+                    toaster.show(message = "导出失败：${e.message}", type = ToastType.Error)
                 }
             }
         }
@@ -137,26 +180,14 @@ fun ExtensionWorkshopPage(
     val updateLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let {
-            updating = true
-            scope.launch {
-                runCatching { ExtensionImportExport.importFromUri(context, it) }
-                    .onSuccess { ext ->
-                        updating = false
-                        snackbarHostState.showSnackbar("已更新 ${ext.name} v${ext.version}")
-                    }
-                    .onFailure { e ->
-                        updating = false
-                        updateError = e.message ?: "更新失败"
-                    }
-            }
-        }
+        uri?.let { scope.launch { handlePackageUri(it, isUpdate = true) } }
     }
 
     Scaffold(
         topBar = {
             OneUITopAppBar(
-                title = "应用中心",
+                title = "拓展中心",
+                largeTitle = false,
                 scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(),
                 navigationIcon = { BackButton() },
                 actions = {
@@ -174,7 +205,6 @@ fun ExtensionWorkshopPage(
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         if (extensions.isEmpty()) {
             Column(
@@ -232,14 +262,20 @@ fun ExtensionWorkshopPage(
                                     modifier = Modifier.padding(top = 4.dp),
                                 )
                             }
-                            Switch(
-                                checked = extension.isEnabled,
-                                onCheckedChange = { enabled ->
-                                    scope.launch {
-                                        registry.setExtensionEnabled(extension.appId, enabled)
-                                    }
+                            // 卸载入口（卡片级，2026-11-19：卡片不再放启用开关，
+                            // 运行控制归设置-小应用页；卸载走二次确认弹窗）
+                            TextButton(
+                                onClick = {
+                                    uninstallTarget = extension
+                                    showUninstallDialog = true
                                 },
-                            )
+                            ) {
+                                Text(
+                                    "卸载",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                     }
                 }
@@ -275,6 +311,12 @@ fun ExtensionWorkshopPage(
                             if (extension.extensionType == ExtensionType.MINI_APP) "Mini App" else "Tool Extension"
                         )
                         InfoRow("来源", sourceLabel(extension.sourceType))
+                        // 2026-11-19：权限改为基本信息内只读展示（授权状态见设置-小应用）
+                        InfoRow(
+                            "权限",
+                            sheetPermissions.ifEmpty { listOf("无") }
+                                .joinToString("、") { permissionDisplayName(it) }
+                        )
                         InfoRow(
                             "安装时间",
                             SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -291,42 +333,6 @@ fun ExtensionWorkshopPage(
                             Icon(Icons.Rounded.PlayArrow, contentDescription = null)
                             Spacer(Modifier.width(4.dp))
                             Text("打开小应用")
-                        }
-                    }
-                }
-                // ---------- 权限 ----------
-                if (sheetPermissions.isNotEmpty()) {
-                    item {
-                        SectionTitle("权限")
-                        Text(
-                            "Manifest 中声明的权限只是申请；授权后扩展才能使用对应原生能力。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 4.dp),
-                        )
-                    }
-                    items(sheetPermissions, key = { "perm_$it" }) { permission ->
-                        val granted = permission in extension.grantedPermissions
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(permissionDisplayName(permission), style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    permission,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Switch(
-                                checked = granted,
-                                onCheckedChange = { value ->
-                                    scope.launch {
-                                        registry.grantPermission(extension.appId, permission, value)
-                                    }
-                                },
-                            )
                         }
                     }
                 }
@@ -373,17 +379,20 @@ fun ExtensionWorkshopPage(
                         navController.navigate(Screen.ExtensionCreator(meta.draftId))
                     }
                     .onFailure { e ->
-                        scope.launch { snackbarHostState.showSnackbar(e.message ?: "创建失败") }
+                        scope.launch { toaster.show(message = e.message ?: "创建失败", type = ToastType.Error) }
                     }
             },
         )
     }
 
-    // ---------- 卸载确认（数据保留选择，详设 14.5） ----------
+    // ---------- 卸载确认（数据保留选择，详设 14.5；卡片与详情抽屉共用） ----------
     if (showUninstallDialog) {
-        val target = sheetExtension
+        val target = uninstallTarget ?: sheetExtension
         AlertDialog(
-            onDismissRequest = { showUninstallDialog = false },
+            onDismissRequest = {
+                uninstallTarget = null
+                showUninstallDialog = false
+            },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = AppShapes.CardMedium,
             title = { Text("卸载扩展") },
@@ -409,16 +418,22 @@ fun ExtensionWorkshopPage(
             confirmButton = {
                 TextButton(onClick = {
                     val appId = target?.appId ?: return@TextButton
+                    // 确认后立即收起确认弹窗与详情抽屉，再异步执行卸载，
+                    // 结果用顶部 Toast（toolbar 形式）提示
                     showUninstallDialog = false
+                    sheetExtension = null
+                    uninstallTarget = null
                     val deleteData = uninstallDeleteData
                     scope.launch {
                         runCatching { installer.uninstall(appId, deleteMiniAppData = deleteData) }
                             .onSuccess {
-                                snackbarHostState.showSnackbar("已卸载")
-                                sheetExtension = null
+                                toaster.show(message = "已卸载", type = ToastType.Success)
                             }
                             .onFailure { e ->
-                                snackbarHostState.showSnackbar("卸载失败：${e.message}")
+                                toaster.show(
+                                    message = "卸载失败：${e.message}",
+                                    type = ToastType.Error,
+                                )
                             }
                     }
                 }) {
@@ -426,7 +441,10 @@ fun ExtensionWorkshopPage(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showUninstallDialog = false }) { Text("取消") }
+                TextButton(onClick = {
+                    uninstallTarget = null
+                    showUninstallDialog = false
+                }) { Text("取消") }
             },
         )
     }
@@ -450,6 +468,28 @@ fun ExtensionWorkshopPage(
             },
         )
     }
+
+    // ---------- 安装/更新权限确认弹窗（拒绝则不安装/放弃更新） ----------
+    pendingPermissionRequest?.let { request ->
+        ExtensionPermissionDialog(
+            request = request,
+            onConfirm = { confirmed ->
+                pendingPermissionRequest = null
+                val temp = confirmed.tempZipFile
+                if (temp != null) {
+                    scope.launch { installZipPackage(temp, confirmed.isUpdate, grantNewPermissions = true) }
+                }
+            },
+            onDismiss = { dismissed ->
+                dismissed.tempZipFile?.delete()
+                pendingPermissionRequest = null
+                toaster.show(
+                    message = "需要授予权限才能${if (dismissed.isUpdate) "更新" else "安装"}，已取消",
+                    type = ToastType.Warning,
+                )
+            },
+        )
+    }
 }
 
 @Composable
@@ -463,11 +503,6 @@ private fun InfoRow(label: String, value: String) {
         )
         Text(value, style = MaterialTheme.typography.bodySmall)
     }
-}
-
-@Composable
-private fun SectionTitle(title: String) {
-    Text(title, style = MaterialTheme.typography.titleMedium)
 }
 
 private fun sourceLabel(sourceType: String): String = when (sourceType) {

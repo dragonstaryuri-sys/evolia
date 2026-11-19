@@ -285,7 +285,7 @@ object ExtensionAgentTools {
             ToolCallCheck.EXTENSION_DISABLED -> "扩展「$extensionName」已被停用"
             ToolCallCheck.TOOL_DISABLED -> "工具「$toolName」已被全局关闭"
             ToolCallCheck.ASSISTANT_NOT_AUTHORIZED ->
-                "当前助手尚未启用「$extensionName」，请在助手详情 → 工具与搜索 → MiniApps & Tools 中开启"
+                "当前助手尚未启用「$extensionName」，请在助手详情 → 工具与搜索 的 Mini Apps / Tools 卡片中开启"
             ToolCallCheck.PERMISSION_DENIED ->
                 "扩展「$extensionName」缺少执行「$toolName」所需权限，请在设置中授权"
             ToolCallCheck.OK -> ""

@@ -142,7 +142,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.LocalDateTime
-import me.rerere.rikkahub.BuildConfig
 
 private const val TAG = "ChatService"
 
@@ -2027,29 +2026,12 @@ class ChatService(
 
                             val rawOptions = if (isMain) {
                                 // 1. 获取当前数据库里的工具配置
+                                // 2026-11-19：移除 Release 强制注入 coreTools 的逻辑——
+                                // 未开启的工具不得把任何信息带入上下文，本地工具在所有
+                                // 构建下一律严格跟随助手工具开关（首装默认模板已在
+                                // PreferencesStore 补齐核心工具）
                                 val list = assistant.localTools.toMutableList()
 
-                                // 2. ✨ 只有在 Release 模式下，才强制把这 9 个工具塞进去
-                                if (!BuildConfig.DEBUG) {
-                                    val coreTools = listOf(
-                                        LocalToolOption.ScheduleManagement,
-                                        LocalToolOption.JavascriptEngine,
-                                        LocalToolOption.DeviceControl,
-                                        LocalToolOption.PythonEngine,
-                                        LocalToolOption.AgentAutomation,
-                                        LocalToolOption.WebPageReader,
-                                        LocalToolOption.PeekUser,
-                                        LocalToolOption.UpdateProfile,
-                                        LocalToolOption.TimeSense,
-                                        LocalToolOption.RadioStation
-                                        // PrintContent 不强制注入：打印工具对所有智能体（含主助手）严格跟随工具开关
-                                    )
-                                    coreTools.forEach { tool ->
-                                        if (list.none { it::class == tool::class }) {
-                                            list.add(tool)
-                                        }
-                                    }
-                                }
                                 if (assistant.enableMemory) {
                                     if (list.none { it is LocalToolOption.MilestoneManagement }) {
                                         list.add(LocalToolOption.MilestoneManagement)
@@ -2072,8 +2054,8 @@ class ChatService(
                             }
 
                             // 临时会话工具白名单（TemporarySessionToolRules，有单测）：
-                            // 过滤写正式数据/现实副作用的选项——Release 强制注入的 coreTools
-                            // 与记忆联动的 MilestoneManagement 都先组装完再统一过滤，
+                            // 过滤写正式数据/现实副作用的选项——与记忆联动的
+                            // MilestoneManagement 先组装完再统一过滤，
                             // RadioAgentTools 注入以 targetOptions 判定，过滤后自然跳过
                             val targetOptions = if (temporarySessions.isTemporary(conversationId)) {
                                 TemporarySessionToolRules.filterOptions(rawOptions)
@@ -2111,10 +2093,11 @@ class ChatService(
                             }
 
                             // 扩展工具按需加载（AGENTS.md Extensions）：同样只注册两个固定函数，
-                            // 独立 Tool Extension 对所有助手开放（扩展启用 + Tool 全局启用 +
-                            // 权限授权即开放）；Mini App 内 Tool 额外受 assistant.enabledMiniAppIds
-                            // 第三层开关限制。可用性在执行入口完整复查；临时会话由
-                            // TemporarySessionToolRules 双层拦截。
+                            // 工具目录（systemPrompt）与执行路径使用同一可用性判定
+                            // （ExtensionRules.isExtensionToolAvailable）：Mini App 内 Tool 看
+                            // enabledMiniAppIds，独立 Tool Extension 看 enabledToolExtensionIds，
+                            // 未启用的扩展工具任何信息不进入上下文；无可用扩展时不注册固定
+                            // 工具与目录。临时会话由 TemporarySessionToolRules 双层拦截。
                             addAll(buildExtensionAgentTools(extensionRegistry, extensionToolRuntime, assistant))
 
                         },
