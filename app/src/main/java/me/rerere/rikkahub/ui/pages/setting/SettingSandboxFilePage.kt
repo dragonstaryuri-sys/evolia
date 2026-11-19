@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -68,6 +69,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,6 +91,7 @@ import coil3.request.crossfade
 import com.jvziyaoyao.scale.image.pager.ImagePager
 import com.jvziyaoyao.scale.zoomable.pager.rememberZoomablePagerState
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import me.rerere.rikkahub.common.ui.components.EmptyPlaceholder
 import me.rerere.rikkahub.common.ui.components.InlineSpinner
@@ -100,6 +103,7 @@ import me.rerere.rikkahub.data.sandboxfile.SandboxFileRules
 import me.rerere.rikkahub.data.sandboxfile.SandboxFileSource
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
@@ -120,9 +124,11 @@ private val sandboxFileDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd H
 fun SettingSandboxFilePage(vm: SandboxFileVM = koinViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val navController = LocalNavController.current
     val repository = koinInject<SandboxFileRepository>()
 
-    var tabIndex by remember { mutableIntStateOf(0) }
+    // 从预览页返回时保留当前 Tab（普通 remember 会在离开组合后丢失）
+    var tabIndex by rememberSaveable { mutableIntStateOf(0) }
     var pendingDeleteFiles by remember { mutableStateOf<List<SandboxFileInfo>?>(null) }
     var pendingExportFile by remember { mutableStateOf<SandboxFileInfo?>(null) }
 
@@ -137,6 +143,8 @@ fun SettingSandboxFilePage(vm: SandboxFileVM = koinViewModel()) {
     val imageGroups = remember(imageFiles, state.groupLabels) {
         SandboxFileRules.buildGroups(imageFiles) { key -> state.groupLabels[key] ?: key }
     }
+    // 预览左右滑动顺序与图片 Tab 的展示顺序一致（分组 → 组内按时间倒序）
+    val orderedImageFiles = remember(imageGroups) { imageGroups.flatMap { it.files } }
     val otherGroups = remember(otherFiles, state.groupLabels) {
         SandboxFileRules.buildGroups(otherFiles) { key -> state.groupLabels[key] ?: key }
     }
@@ -165,6 +173,19 @@ fun SettingSandboxFilePage(vm: SandboxFileVM = koinViewModel()) {
     LaunchedEffect(Unit) {
         vm.messages.collect { message ->
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // md/txt 走 Markdown 预览页，html 走 WebView 预览页，其余仍交给系统查看器
+    val openOtherFile: (SandboxFileInfo) -> Unit = { file ->
+        val previewKind = sandboxTextPreviewKindOf(file)
+        val previewUri = previewKind?.let { repository.contentUriFor(file) }
+        when {
+            previewKind == null || previewUri == null -> vm.openWithViewer(file)
+            previewKind == SandboxTextPreviewKind.HTML ->
+                navController.navigate(Screen.WebView(url = previewUri.toString(), title = file.name))
+            else ->
+                navController.navigate(Screen.MarkdownViewer(title = file.name, uri = previewUri.toString()))
         }
     }
 
@@ -270,7 +291,7 @@ fun SettingSandboxFilePage(vm: SandboxFileVM = koinViewModel()) {
                         selectionMode = state.selectionMode,
                         selectedIds = state.selectedIds,
                         onItemClick = { file ->
-                            if (state.selectionMode) vm.toggleSelected(file) else vm.openWithViewer(file)
+                            if (state.selectionMode) vm.toggleSelected(file) else openOtherFile(file)
                         },
                         onItemLongClick = { file ->
                             if (!state.selectionMode) vm.enterSelectionMode(file)
@@ -289,21 +310,21 @@ fun SettingSandboxFilePage(vm: SandboxFileVM = koinViewModel()) {
 
     // 图片预览（沉浸式深色画布，属豁免清单「图片预览器」）
     state.previewFile?.let { previewTarget ->
-        val previewFile = remember(previewTarget.id) {
-            // relativePath 已在扫描时校验位于来源根内；canonical 校验在仓库内完成
-            repository.resolveFile(previewTarget)
-        }
-        if (previewFile != null) {
+        if (orderedImageFiles.isNotEmpty()) {
+            val initialIndex = remember(previewTarget.id, orderedImageFiles) {
+                orderedImageFiles.indexOfFirst { it.id == previewTarget.id }.coerceAtLeast(0)
+            }
             SandboxImagePreviewDialog(
-                file = previewTarget,
-                imagePath = previewFile.absolutePath,
+                files = orderedImageFiles,
+                initialIndex = initialIndex,
+                resolvePath = { file -> repository.resolveFile(file)?.absolutePath },
                 onDismiss = { vm.closePreview() },
-                onCopyPath = { vm.copyPath(previewTarget) },
-                onSave = {
-                    pendingExportFile = previewTarget
-                    createDocumentLauncher.launch(previewTarget.name)
+                onCopyPath = { file -> vm.copyPath(file) },
+                onSave = { file ->
+                    pendingExportFile = file
+                    createDocumentLauncher.launch(file.name)
                 },
-                onDelete = { pendingDeleteFiles = listOf(previewTarget) }
+                onDelete = { file -> pendingDeleteFiles = listOf(file) }
             )
         }
     }
@@ -710,19 +731,31 @@ private fun SandboxOtherFileItem(
 }
 
 /**
- * 图片预览：全屏深色画布 + 缩放查看 + 文件信息 + 保存/删除。
+ * 图片预览：全屏深色画布 + 左右滑动切换 + 缩放查看 + 文件信息 + 保存/删除。
  * （沉浸式深色画布豁免清单：图片预览器允许固定深色前景）
  */
 @Composable
 private fun SandboxImagePreviewDialog(
-    file: SandboxFileInfo,
-    imagePath: String,
+    files: List<SandboxFileInfo>,
+    initialIndex: Int,
+    resolvePath: (SandboxFileInfo) -> String?,
     onDismiss: () -> Unit,
-    onCopyPath: () -> Unit,
-    onSave: () -> Unit,
-    onDelete: () -> Unit
+    onCopyPath: (SandboxFileInfo) -> Unit,
+    onSave: (SandboxFileInfo) -> Unit,
+    onDelete: (SandboxFileInfo) -> Unit
 ) {
-    val zoomState = rememberZoomablePagerState { 1 }
+    if (files.isEmpty()) return
+    val zoomState = rememberZoomablePagerState { files.size }
+
+    // 打开时定位到用户点击的那张图片
+    LaunchedEffect(initialIndex) {
+        if (initialIndex in files.indices) {
+            zoomState.scrollToPage(initialIndex)
+        }
+    }
+
+    val currentFile = files.getOrNull(zoomState.currentPage) ?: files.first()
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -738,11 +771,30 @@ private fun SandboxImagePreviewDialog(
             ImagePager(
                 modifier = Modifier.fillMaxSize(),
                 pagerState = zoomState,
-                imageLoader = { _ ->
-                    val painter = rememberAsyncImagePainter(imagePath)
+                imageLoader = { index ->
+                    val file = files.getOrNull(index)
+                    val path = remember(file?.id) { file?.let(resolvePath) }
+                    val painter = rememberAsyncImagePainter(path.orEmpty())
                     Pair(painter, painter.intrinsicSize)
                 }
             )
+            if (files.size > 1) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = 12.dp),
+                    shape = AppShapes.ButtonPill,
+                    color = Color.White.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = "${zoomState.currentPage + 1} / ${files.size}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
+            }
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -752,7 +804,7 @@ private fun SandboxImagePreviewDialog(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = file.name,
+                        text = currentFile.name,
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White,
                         maxLines = 2,
@@ -761,8 +813,8 @@ private fun SandboxImagePreviewDialog(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "%s · %s".format(
-                            formatSandboxFileSize(file.size),
-                            formatSandboxFileTime(file.lastModified)
+                            formatSandboxFileSize(currentFile.size),
+                            formatSandboxFileTime(currentFile.lastModified)
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.7f)
@@ -772,17 +824,17 @@ private fun SandboxImagePreviewDialog(
                         SandboxPreviewActionButton(
                             icon = Icons.Rounded.ContentCopy,
                             label = stringResource(R.string.sandbox_file_copy_path),
-                            onClick = onCopyPath
+                            onClick = { onCopyPath(currentFile) }
                         )
                         SandboxPreviewActionButton(
                             icon = Icons.Rounded.Download,
                             label = stringResource(R.string.sandbox_file_save),
-                            onClick = onSave
+                            onClick = { onSave(currentFile) }
                         )
                         SandboxPreviewActionButton(
                             icon = Icons.Rounded.Delete,
                             label = stringResource(R.string.sandbox_file_confirm_delete),
-                            onClick = onDelete
+                            onClick = { onDelete(currentFile) }
                         )
                     }
                 }
@@ -823,6 +875,17 @@ private fun SandboxPreviewActionButton(
 }
 
 // ===== 展示辅助 =====
+
+/** 可在应用内直接预览的文本类文件（点击后不再调起系统查看器） */
+private enum class SandboxTextPreviewKind { MARKDOWN, HTML }
+
+private fun sandboxTextPreviewKindOf(file: SandboxFileInfo): SandboxTextPreviewKind? {
+    return when (file.extension?.lowercase()) {
+        "md", "markdown", "txt" -> SandboxTextPreviewKind.MARKDOWN
+        "html", "htm" -> SandboxTextPreviewKind.HTML
+        else -> null
+    }
+}
 
 private fun sandboxFileIconFor(extension: String?): ImageVector {
     val ext = extension?.lowercase()

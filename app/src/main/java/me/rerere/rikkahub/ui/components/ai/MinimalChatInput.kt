@@ -96,7 +96,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -138,6 +140,7 @@ import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.utils.createChatAttachmentFiles
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.rikkahub.utils.deleteChatFiles
@@ -291,11 +294,12 @@ fun MinimalChatInput(
                         transferableContent.hasMediaType(MediaType.Image) -> {
                             transferableContent.consume { item ->
                                 item.uri?.let { uri ->
-                                    state.addImages(
-                                        context.createChatFilesByContents(
-                                            listOf(uri)
-                                        )
-                                    )
+                                    scope.launch {
+                                        val files = withContext(Dispatchers.IO) {
+                                            context.createChatAttachmentFiles(listOf(uri))
+                                        }
+                                        state.addImages(files)
+                                    }
                                 }
                                 item.uri != null
                             }
@@ -653,7 +657,12 @@ private fun MinimalPickerContent(
         CropImageScreen(
             sourceUri = imageToCrop!!,
             onCropComplete = { croppedUri ->
-                state.addImages(context.createChatFilesByContents(listOf(croppedUri)))
+                scope.launch {
+                    val files = withContext(Dispatchers.IO) {
+                        context.createChatAttachmentFiles(listOf(croppedUri))
+                    }
+                    state.addImages(files)
+                }
                 showCropScreen = false
                 imageToCrop = null
                 cameraOutputFile?.delete()
@@ -676,10 +685,17 @@ private fun MinimalPickerContent(
     ) { captureSuccessful ->
         if (captureSuccessful && cameraOutputUri != null) {
             if (localSettings.displaySetting.skipCropImage) {
-                state.addImages(context.createChatFilesByContents(listOf(cameraOutputUri!!)))
-                cameraOutputFile?.delete()
-                cameraOutputFile = null
+                val capturedUri = cameraOutputUri!!
+                val capturedFile = cameraOutputFile
                 cameraOutputUri = null
+                cameraOutputFile = null
+                scope.launch {
+                    val files = withContext(Dispatchers.IO) {
+                        context.createChatAttachmentFiles(listOf(capturedUri))
+                    }
+                    state.addImages(files)
+                    capturedFile?.delete()
+                }
             } else {
                 imageToCrop = cameraOutputUri
                 showCropScreen = true
@@ -697,15 +713,25 @@ private fun MinimalPickerContent(
     ) { selectedUris ->
         if (selectedUris.isNotEmpty()) {
             if (localSettings.displaySetting.skipCropImage) {
-                state.addImages(context.createChatFilesByContents(selectedUris))
-                onDismiss()
+                scope.launch {
+                    val files = withContext(Dispatchers.IO) {
+                        context.createChatAttachmentFiles(selectedUris)
+                    }
+                    state.addImages(files)
+                    onDismiss()
+                }
             } else {
                 if (selectedUris.size == 1) {
                     imageToCrop = selectedUris.first()
                     showCropScreen = true
                 } else {
-                    state.addImages(context.createChatFilesByContents(selectedUris))
-                    onDismiss()
+                    scope.launch {
+                        val files = withContext(Dispatchers.IO) {
+                            context.createChatAttachmentFiles(selectedUris)
+                        }
+                        state.addImages(files)
+                        onDismiss()
+                    }
                 }
             }
         }
@@ -754,7 +780,12 @@ private fun MinimalPickerContent(
             }
 
             if (images.isNotEmpty()) {
-                state.addImages(context.createChatFilesByContents(images))
+                scope.launch {
+                    val files = withContext(Dispatchers.IO) {
+                        context.createChatAttachmentFiles(images)
+                    }
+                    state.addImages(files)
+                }
             }
             if (documents.isNotEmpty()) {
                 state.addFiles(documents)

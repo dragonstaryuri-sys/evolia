@@ -27,6 +27,17 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "ChatUtil"
 
+/** 聊天图片压缩：长边上限（与 FileEncoder 归一化阈值保持一致） */
+private const val CHAT_IMAGE_MAX_EDGE = 2048
+
+/** 聊天图片压缩质量（WebP 有损） */
+private const val CHAT_IMAGE_WEBP_QUALITY = 80
+
+/** 可作为图片压缩的扩展名白名单（部分 content:// / file:// 无法提供 MIME 时兜底判定） */
+private val CHAT_IMAGE_EXTENSIONS = setOf(
+    "jpg", "jpeg", "png", "webp", "bmp", "heic", "heif", "gif"
+)
+
 fun navigateToChatPage(
     navController: NavHostController,
     chatId: Uuid = Uuid.random(),
@@ -156,6 +167,126 @@ fun Context.createChatFilesByContents(uris: List<Uri>): List<Uri> {
         }
     }
     return newUris
+}
+
+/**
+ * 保存用户发送/分享的聊天附件：图片统一转为 WebP（长边缩小到 [CHAT_IMAGE_MAX_EDGE]）
+ * 后落盘，不保留原图；非图片与无法解码的图片仍按原样复制，避免内容丢失。
+ */
+fun Context.createChatAttachmentFiles(uris: List<Uri>): List<Uri> {
+    val newUris = mutableListOf<Uri>()
+    val dir = this.filesDir.resolve("upload")
+    if (!dir.exists()) {
+        dir.mkdirs()
+    }
+    uris.forEach { uri ->
+        val isImage = isImageUri(uri)
+        if (isImage) {
+            val webpFile = dir.resolve("${Uuid.random()}.webp")
+            if (writeImageAsWebp(uri, webpFile)) {
+                newUris.add(webpFile.toUri())
+                return@forEach
+            }
+        }
+        // 非图片或图片解码失败：按原样复制，保持既有行为
+        val rawFile = dir.resolve(Uuid.random().toString())
+        val copied = runCatching {
+            this.contentResolver.openInputStream(uri)?.use { inputStream ->
+                rawFile.outputStream().use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+                true
+            } ?: false
+        }.onFailure {
+            Log.e(TAG, "createChatAttachmentFiles: Failed to save attachment from $uri", it)
+        }.getOrDefault(false)
+        if (copied) {
+            newUris.add(rawFile.toUri())
+        } else {
+            rawFile.delete()
+        }
+    }
+    return newUris
+}
+
+/**
+ * 判断 Uri 是否指向图片。优先使用 MIME，其次用文件名扩展名兜底
+ * （file:// 相机/裁剪产物没有 contentResolver MIME）。
+ */
+private fun Context.isImageUri(uri: Uri): Boolean {
+    val mime = getFileMimeType(uri)
+    if (mime?.startsWith("image/", ignoreCase = true) == true) return true
+    if (!mime.isNullOrBlank() && mime != "application/octet-stream") return false
+    val displayName = when (uri.scheme) {
+        "content" -> getFileNameFromUri(uri)
+        else -> uri.lastPathSegment
+    }
+    val extension = displayName?.substringAfterLast('.', "")?.lowercase()
+    return !extension.isNullOrEmpty() && extension in CHAT_IMAGE_EXTENSIONS
+}
+
+/**
+ * 将图片解码、等比缩小并压缩为 WebP 写入 [target]。
+ * 解码或写入失败返回 false（并清理残缺文件），由调用方回退为原样复制。
+ */
+private fun Context.writeImageAsWebp(uri: Uri, target: File): Boolean {
+    val success = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        this.contentResolver.openInputStream(uri)?.use { inputStream ->
+            BitmapFactory.decodeStream(inputStream, null, bounds)
+        }
+        val sourceWidth = bounds.outWidth
+        val sourceHeight = bounds.outHeight
+        if (sourceWidth <= 0 || sourceHeight <= 0) return@runCatching false
+
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = imageSampleSize(sourceWidth, sourceHeight)
+        }
+        val decoded = this.contentResolver.openInputStream(uri)?.use { inputStream ->
+            BitmapFactory.decodeStream(inputStream, null, options)
+        } ?: return@runCatching false
+
+        var outputBitmap = decoded
+        try {
+            val longerEdge = maxOf(decoded.width, decoded.height)
+            if (longerEdge > CHAT_IMAGE_MAX_EDGE) {
+                val scale = CHAT_IMAGE_MAX_EDGE.toFloat() / longerEdge
+                val targetWidth = (decoded.width * scale).toInt().coerceAtLeast(1)
+                val targetHeight = (decoded.height * scale).toInt().coerceAtLeast(1)
+                outputBitmap = Bitmap.createScaledBitmap(decoded, targetWidth, targetHeight, true)
+            }
+            val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Bitmap.CompressFormat.WEBP_LOSSY
+            } else {
+                @Suppress("DEPRECATION")
+                Bitmap.CompressFormat.WEBP
+            }
+            target.outputStream().use { outputStream ->
+                outputBitmap.compress(format, CHAT_IMAGE_WEBP_QUALITY, outputStream)
+            }
+        } finally {
+            if (outputBitmap !== decoded) outputBitmap.recycle()
+            decoded.recycle()
+        }
+        true
+    }.onFailure {
+        Log.e(TAG, "writeImageAsWebp: Failed to compress image from $uri", it)
+    }.getOrDefault(false)
+    if (!success) target.delete()
+    return success
+}
+
+/**
+ * 计算 BitmapFactory 降采样倍数，保证解码后的长边不低于压缩上限（再按需等比缩放），
+ * 避免超大原图整张载入内存。
+ */
+private fun imageSampleSize(width: Int, height: Int): Int {
+    var sample = 1
+    val longestEdge = maxOf(width, height)
+    while (longestEdge / (sample * 2) >= CHAT_IMAGE_MAX_EDGE) {
+        sample *= 2
+    }
+    return sample
 }
 
 fun Context.createChatFilesByByteArrays(byteArrays: List<ByteArray>): List<Uri> {

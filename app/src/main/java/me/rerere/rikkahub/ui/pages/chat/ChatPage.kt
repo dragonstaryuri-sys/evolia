@@ -67,7 +67,7 @@ import me.rerere.rikkahub.ui.hooks.rememberChatInputState
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.utils.base64UrlDecode
-import me.rerere.rikkahub.utils.createChatFilesByContents
+import me.rerere.rikkahub.utils.createChatAttachmentFiles
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.navigateToChatPage
 import org.koin.androidx.compose.koinViewModel
@@ -166,16 +166,15 @@ fun ChatPage(
     LaunchedEffect(files) {
         if (files.isNotEmpty()) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                val localFiles = context.createChatFilesByContents(files)
-                val contentTypes = files.mapNotNull { file ->
-                    context.getFileMimeType(file)
-                }
-                val parts = localFiles.mapIndexedNotNull { index, file ->
-                    val type = contentTypes.getOrNull(index)
+                val parts = files.mapNotNull { file ->
+                    val type = context.getFileMimeType(file)
+                    // 图片统一压缩为 WebP 落盘，非图片按原样复制
+                    val localFile = context.createChatAttachmentFiles(listOf(file)).firstOrNull()
+                        ?: return@mapNotNull null
                     when {
-                        type?.startsWith("image/") == true -> UIMessagePart.Image(url = file.toString())
-                        type?.startsWith("video/") == true -> UIMessagePart.Video(url = file.toString())
-                        type?.startsWith("audio/") == true -> UIMessagePart.Audio(url = file.toString())
+                        type?.startsWith("image/") == true -> UIMessagePart.Image(url = localFile.toString())
+                        type?.startsWith("video/") == true -> UIMessagePart.Video(url = localFile.toString())
+                        type?.startsWith("audio/") == true -> UIMessagePart.Audio(url = localFile.toString())
                         else -> null
                     }
                 }

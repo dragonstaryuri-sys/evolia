@@ -94,7 +94,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.ai.provider.BuiltInTools
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.window.DialogProperties
@@ -155,6 +157,7 @@ import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.utils.createChatAttachmentFiles
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.getFileNameFromUri
@@ -743,6 +746,7 @@ private fun TextInputRow(
     trailingIcon: @Composable (() -> Unit)? = null
 ) {
     val assistant = LocalSettings.current.getCurrentAssistant()
+    val scope = rememberCoroutineScope()
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),
@@ -790,13 +794,12 @@ private fun TextInputRow(
                             transferableContent.consume { item ->
                                 val uri = item.uri
                                 if (uri != null) {
-                                    state.addImages(
-                                        context.createChatFilesByContents(
-                                            listOf(
-                                                uri
-                                            )
-                                        )
-                                    )
+                                    scope.launch {
+                                        val files = withContext(Dispatchers.IO) {
+                                            context.createChatAttachmentFiles(listOf(uri))
+                                        }
+                                        state.addImages(files)
+                                    }
                                 }
                                 uri != null
                             }
@@ -1763,6 +1766,7 @@ private fun ImagePickButton(
 ) {
     val context = LocalContext.current
     val settings = LocalSettings.current
+    val scope = rememberCoroutineScope()
 
     // State for crop dialog
     var showCropScreen by remember { mutableStateOf(false) }
@@ -1773,7 +1777,12 @@ private fun ImagePickButton(
         CropImageScreen(
             sourceUri = imageToCrop!!,
             onCropComplete = { croppedUri ->
-                onAddImages(context.createChatFilesByContents(listOf(croppedUri)))
+                scope.launch {
+                    val files = withContext(Dispatchers.IO) {
+                        context.createChatAttachmentFiles(listOf(croppedUri))
+                    }
+                    onAddImages(files)
+                }
                 showCropScreen = false
                 imageToCrop = null
             },
@@ -1792,7 +1801,12 @@ private fun ImagePickButton(
             // Check if we should skip crop based on settings
             if (settings.displaySetting.skipCropImage) {
                 // Skip crop, directly add images
-                onAddImages(context.createChatFilesByContents(selectedUris))
+                scope.launch {
+                    val files = withContext(Dispatchers.IO) {
+                        context.createChatAttachmentFiles(selectedUris)
+                    }
+                    onAddImages(files)
+                }
             } else {
                 // Show crop interface
                 if (selectedUris.size == 1) {
@@ -1801,7 +1815,12 @@ private fun ImagePickButton(
                     showCropScreen = true
                 } else {
                     // Multiple images - no crop
-                    onAddImages(context.createChatFilesByContents(selectedUris))
+                    scope.launch {
+                        val files = withContext(Dispatchers.IO) {
+                            context.createChatAttachmentFiles(selectedUris)
+                        }
+                        onAddImages(files)
+                    }
                 }
             }
         } else {
@@ -1830,6 +1849,7 @@ fun TakePicButton(
 
     val context = LocalContext.current
     val settings = LocalSettings.current
+    val scope = rememberCoroutineScope()
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var cameraOutputFile by remember { mutableStateOf<File?>(null) }
 
@@ -1842,7 +1862,12 @@ fun TakePicButton(
         CropImageScreen(
             sourceUri = imageToCrop!!,
             onCropComplete = { croppedUri ->
-                onAddImages(context.createChatFilesByContents(listOf(croppedUri)))
+                scope.launch {
+                    val files = withContext(Dispatchers.IO) {
+                        context.createChatAttachmentFiles(listOf(croppedUri))
+                    }
+                    onAddImages(files)
+                }
                 showCropScreen = false
                 imageToCrop = null
                 // Clean up camera temp file after cropping is done
@@ -1868,11 +1893,17 @@ fun TakePicButton(
             // Check if we should skip crop based on settings
             if (settings.displaySetting.skipCropImage) {
                 // Skip crop, directly add image
-                onAddImages(context.createChatFilesByContents(listOf(cameraOutputUri!!)))
-                // Clean up camera temp file
-                cameraOutputFile?.delete()
-                cameraOutputFile = null
+                val capturedUri = cameraOutputUri!!
+                val capturedFile = cameraOutputFile
                 cameraOutputUri = null
+                cameraOutputFile = null
+                scope.launch {
+                    val files = withContext(Dispatchers.IO) {
+                        context.createChatAttachmentFiles(listOf(capturedUri))
+                    }
+                    onAddImages(files)
+                    capturedFile?.delete()
+                }
             } else {
                 // Show crop interface
                 imageToCrop = cameraOutputUri
