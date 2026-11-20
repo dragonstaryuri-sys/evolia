@@ -6,6 +6,7 @@ import me.rerere.rikkahub.core.data.db.entity.ExtensionPermissionEntity
 import me.rerere.rikkahub.core.data.db.entity.ExtensionToolEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -434,5 +435,33 @@ class ExtensionRulesTest {
             parseSchemaFile = { JsonInstant.parseToJsonElement("""{"type": "unsupported_type"}""") as kotlinx.serialization.json.JsonObject }
         )
         assertTrue(errors.any { it.contains("unsupported_type") })
+    }
+
+    // ---------- 版本自动管理（2026-11-20 补充需求第三章） ----------
+
+    @Test
+    fun `increment patch version`() {
+        assertEquals("1.0.1", ExtensionRules.incrementPatchVersion("1.0.0"))
+        assertEquals("1.0.2", ExtensionRules.incrementPatchVersion("1.0.1"))
+        assertEquals("1.2.4", ExtensionRules.incrementPatchVersion("1.2.3"))
+        assertEquals("2.0.1", ExtensionRules.incrementPatchVersion("2.0.0"))
+    }
+
+    @Test
+    fun `increment patch ignores prerelease and build`() {
+        // prerelease / build 元数据不参与递增
+        assertEquals("1.0.1", ExtensionRules.incrementPatchVersion("1.0.0-beta"))
+        assertEquals("1.0.1", ExtensionRules.incrementPatchVersion("1.0.0-beta+build.1"))
+        assertEquals("1.0.1", ExtensionRules.incrementPatchVersion("1.0.0+20261120"))
+    }
+
+    @Test
+    fun `increment patch rejects invalid versions`() {
+        assertNull(ExtensionRules.incrementPatchVersion(""))
+        assertNull(ExtensionRules.incrementPatchVersion("1"))
+        assertNull(ExtensionRules.incrementPatchVersion("1.0"))
+        assertNull(ExtensionRules.incrementPatchVersion("a.b.c"))
+        assertNull(ExtensionRules.incrementPatchVersion("1.0.x"))
+        assertNull(ExtensionRules.incrementPatchVersion("1.0.0.0"))
     }
 }

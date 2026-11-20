@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.extensions.ExtensionRegistry
 import me.rerere.rikkahub.data.extensions.MiniAppBridgeSession
 import me.rerere.rikkahub.data.extensions.MiniAppStorageService
+import me.rerere.rikkahub.data.extensions.RegistryMiniAppRuntimePolicy
 import me.rerere.rikkahub.ui.components.extension.permissionDisplayName
 import me.rerere.rikkahub.ui.components.miniapp.MiniAppWebView
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -68,7 +69,7 @@ fun MiniAppPage(
         MiniAppBridgeSession(
             appId = appId,
             context = application,
-            registry = registry,
+            policy = RegistryMiniAppRuntimePolicy(registry),
             storage = storage,
             scope = CoroutineScope(Dispatchers.Main.immediate),
             listener = object : MiniAppBridgeSession.Listener {

@@ -607,7 +607,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 - **禁止**复用通用 `WebView` composable 充当 Mini App 容器：`MiniAppWebView`（`ui/components/miniapp/`）独立实现——`androidx.webkit`（新增依赖，1.14.0）`WebViewAssetLoader` 受控资源域 `https://appassets.androidplatform.net/app/{app_id}/...`（自定义 PathHandler：safe-path 校验 + canonical 包含性检查，越界/其他扩展/缺失一律 404）；settings.allowFileAccess=false、fileURLs 全禁。
 - **Bridge**：`WebViewCompat.addWebMessageListener`（注意 webkit 1.14 的 onPostMessage 是 **5 参数**（WebView 打头），reply proxy 类型是顶层 `JavaScriptReplyProxy` 且 postMessage 直接收 String）+ `addDocumentStartJavaScript` 注入 SDK（注意：该 API 收**单个 String** 非 List）+ Origin Rules 限定受控域。子 frame 一律拒绝；外部 http/https 经系统浏览器打开，绝不继承 Bridge。
-- `MiniAppBridgeSession`：一次页面进入 = 一个会话实例；**每次调用**完整校验（扩展存在/启用/实例 active/来源域/主 frame/权限/参数，详设 12.3，禁止只查一次）；页面 dispose/扩展停用即 `invalidate()`，旧实例调用立即失效。权限未授权 → 触发页面 ConfirmDialog（Manifest 申请与授权分离），拒绝返回 PERMISSION_DENIED。
+- `MiniAppBridgeSession`：一次页面进入 = 一个会话实例；**每次调用**完整校验（扩展存在/启用/实例 active/来源域/主 frame/权限/参数，详设 12.3，禁止只查一次）；页面 dispose/扩展停用即 `invalidate()`，旧实例调用立即失效。权限未授权 → 触发页面 ConfirmDialog（Manifest 申请与授权分离），拒绝返回 PERMISSION_DENIED。**2026-11-20**：registry 依赖收敛为 `MiniAppRuntimePolicy` 接口（`RegistryMiniAppRuntimePolicy` = Registry 动态判定，行为不变；`PreviewMiniAppRuntimePolicy` = 工作区预览静态判定），storage 依赖收敛为 `MiniAppStorage` 接口（`MiniAppStorageService` Room 实现 + `InMemoryMiniAppStorage` 预览易失实现，共用 `MiniAppStorageRules` 集合声明检查与 Schema 校验）。
 - SDK（`assets/evolia/evolia-sdk.js`）：Promise 式 Evolia.storage.get/list/insert/update/delete（自动绑定 app_id，**前端不可指定 app_id**）、Evolia.ui.toast/dialog（dialog 走 pendingCalls 等用户点击回复）、Evolia.navigation.close、生命周期事件。回复走注入对象 onmessage（非 window message）。
 - `MiniAppStorageService`：全操作绑定 app_id；集合必须在 Manifest 声明否则拒绝；写入统一过 JsonSchemaValidator；单条 ≤256KB；list 分页（≤100/页）。扩展**不得**直接执行 SQL。
 - 数据迁移（详设 14.4）第一阶段为 no-op：仅记录 mini_app_versions.schema_version，数据原样保留（Manifest 未定义迁移脚本语法；后续扩展时补）。
@@ -615,7 +615,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 ### 17.7 本地创建 / 导入导出（Phase 5）
 
 - **页面职责拆分（2026-11-18 用户需求）**：设置 → 小应用（`SettingMiniAppsPage`）**只做运行控制**——扩展卡片列表（名称/类型/版本/N/M tools/启用开关），点卡片弹出抽屉展示工具列表（开关/自定义描述/AI 简化/恢复默认，与 MCP 工具页签同款能力，无基础设置）；发现 → 拓展中心（`ExtensionWorkshopPage`，DiscoverPage 新入口；2026-11-19 由「应用中心」改名，页面紧凑顶栏、卡片无开关带卸载按钮+二次确认、详情抽屉权限改基本信息只读展示）**承载开发管理**——创建向导（模板弹窗）/ 导入 .evolia / 权限授权 / 打开小应用 / 更新 / 导出 / 卸载（数据保留选择）。原 `ExtensionDetailPage` 已删除。
-- `ExtensionCreator`：草稿在 `extensions/workspaces/{draftId}/`（目录结构即包规范），与已安装严格分离（草稿不能被 Agent 调用）；创建向导自动生成 app_id + 模板脚手架；校验与安装共用 ManifestValidator / ExtensionInstaller.installFromDirectory（同一统一安装链）。**显示名称（extension name / tool name）允许中文**（仅展示与模型上下文文本，JSON 存储/调用键不受影响）；唯一标识 app_id / tool_id 已冻结为英文小写正则。
+- `ExtensionCreator`：草稿在 `extensions/workspaces/{draftId}/`（目录结构即包规范），与已安装严格分离（草稿不能被 Agent 调用）；创建向导自动生成 app_id + 模板脚手架；校验与安装共用 ManifestValidator / ExtensionInstaller.installFromDirectory（同一统一安装链）。**2026-11-20 起草稿新增 workspace.json 元数据、受管版本、二次开发权限能力层检查，硬约束见 17.11**。**显示名称（extension name / tool name）允许中文**（仅展示与模型上下文文本，JSON 存储/调用键不受影响）；唯一标识 app_id / tool_id 已冻结为英文小写正则。
 - `ExtensionImportExport`：导出 = 安装目录打 ZIP（包规范天然不含 mini_app_data/凭证）；导入经 SAF OpenDocument → 临时文件 → installer.installFromZip(LOCAL_IMPORT)，更新判定/回滚全走 Installer。
 - 内置模板（`ExtensionTemplates`）：空白 Tool/Mini App + **天气查询 Tool 示例**（Open-Meteo，内联 Schema + 中英文城市映射）+ **番茄钟 Mini App 示例**（25/5 循环 + sessions 集合统计 + Toast，2026-11-18 按用户需求替换个人论坛）。**模板 JS 坑**：局部变量不得命名为与函数相同的 `today` 等（var 提升遮蔽函数 → 'not a function'，实测踩坑）；Mini App 页面输入框键盘遮挡用 `Modifier.imePadding()`（Compose 通用方案，无需自定义组件）。
 
@@ -626,8 +626,8 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ### 17.9 测试与验收
 
-- 纯 JVM 单测（app/src/test 下 data/extensions/ + data/ai/tools/）：JsonSchemaValidator（13 例）/ ExtensionRules（版本/判定/合并/恢复/可用性矩阵/路径安全/Manifest 校验，22 例）/ ZipPackageReader（ZIP Slip/重复/炸弹/缺 manifest，10 例，其中重复条目用例**手写 raw ZIP**——Java ZipOutputStream 自身拒绝重复条目）/ ExtensionAgentTools（目录 Prompt/错误映射/参数解析）/ ToolDescriptionService（解析/分批/Prompt）。
-- 验证命令：`./gradlew :app:compileDebugKotlin` + `./gradlew :app:testDebugUnitTest`（2026-11-18：414 全绿）。
+- 纯 JVM 单测（app/src/test 下 data/extensions/ + data/ai/tools/）：JsonSchemaValidator（13 例）/ ExtensionRules（版本/判定/合并/恢复/可用性矩阵/路径安全/Manifest 校验/版本自动递增，27 例）/ ZipPackageReader（ZIP Slip/重复/炸弹/缺 manifest，10 例，其中重复条目用例**手写 raw ZIP**——Java ZipOutputStream 自身拒绝重复条目）/ ExtensionDraftValidator（SDK 扫描/引用提取/内容哈希/三层编排/版本归一/导出 flag，20 例）/ ExtensionAgentTools（目录 Prompt/错误映射/参数解析）/ ToolDescriptionService（解析/分批/Prompt）。
+- 验证命令：`./gradlew :app:compileDebugKotlin` + `./gradlew :app:testDebugUnitTest`（2026-11-20：474 全绿）。
 - **模拟器实测已通过（2026-11-17/18，EvoliaTest AVD）**：① Mini App 全链路——创建→校验→安装→打开→权限三连（read/write/toast 逐项运行时授权弹窗）→发帖→Room 落库核验→重开持久化→停用禁用入口→卸载保留数据→重装恢复数据（场景 D）→深色渲染，全程零崩溃；② Tool Extension Agent 调用链——目录 Prompt 注入→`get_extension_tool_schema`（303 字节含参数定义）→`call_extension_tool`→QuickJS 执行→受控网络请求 Open-Meteo→实时天气数据返回（Agent 把结果渲染成表格），ToolLoopGuard 语义下失败自动换参数重试、跨轮 app_id 自纠错均验证。**实测修复的 4 个 bug（全部已固化进代码，禁止回退）**：
   1. 首次安装 `stagingDir.renameTo(targetDir)` 因 `extensions/installed|backups` 父目录未创建静默返回 false（rename(2) ENOENT）——Installer 切换前必须 mkdirs 父目录；
   2. `ExtensionToolRuntime.runToolScript` 从未注入 `request.arguments`——工具脚本顶层 `arguments` 恒为 undefined、恒收空参数；修复 = 执行前 `globalThis.arguments = Object.freeze(<json>)`（SDK_PRELUDE 是 IIFE 不受污染），扩展 JS 以 `arguments` 读取调用参数；
@@ -639,6 +639,22 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 ### 17.10 已知边界与后续（不回退清单）
 
 - QuickJS interrupt handler 缺失（P0 风险见 17.5）；扩展工具暂不支持 Promise/异步代码。
-- 备份第一阶段过渡：扩展六表随整库备份恢复，无独立「小应用」勾选分类（详设 17.3 过渡口径）；后续独立分类需备份侧按表过滤能力。
+- 备份第一阶段过渡：扩展六表随整库备份恢复，无独立「小应用」勾选分类（详设 17.3 过渡口径）；后续独立分类需备份侧按表过滤能力。**2026-11-20：`extensions/workspaces`（草稿工作区）已加入 FILES 备份**（见 17.11 第 9 条），已安装 `extensions/installed` 仍不备份。
 - Settings/SettingsStore 未新增扩展字段（权限/启用状态全部在 Room），助手授权经 Assistant.enabledMiniAppIds 走既有 settingsStore.update 原子事务。
 - 后续 GitHub/市场/Agent 自动生成扩展必须复用 Manifest/Package/Installer/Registry/Runtime，禁止另起第二套机制。
+
+### 17.11 拓展中心 / 草稿工作区 / 版本自动管理 / 二次开发权限（2026-11-20 补充需求，硬约束）
+
+> 新增文件：`ExtensionDraftValidator.kt`（三层校验 + QuickJsSyntaxChecker + 纯函数扫描）、`InMemoryMiniAppStorage.kt`、`ui/pages/miniapp/MiniAppPreviewPage.kt`。改造：`ExtensionCreator.kt`（WorkspaceMeta/createDraftFromInstalled/requireEditable）、`ExtensionManifest.kt`（+development）、`ExtensionRules.kt`（+incrementPatchVersion）、`ExtensionImportExport`（exportToZip 参数化）、`MiniAppBridge/MiniAppStorageService/MiniAppWebView/MiniAppPage`（policy 接口化）、`ExtensionWorkshopPage`（三 Tab）、`ExtensionCreatorPage`（编辑器化）、`WebdavSync`（+workspaces）、`Screen.kt`（+MiniAppPreview）。
+
+1. **拓展中心三 Tab**（`ExtensionWorkshopPage`，SecondaryTabRow+HorizontalPager）：市场（EmptyPlaceholder 占位，V1 无任何后端）/ 我的拓展（已安装管理 + 「有新版本开发中 v」角标）/ 草稿箱（草稿列表 + AppFab 新建拓展，空态 EmptyPlaceholder）。页面只做展示与导航，开发/校验/安装逻辑在编辑器与 ExtensionCreator/ExtensionInstaller。
+2. **草稿工作区元数据 = 工作区内 `workspace.json` 文件（纯文件，不建 Room 表，DB 保持 v49 零迁移、零 Sanitizer 登记）**：`ExtensionWorkspaceMeta`（version 受管版本 / base_app_id / base_version / created_at / updated_at / last_validation{level,content_hash,at}）。**workspace.json 不对编辑器展示（listFiles 过滤）且不参与内容哈希**（计入会自指失效）。旧草稿（无 meta）按 manifest 派生默认值继续可用。
+3. **版本自动管理（用户不可修改）**：新建草稿固定 1.0.0；「开发新版本」= `ExtensionRules.incrementPatchVersion`（纯函数有单测，忽略 prerelease/build，非法版本返回 null）基于安装版 patch+1。**saveFile 写 manifest.json 时强制把 version 归一为受管版本并返回归一后内容**（`normalizeManifestVersion`/`rewriteManifestVersionJson` 纯函数有单测），编辑器同步显示归一结果——版本号无法经编辑器持久化修改；校验/安装以 meta.version 为准。
+4. **单工作区约束**：每个 appId（拓展）至多一个活动工作区。`createDraftFromInstalled(appId)`：复制安装目录 → bump 版本 → 写 workspace.json；**已有工作区时幂等返回既有草稿**（我的拓展入口显示「继续开发（草稿 vX）」），禁止并行第二开发版本。createDraft 生成 appId 时对「既有草稿 ∪ 已安装」撞车重试。
+5. **二次开发权限（能力层拦截，禁止只靠 UI 隐藏按钮）**：Manifest 字段 `development.allow_modification`（snake_case，`ManifestDevelopment`；**缺省/旧包 = true**，历史拓展零迁移保持可编辑）。判定纯按 Manifest 字段与创建者身份无关（自己重新导入禁改包同样受限）。能力层 = `ExtensionCreator.requireEditable(draftId)`（base 拓展存在且禁改 → 抛异常），覆盖 saveFile/createFile/deleteFile/validate 全部工作区修改入口；**validate 返回 FAIL 携带该错误 → 安装入口必然先校验，从能力层阻断**。**Agent V1 无任何源码修改工具（无绕过路径）；未来新增任何能写工作区/拓展源码的 Agent 工具必须先过 requireEditable 能力层**。
+6. **三层校验（`ExtensionDraftValidator`）**：L1 结构 = ManifestValidator（全部阻断）；L2 代码 = JS 语法检查（`QuickJsSyntaxChecker`：`QuickJSContext.compile` **compile-only，不执行任何顶层语句**，无 DOM 依赖；语法错误阻断）+ Mini App 入口 HTML 本地 src/href 引用完整性（缺失阻断；CSS url()/JS 动态加载为已知盲区）+ `evolia.*` SDK 调用扫描（**未声明权限与未知 API 一律警告不阻断**；`SDK_PERMISSION_BY_METHOD` 空串 = 无需权限如 navigation.close，不在表内 = 未定义 API）。checker 为注入点（JVM 单测传 fake/null，QuickJS native 仅 Android 可用）。
+7. **校验-安装一致性（hash 门，硬约束）**：`computeContentHash`（排序 relpath+内容 SHA-256，**排除 workspace.json**）随校验结果持久化 workspace.json；`checkValidationFreshness` 在安装前重算比对，不一致 → 阻断「校验后文件已发生修改」。安装按钮统一流程：保存 → **重新校验** → errors>0 弹窗阻断 / 仅警告 → 弹窗提供「仍要安装」（需求四.4 用户确认）→ 权限预扫描（ExtensionPermissionDialog，拒绝不装）→ `checkValidationFreshness` 复查 → `installFromDirectory`（复用统一安装链，失败旧版本保留）。**安装成功后删除工作区**（草稿「移入我的拓展」；更新流同理避免死草稿）。
+8. **Mini App 工作区预览**：`Screen.MiniAppPreview(draftId)` + `MiniAppPreviewPage`。内容经 `MiniAppWebView(contentRoot = 工作区目录)`（PathHandler 同一 safe-path/canonical 检查，仅换根目录）；存储 = `InMemoryMiniAppStorage`（易失 Map，不落 Room、不污染已装数据，**集合/Schema 校验照常生效**）；权限 = `PreviewMiniAppRuntimePolicy` 按 Manifest 顶层声明**静态判定**（已声明放行 / 未声明直接 PERMISSION_DENIED 信封，不弹授权不落授权）——与安装后的动态授权有差异，页面横幅明示。工具拓展无预览执行入口（安装后在对话实测）。
+9. **草稿备份**：`WebdavSync.foldersToBackup` + `"extensions/workspaces"`——zip 条目 `extensions/workspaces/<rel>`，恢复侧 `substringBefore("/")` 通用分支原样还原（**一行改动零迁移**）；旧备份无该条目天然兼容。
+10. **编辑器自动保存**：`snapshotFlow{fileContent}` + collectLatest + delay(800ms) 防抖落盘（Dispatchers.IO）；ON_STOP（`LifecycleEventEffect`）与 onDispose 经 `AppScope.launch(Dispatchers.IO + NonCancellable)` 兜底保存——异常退出恢复 = 最近一次成功落盘内容。文件切换/校验/预览/安装前均先保存脏文件。
+11. **导出二次开发权限**：导出弹窗（`ExtensionWorkshopPage` 内 AlertDialog）选择允许/不允许 → `exportToZip(context, appId, targetFile, allowModification)` 写入 **ZIP 内** manifest.json 的 development 字段（`manifestWithDevelopmentFlag` 纯函数有单测），**磁盘安装目录不改写**（同一拓展可按不同权限重复导出）；字段随包携带，重新导入/重装不丢失。

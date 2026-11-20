@@ -24,13 +24,31 @@ data class ExtensionManifest(
     val storage: ManifestStorage? = null,
     val tools: List<ManifestTool> = emptyList(),
     val permissions: List<String> = emptyList(),
+    /** 二次开发权限（2026-11-20）：随包携带，旧包缺省 = 允许 */
+    val development: ManifestDevelopment? = null,
 ) {
     /** Tool 唯一标识统一采用 `app_id:tool_id`，避免不同扩展同名 Tool 冲突 */
     fun fullToolId(toolId: String): String = "$appId${ExtensionConstants.TOOL_ID_SEPARATOR}$toolId"
 
     val isMiniApp: Boolean get() = extensionType == ExtensionType.MINI_APP
     val isToolExtension: Boolean get() = extensionType == ExtensionType.TOOL
+
+    /**
+     * 是否允许二次开发（修改源码 / 基于该拓展创建新版本）。
+     * 字段缺省（旧包 / 本地新建）= 允许，历史拓展零迁移保持可编辑；
+     * 判定纯按 Manifest 字段，与拓展创建者身份无关（重新导入的禁改副本同样受限）。
+     */
+    val isModificationAllowed: Boolean get() = development?.allowModification ?: true
 }
+
+/**
+ * 二次开发权限声明（详设 2026-11-20 补充需求第五章）。
+ * 导出时由用户选择写入；导入副本的运行配置修改（工具开关 / 授权等）不受此限制。
+ */
+@Serializable
+data class ManifestDevelopment(
+    @SerialName("allow_modification") val allowModification: Boolean = true,
+)
 
 @Serializable
 data class ManifestFrontend(

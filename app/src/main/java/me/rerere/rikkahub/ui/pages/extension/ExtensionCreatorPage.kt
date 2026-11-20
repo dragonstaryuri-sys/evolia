@@ -16,12 +16,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,20 +32,32 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavController
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.extensions.ExtensionCreator
+import me.rerere.rikkahub.data.extensions.ExtensionDraftValidator
 import me.rerere.rikkahub.data.extensions.ExtensionImportExport
 import me.rerere.rikkahub.data.extensions.ExtensionInstaller
 import me.rerere.rikkahub.data.extensions.ExtensionRegistry
@@ -64,12 +74,21 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.compose.koinInject
 
+/** 自动保存防抖间隔（2026-11-20 补充需求二.1：编辑变化后自动保存，避免频繁写入） */
+private const val AUTOSAVE_DELAY_MS = 800L
+
 /**
- * 本地扩展创建工作区（详设第七章轻量编辑器）。
+ * 草稿编辑器（详设第七章轻量编辑器 + 2026-11-20 补充需求第二/四章）。
  *
- * - 无 draftId：草稿列表 + 新建向导（名称 / 类型 / 模板，自动生成 app_id）；
- * - 有 draftId：文件树 + 文本编辑器 + 校验 + 安装（走统一 ExtensionInstaller）。
- * 草稿与已安装扩展严格分离：草稿不能被 Agent 调用。
+ * - 草稿箱入口（拓展中心 → 草稿箱）总是带 draftId 进入；draftId 为空的
+ *   旧入口（已移除的草稿列表）防御性返回；
+ * - 自动保存：输入防抖 800ms + 退后台（ON_STOP）+ 离开页面兜底保存，
+ *   落盘统一 Dispatchers.IO；异常退出后恢复 = 最近一次成功落盘内容；
+ * - 校验 = 三层校验（结构 / 代码与运行环境 / 内容哈希），结果分「错误（阻断）」
+ *   与「警告」展示；安装前强制重新校验 + 哈希一致性复查；
+ * - 版本号由系统管理（workspace.json），保存 manifest.json 时自动归一；
+ * - Mini App 支持工作区预览（Screen.MiniAppPreview）；安装成功后删除工作区
+ *   （草稿移入我的拓展）。
  */
 @Composable
 fun ExtensionCreatorPage(
@@ -77,111 +96,11 @@ fun ExtensionCreatorPage(
     navController: NavController,
 ) {
     if (draftId == null) {
-        DraftListScreen(navController)
-    } else {
-        DraftEditorScreen(draftId, navController)
+        // 草稿列表已迁移至拓展中心「草稿箱」Tab；空 draftId 视为无效入口
+        LaunchedEffect(Unit) { navController.popBackStack() }
+        return
     }
-}
-
-// ---------- 草稿列表 ----------
-
-@Composable
-private fun DraftListScreen(navController: NavController) {
-    val creator = koinInject<ExtensionCreator>()
-    val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    var drafts by remember { mutableStateOf(creator.listDrafts()) }
-    var showCreateDialog by remember { mutableStateOf(false) }
-    var refreshKey by remember { mutableIntStateOf(0) }
-
-    // 返回本页时刷新草稿列表
-    androidx.compose.runtime.LaunchedEffect(refreshKey) {
-        drafts = creator.listDrafts()
-    }
-
-    Scaffold(
-        topBar = {
-            OneUITopAppBar(
-                title = "创建扩展",
-                scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(),
-                navigationIcon = { BackButton() },
-                actions = {
-                    IconButton(onClick = { showCreateDialog = true }) {
-                        Icon(Icons.Rounded.Add, contentDescription = "新建草稿")
-                    }
-                },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { padding ->
-        if (drafts.isEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Spacer(Modifier.height(80.dp))
-                Text("暂无草稿", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "点击右上角 + 创建 Tool Extension 或 Mini App",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            ) {
-                items(drafts, key = { it.draftId }) { draft ->
-                    Card(
-                        shape = AppShapes.CardMedium,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
-                            .clickable { navController.navigate(Screen.ExtensionCreator(draft.draftId)) },
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(16.dp),
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(draft.name, style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    "${draft.appId} · v${draft.version} · " +
-                                        if (draft.extensionType == ExtensionType.MINI_APP) "Mini App" else "Tool",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            IconButton(onClick = {
-                                creator.deleteDraft(draft.draftId)
-                                refreshKey++
-                            }) {
-                                Icon(Icons.Rounded.Delete, contentDescription = "删除草稿", tint = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (showCreateDialog) {
-        CreateDraftDialog(
-            onDismiss = { showCreateDialog = false },
-            onConfirm = { name, type, templateId ->
-                showCreateDialog = false
-                runCatching { creator.createDraft(name, type, templateId) }
-                    .onSuccess { meta ->
-                        navController.navigate(Screen.ExtensionCreator(meta.draftId))
-                    }
-                    .onFailure { e ->
-                        scope.launch { snackbarHostState.showSnackbar(e.message ?: "创建失败") }
-                    }
-            },
-        )
-    }
+    DraftEditorScreen(draftId, navController)
 }
 
 @Composable
@@ -241,7 +160,13 @@ internal fun CreateDraftDialog(
     )
 }
 
-// ---------- 草稿编辑器 ----------
+/** 校验结果弹窗数据（错误阻断 / 警告分组展示） */
+private data class ValidationUi(
+    val errors: List<ExtensionDraftValidator.Issue>,
+    val warnings: List<ExtensionDraftValidator.Issue>,
+    /** 安装流程触发的校验且仅剩警告时 = true，弹窗提供「仍要安装」按钮（需求四.4） */
+    val allowInstallAnyway: Boolean = false,
+)
 
 @Composable
 private fun DraftEditorScreen(
@@ -251,6 +176,7 @@ private fun DraftEditorScreen(
     val creator = koinInject<ExtensionCreator>()
     val installer = koinInject<ExtensionInstaller>()
     val application = koinInject<android.app.Application>()
+    val appScope = koinInject<AppScope>()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -259,7 +185,8 @@ private fun DraftEditorScreen(
     var selectedFile by remember { mutableStateOf(files.firstOrNull()) }
     var fileContent by remember { mutableStateOf("") }
     var dirty by remember { mutableStateOf(false) }
-    var validationErrors by remember { mutableStateOf<List<String>?>(null) }
+    var validationUi by remember { mutableStateOf<ValidationUi?>(null) }
+    var installError by remember { mutableStateOf<String?>(null) }
     var installing by remember { mutableStateOf(false) }
     var showNewFileDialog by remember { mutableStateOf(false) }
     var newFilePath by remember { mutableStateOf("") }
@@ -270,30 +197,160 @@ private fun DraftEditorScreen(
     // 需要新授权的权限先弹窗，被拒则放弃本次安装
     var pendingPermissionRequest by remember { mutableStateOf<PendingExtensionPermissionRequest?>(null) }
 
-    suspend fun installDraft(dir: java.io.File, grantNewPermissions: Boolean) {
+    suspend fun refreshMeta() {
+        // 草稿被编辑中 manifest 可能是暂时的非法 JSON（自动保存中间态），
+        // getDraft 返回 null 时保留旧元信息（版本 chip 维持上一次可用值）
+        val meta = withContext(Dispatchers.IO) { creator.getDraft(draftId) }
+        if (meta != null) {
+            draftMeta = meta
+        }
+    }
+
+    suspend fun loadSelectedFile(path: String?) {
+        val content = path?.let {
+            withContext(Dispatchers.IO) { creator.readFile(draftId, it) }
+        } ?: ""
+        selectedFile = path
+        fileContent = content
+        dirty = false
+    }
+
+    /**
+     * 保存当前文件并同步受管版本归一结果（manifest.json 保存时可能被
+     * 改写 version，返回值同步回编辑器，避免「编辑器显示与落盘不一致」）。
+     */
+    suspend fun saveCurrentFile(): String? {
+        val path = selectedFile ?: return null
+        val content = fileContent
+        val saved = withContext(Dispatchers.IO) { creator.saveFile(draftId, path, content) }
+        if (saved != null) {
+            dirty = false
+            if (saved != content) {
+                fileContent = saved
+            }
+            refreshMeta()
+        }
+        return saved
+    }
+
+    /** 退出页面 / 退后台的兜底保存（AppScope，不被页面协程取消） */
+    fun scheduleExitSave() {
+        if (!dirty) return
+        val path = selectedFile ?: return
+        val content = fileContent
+        appScope.launch(Dispatchers.IO + NonCancellable) {
+            creator.saveFile(draftId, path, content)
+        }
+    }
+
+    LaunchedEffect(draftId) {
+        loadSelectedFile(files.firstOrNull())
+    }
+
+    // 自动保存（防抖）：输入停止 800ms 后落盘；collectLatest 保证新输入
+    // 取消未完成的延迟，避免频繁写盘
+    LaunchedEffect(selectedFile) {
+        snapshotFlow { fileContent }
+            .drop(1) // 跳过文件装载初值
+            .collectLatest {
+                delay(AUTOSAVE_DELAY_MS)
+                if (dirty) saveCurrentFile()
+            }
+    }
+
+    // 退后台兜底保存（应用进入后台仍能保存）
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        scheduleExitSave()
+    }
+
+    // 离开页面兜底保存（compose 销毁后页面 scope 已取消，走 AppScope）
+    DisposableEffect(Unit) {
+        onDispose {
+            scheduleExitSave()
+        }
+    }
+
+    suspend fun proceedInstall(sourceDir: java.io.File, grantNewPermissions: Boolean) {
         installing = true
-        runCatching { installer.installFromDirectory(dir, grantNewPermissions = grantNewPermissions) }
+        // 安装前一致性复查：校验通过的文件必须与最终安装的文件完全一致
+        val stale = withContext(Dispatchers.IO) { creator.checkValidationFreshness(draftId) }
+        if (stale != null) {
+            installing = false
+            installError = stale
+            return
+        }
+        runCatching {
+            installer.installFromDirectory(sourceDir, grantNewPermissions = grantNewPermissions)
+        }
             .onSuccess { ext ->
                 toaster.show(message = "已安装 ${ext.name} v${ext.version}", type = ToastType.Success)
-                // 安装成功：跳转拓展中心并关闭当前编辑页（从返回栈移除）
+                // 安装成功：工作区删除（草稿移入我的拓展），跳转拓展中心
+                withContext(Dispatchers.IO + NonCancellable) { creator.deleteDraft(draftId) }
                 navController.navigate(Screen.ExtensionWorkshop) {
                     popUpTo(Screen.ExtensionCreator(draftId)) { inclusive = true }
                 }
             }
             .onFailure { e ->
-                validationErrors = listOf(e.message ?: "安装失败")
+                installing = false
+                installError = e.message ?: "安装失败"
             }
         installing = false
     }
 
-    fun loadSelectedFile(path: String?) {
-        selectedFile = path
-        fileContent = path?.let { creator.readFile(draftId, it) } ?: ""
-        dirty = false
+    /**
+     * 安装前权限预扫描（与校验结果无关，所有安装路径共用）：
+     * 需要新授权的权限先弹窗确认，被拒则放弃安装。
+     */
+    suspend fun installAfterChecks() {
+        val dir = java.io.File(ExtensionCreator.workspacesRoot(application), draftId)
+        val manifest = ExtensionImportExport.readManifestFromDirectory(dir)
+        val needGrant = if (manifest != null) {
+            ExtensionImportExport.permissionsNeedingGrant(
+                manifest,
+                registry.installedExtensions.value,
+            )
+        } else {
+            emptyList()
+        }
+        if (manifest == null || needGrant.isEmpty()) {
+            // 无需新授权（或预扫描失败走安装器报错）→ 直接安装
+            proceedInstall(dir, grantNewPermissions = false)
+        } else {
+            pendingPermissionRequest = PendingExtensionPermissionRequest(
+                manifest = manifest,
+                permissions = needGrant,
+                isUpdate = registry.installedExtensions.value.any { it.appId == manifest.appId },
+                sourceDir = dir,
+            )
+        }
     }
 
-    androidx.compose.runtime.LaunchedEffect(draftId) {
-        loadSelectedFile(files.firstOrNull())
+    /** 安装按钮统一入口：保存 → 重新校验 → 分流（阻断 / 警告确认 / 直接安装） */
+    fun startInstall() {
+        scope.launch {
+            if (dirty) saveCurrentFile()
+            val result = withContext(Dispatchers.IO) { creator.validate(draftId) }
+            refreshMeta()
+            when {
+                result == null -> {
+                    installError = "草稿不存在"
+                }
+
+                result.errors.isNotEmpty() -> {
+                    validationUi = ValidationUi(result.errors, result.warnings)
+                }
+
+                result.warnings.isNotEmpty() -> {
+                    validationUi = ValidationUi(
+                        errors = emptyList(),
+                        warnings = result.warnings,
+                        allowInstallAnyway = true,
+                    )
+                }
+
+                else -> installAfterChecks()
+            }
+        }
     }
 
     // 2026-11-20：键盘处理统一走 ImeAware 通用组件（参考
@@ -307,13 +364,24 @@ private fun DraftEditorScreen(
                 scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(),
                 navigationIcon = { BackButton { navController.popBackStack() } },
                 actions = {
+                    // Mini App 工作区预览（需求四.3 第三层）
+                    if (draftMeta?.extensionType == ExtensionType.MINI_APP) {
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    if (dirty) saveCurrentFile()
+                                    navController.navigate(Screen.MiniAppPreview(draftId))
+                                }
+                            },
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = "预览")
+                        }
+                    }
                     IconButton(
                         onClick = {
-                            val path = selectedFile
-                            if (path != null) {
-                                creator.saveFile(draftId, path, fileContent)
-                                dirty = false
-                                scope.launch { snackbarHostState.showSnackbar("已保存 $path") }
+                            scope.launch {
+                                val saved = saveCurrentFile()
+                                if (saved != null) snackbarHostState.showSnackbar("已保存 $selectedFile")
                             }
                         },
                         enabled = dirty && selectedFile != null,
@@ -326,6 +394,24 @@ private fun DraftEditorScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         ImeAwareEditorColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
+            // 版本信息（受管只读）：开发版本 + 基于版本（如有）
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    buildString {
+                        append("v${draftMeta?.version ?: "?"}")
+                        if (draftMeta?.baseVersion != null) {
+                            append(" · 基于 v${draftMeta?.baseVersion} 开发")
+                        }
+                        append(" · 版本号由系统管理")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             // 文件树（横向 chips 列表）
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
@@ -335,10 +421,10 @@ private fun DraftEditorScreen(
                 files.forEach { path ->
                     AssistChip(
                         onClick = {
-                            if (dirty && selectedFile != null) {
-                                creator.saveFile(draftId, selectedFile!!, fileContent)
+                            scope.launch {
+                                if (dirty) saveCurrentFile()
+                                loadSelectedFile(path)
                             }
-                            loadSelectedFile(path)
                         },
                         label = { Text(path) },
                         modifier = Modifier.padding(end = 8.dp),
@@ -361,78 +447,120 @@ private fun DraftEditorScreen(
                 label = { Text(selectedFile ?: "未选择文件") },
             )
 
-            // 操作行：校验 / 安装
+            // 操作行：校验 / 安装（安装前自动重新校验）
             Row(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(onClick = {
-                    validationErrors = creator.validate(draftId)
+                    scope.launch {
+                        if (dirty) saveCurrentFile()
+                        val result = withContext(Dispatchers.IO) { creator.validate(draftId) }
+                        refreshMeta()
+                        if (result != null) {
+                            validationUi = ValidationUi(result.errors, result.warnings)
+                        }
+                    }
                 }) {
                     Text("校验")
                 }
                 Spacer(Modifier.width(12.dp))
                 TextButton(
-                    onClick = {
-                        if (selectedFile != null && dirty) {
-                            creator.saveFile(draftId, selectedFile!!, fileContent)
-                            dirty = false
-                        }
-                        installing = true
-                        scope.launch {
-                            val dir = java.io.File(
-                                ExtensionCreator.workspacesRoot(application),
-                                draftId,
-                            )
-                            val manifest = ExtensionImportExport.readManifestFromDirectory(dir)
-                            val needGrant = if (manifest != null) {
-                                ExtensionImportExport.permissionsNeedingGrant(
-                                    manifest,
-                                    registry.installedExtensions.value,
-                                )
-                            } else {
-                                emptyList()
-                            }
-                            if (manifest == null || needGrant.isEmpty()) {
-                                // 无需新授权（或预扫描失败走安装器报错）→ 直接安装
-                                installDraft(dir, grantNewPermissions = false)
-                            } else {
-                                installing = false
-                                pendingPermissionRequest = PendingExtensionPermissionRequest(
-                                    manifest = manifest,
-                                    permissions = needGrant,
-                                    isUpdate = registry.installedExtensions.value.any { it.appId == manifest.appId },
-                                    sourceDir = dir,
-                                )
-                            }
-                        }
-                    },
+                    onClick = { startInstall() },
                     enabled = !installing,
                 ) {
-                    Text(if (installing) "安装中…" else "校验通过后安装")
+                    Text(if (installing) "安装中…" else "校验并安装")
                 }
             }
         }
     }
 
-    // 校验结果弹窗
-    validationErrors?.let { errors ->
+    // 校验结果弹窗（错误阻断 / 警告分组）
+    validationUi?.let { ui ->
         AlertDialog(
-            onDismissRequest = { validationErrors = null },
+            onDismissRequest = { validationUi = null },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = AppShapes.CardMedium,
-            title = { Text(if (errors.isEmpty()) "校验通过" else "校验失败") },
+            title = {
+                Text(
+                    when {
+                        ui.errors.isNotEmpty() -> "校验未通过"
+                        ui.warnings.isNotEmpty() -> "校验通过（有警告）"
+                        else -> "校验通过"
+                    }
+                )
+            },
             text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    if (errors.isEmpty()) {
-                        Text("扩展包校验通过，可以安装。")
-                    } else {
-                        errors.forEach { Text("· $it", style = MaterialTheme.typography.bodySmall) }
+                LazyColumn(
+                    modifier = Modifier.height(280.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                ) {
+                    if (ui.errors.isEmpty() && ui.warnings.isEmpty()) {
+                        item {
+                            Text(
+                                "扩展包校验通过，可以安装。",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    if (ui.errors.isNotEmpty()) {
+                        item {
+                            Text(
+                                "错误（阻断安装）",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        items(ui.errors) { issue ->
+                            Text(
+                                "· " + (issue.file?.let { "[$it] " } ?: "") + issue.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                    if (ui.warnings.isNotEmpty()) {
+                        item {
+                            Text(
+                                "警告（不阻断，安装后可实测）",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.tertiary,
+                            )
+                        }
+                        items(ui.warnings) { issue ->
+                            Text(
+                                "· " + (issue.file?.let { "[$it] " } ?: "") + issue.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                            )
+                        }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { validationErrors = null }) { Text("知道了") }
+                if (ui.allowInstallAnyway && ui.errors.isEmpty()) {
+                    // 需求四.4：警告需用户确认后允许继续安装（仍走权限预扫描）
+                    TextButton(onClick = {
+                        validationUi = null
+                        scope.launch { installAfterChecks() }
+                    }) { Text("仍要安装") }
+                } else {
+                    TextButton(onClick = { validationUi = null }) { Text("知道了") }
+                }
+            },
+        )
+    }
+
+    // 安装失败 / 一致性失败弹窗
+    installError?.let { error ->
+        AlertDialog(
+            onDismissRequest = { installError = null },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.CardMedium,
+            title = { Text("无法安装") },
+            text = { Text(error) },
+            confirmButton = {
+                TextButton(onClick = { installError = null }) { Text("知道了") }
             },
         )
     }
@@ -445,7 +573,7 @@ private fun DraftEditorScreen(
                 pendingPermissionRequest = null
                 val dir = confirmed.sourceDir
                 if (dir != null) {
-                    scope.launch { installDraft(dir, grantNewPermissions = true) }
+                    scope.launch { proceedInstall(dir, grantNewPermissions = true) }
                 }
             },
             onDismiss = { dismissed ->
@@ -476,9 +604,12 @@ private fun DraftEditorScreen(
             confirmButton = {
                 TextButton(onClick = {
                     val path = newFilePath.trim()
-                    if (creator.createFile(draftId, path)) {
-                        files = creator.listFiles(draftId)
-                        loadSelectedFile(path)
+                    scope.launch {
+                        val created = withContext(Dispatchers.IO) { creator.createFile(draftId, path) }
+                        if (created) {
+                            files = withContext(Dispatchers.IO) { creator.listFiles(draftId) }
+                            loadSelectedFile(path)
+                        }
                     }
                     showNewFileDialog = false
                     newFilePath = ""

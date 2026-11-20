@@ -98,6 +98,7 @@ import me.rerere.rikkahub.ui.pages.extension.ExtensionCreatorPage
 import me.rerere.rikkahub.ui.pages.extension.ExtensionWorkshopPage
 import me.rerere.rikkahub.ui.pages.extension.SettingMiniAppsPage
 import me.rerere.rikkahub.ui.pages.miniapp.MiniAppPage
+import me.rerere.rikkahub.ui.pages.miniapp.MiniAppPreviewPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
@@ -615,6 +616,10 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.MiniApp> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.MiniApp>()
                         MiniAppPage(appId = route.appId, navController = navBackStack)
+                    }
+                    composable<Screen.MiniAppPreview> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.MiniAppPreview>()
+                        MiniAppPreviewPage(draftId = route.draftId, navController = navBackStack)
                     }
                     composable<Screen.RadioChannel> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.RadioChannel>()

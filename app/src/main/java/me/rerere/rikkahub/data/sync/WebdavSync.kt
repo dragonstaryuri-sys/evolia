@@ -358,11 +358,14 @@ class WebdavSync(
                 // - upload：聊天附件 + 聊天背景图（BackgroundPicker 经 createChatFilesByContents 落盘到 upload/）
                 // - python_sandbox：Agent 沙盒工作文件（eval_python，按助手子目录组织，旧备份为会话子目录，必须递归）
                 // - images：Agent 生图产物（GenMedia 媒体库与消息 Markdown 引用 images/<uuid>）
+                // - extensions/workspaces：拓展开发草稿（2026-11-20；元数据全在文件内，
+                //   恢复即完整可用，无需 DB 对账；已安装 extensions/installed 仍不备份）
                 // zip 条目 = <folder>/<相对路径>；恢复侧通用分支按 FILES 项还原任意目录
                 // 注意：diary_images（扫描日记图片）不在此列，走下方专项打包（统计 + 严格失败上报）
                 val foldersToBackup = listOf(
                     "upload", "avatars", "lorebook_attachments", "app_locks",
                     "python_sandbox", "images",
+                    "extensions/workspaces",
                 )
                 foldersToBackup.forEach { folderName ->
                     val folder = File(context.filesDir, folderName)

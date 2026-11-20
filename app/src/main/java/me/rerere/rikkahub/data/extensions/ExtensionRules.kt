@@ -69,6 +69,24 @@ object ExtensionRules {
         }
     }
 
+    // ---------- 版本自动管理（2026-11-20 补充需求第三章） ----------
+
+    /**
+     * 基于当前版本递增 Patch 号（纯函数，V1 统一规则，用户不可选主/次版本）。
+     * prerelease / build 元数据不参与递增（1.0.0-beta → 1.0.1）。
+     * 无法解析 core 三段（缺段或非数字）时返回 null，由调用方决定兜底。
+     */
+    fun incrementPatchVersion(version: String): String? {
+        val core = version.substringBefore('-').substringBefore('+').trim()
+        val segments = core.split('.')
+        // SemVer core 固定三段；两段（1.0）或四段（1.0.0.0）均视为非法
+        if (segments.size != 3) return null
+        val patch = segments[2].toIntOrNull() ?: return null
+        val major = segments[0].toIntOrNull() ?: return null
+        val minor = segments[1].toIntOrNull() ?: return null
+        return "$major.$minor.${patch + 1}"
+    }
+
     // ---------- 安装/更新判定（8.4 / 15.4） ----------
 
     enum class InstallDecision { FRESH_INSTALL, UPDATE, SAME_VERSION, DOWNGRADE_BLOCKED, TYPE_CONFLICT }

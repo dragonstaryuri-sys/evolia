@@ -420,7 +420,7 @@ class ExtensionToolRuntime(
         }
         return try {
             handler(appId, collection, recordId, data)
-        } catch (e: MiniAppStorageService.StorageException) {
+        } catch (e: MiniAppStorage.StorageException) {
             JsonInstant.encodeToString(
                 buildJsonObject {
                     put("ok", false)

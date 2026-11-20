@@ -31,13 +31,18 @@ import java.io.File
  * - addDocumentStartJavaScript 注入 SDK + addWebMessageListener 受控通信，
  *   Origin Rules 限定受控来源；
  * - 子 frame 一律拒绝调用（Bridge 内部检查 isMainFrame）。
+ *
+ * 内容来源二选一（2026-11-20 工作区预览支持）：
+ * - [registry]：已安装目录（安装运行态，默认）；
+ * - [contentRoot]：任意受控根目录（工作区预览态，仍走同一资源域与安全检查）。
  */
 @Composable
 fun MiniAppWebView(
     appId: String,
     entry: String,
     session: MiniAppBridgeSession,
-    registry: ExtensionRegistry,
+    registry: ExtensionRegistry? = null,
+    contentRoot: File? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -46,10 +51,10 @@ fun MiniAppWebView(
             context.assets.open("evolia/evolia-sdk.js").use { it.readBytes().decodeToString() }
         }.getOrElse { "" }
     }
-    val assetLoader = remember(appId) {
+    val assetLoader = remember(appId, contentRoot) {
         WebViewAssetLoader.Builder()
             .setDomain(MiniAppBridgeSession.RESOURCE_ORIGIN.removePrefix("https://"))
-            .addPathHandler("/app/", MiniAppExtensionPathHandler(context, registry))
+            .addPathHandler("/app/", MiniAppExtensionPathHandler(context, registry, contentRoot))
             .build()
     }
 
@@ -140,12 +145,13 @@ private fun handleExternalNavigation(context: android.content.Context, appId: St
 }
 
 /**
- * /app/{app_id}/{relative} → filesDir/extensions/installed/{app_id}/{relative}。
+ * /app/{app_id}/{relative} → 扩展内容根目录（安装目录或预览工作区）。
  * 路径穿越 / 其他扩展资源 / 缺失文件一律返回 null（WebViewAssetLoader 会 404）。
  */
 private class MiniAppExtensionPathHandler(
     private val context: android.content.Context,
-    private val registry: ExtensionRegistry,
+    private val registry: ExtensionRegistry?,
+    private val contentRoot: File?,
 ) : WebViewAssetLoader.PathHandler {
 
     override fun handle(path: String): WebResourceResponse? {
@@ -154,8 +160,9 @@ private class MiniAppExtensionPathHandler(
         if (appId.isBlank() || relative.isBlank()) return null
         if (!ManifestValidator.isSafeRelativePath(relative)) return null
 
-        val installed = registry.getInstalled(appId) ?: return null
-        val root = File(context.filesDir, installed.installPath).canonicalFile
+        val root = contentRoot?.canonicalFile
+            ?: registry?.getInstalled(appId)?.let { File(context.filesDir, it.installPath).canonicalFile }
+            ?: return null
         val file = File(root, relative)
         if (!file.isFile) return null
         if (!file.canonicalFile.path.startsWith(root.path + File.separator)) return null

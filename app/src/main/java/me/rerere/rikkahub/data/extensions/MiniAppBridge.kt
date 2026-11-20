@@ -21,6 +21,42 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
+ * Bridge 每次调用的运行时策略（2026-11-20 拆出以支持工作区预览）：
+ * 扩展可运行状态 + 权限判定。
+ * - [RegistryMiniAppRuntimePolicy]：安装运行态，走 Registry 动态快照
+ *   （停用/卸载即时生效；授权弹窗写库后无需重载页面即可通过后续调用）；
+ * - [PreviewMiniAppRuntimePolicy]：工作区预览态，按 Manifest 声明静态判定，
+ *   不弹授权、不落授权，未声明权限直接返回 PERMISSION_DENIED 信封。
+ */
+enum class MiniAppExtensionState { ACTIVE, DISABLED, NOT_FOUND }
+
+interface MiniAppRuntimePolicy {
+    fun extensionState(appId: String): MiniAppExtensionState
+    fun isPermissionAllowed(appId: String, permission: String): Boolean
+}
+
+class RegistryMiniAppRuntimePolicy(
+    private val registry: ExtensionRegistry,
+) : MiniAppRuntimePolicy {
+    override fun extensionState(appId: String): MiniAppExtensionState {
+        val installed = registry.getInstalled(appId) ?: return MiniAppExtensionState.NOT_FOUND
+        return if (installed.isEnabled) MiniAppExtensionState.ACTIVE else MiniAppExtensionState.DISABLED
+    }
+
+    override fun isPermissionAllowed(appId: String, permission: String): Boolean =
+        registry.isPermissionGranted(appId, permission)
+}
+
+class PreviewMiniAppRuntimePolicy(
+    private val declaredPermissions: Set<String>,
+) : MiniAppRuntimePolicy {
+    override fun extensionState(appId: String): MiniAppExtensionState = MiniAppExtensionState.ACTIVE
+
+    override fun isPermissionAllowed(appId: String, permission: String): Boolean =
+        permission in declaredPermissions
+}
+
+/**
  * Mini App Native Bridge 会话（详设第十二章）。
  *
  * 一次 WebView 运行实例对应一个会话。每次 Bridge 调用都必须完整校验
@@ -31,8 +67,8 @@ import java.util.concurrent.atomic.AtomicLong
 class MiniAppBridgeSession(
     val appId: String,
     private val context: Context,
-    private val registry: ExtensionRegistry,
-    private val storage: MiniAppStorageService,
+    private val policy: MiniAppRuntimePolicy,
+    private val storage: MiniAppStorage,
     private val scope: CoroutineScope,
     private val listener: Listener,
 ) {
@@ -98,12 +134,12 @@ class MiniAppBridgeSession(
         val method = request.readString("method").orEmpty()
 
         // 每次调用校验 1-4：扩展存在 / 启用 / 实例有效 / 来源合法
-        val installed = registry.getInstalled(appId)
-        if (installed == null) {
+        val extensionState = policy.extensionState(appId)
+        if (extensionState == MiniAppExtensionState.NOT_FOUND) {
             replyError(replyProxy, callId, ExtensionToolError.EXTENSION_NOT_FOUND, "扩展不存在或已卸载")
             return
         }
-        if (!installed.isEnabled) {
+        if (extensionState == MiniAppExtensionState.DISABLED) {
             replyError(replyProxy, callId, ExtensionToolError.EXTENSION_DISABLED, "扩展已被停用")
             return
         }
@@ -122,7 +158,7 @@ class MiniAppBridgeSession(
         scope.launch {
             try {
                 dispatch(method, params, replyProxy, callId)
-            } catch (e: MiniAppStorageService.StorageException) {
+            } catch (e: MiniAppStorage.StorageException) {
                 replyError(replyProxy, callId, e.code, e.message ?: "存储操作失败")
             } catch (e: Exception) {
                 Log.e(TAG, "Bridge 调用失败: $method", e)
@@ -160,7 +196,7 @@ class MiniAppBridgeSession(
         val requiredPermission = if (isWrite) ExtensionPermissions.STORAGE_WRITE else ExtensionPermissions.STORAGE_READ
 
         // 每次调用校验 5：权限
-        if (!registry.isPermissionGranted(appId, requiredPermission)) {
+        if (!policy.isPermissionAllowed(appId, requiredPermission)) {
             listener.onPermissionRequired(requiredPermission)
             replyError(replyProxy, callId, ExtensionToolError.PERMISSION_DENIED, "扩展未获得 $requiredPermission 权限")
             return
@@ -215,7 +251,7 @@ class MiniAppBridgeSession(
     ) {
         when (action) {
             "toast" -> {
-                if (!registry.isPermissionGranted(appId, ExtensionPermissions.UI_TOAST)) {
+                if (!policy.isPermissionAllowed(appId, ExtensionPermissions.UI_TOAST)) {
                     listener.onPermissionRequired(ExtensionPermissions.UI_TOAST)
                     replyError(replyProxy, callId, ExtensionToolError.PERMISSION_DENIED, "扩展未获得 ui.toast 权限")
                     return
@@ -230,7 +266,7 @@ class MiniAppBridgeSession(
             }
 
             "dialog" -> {
-                if (!registry.isPermissionGranted(appId, ExtensionPermissions.UI_DIALOG)) {
+                if (!policy.isPermissionAllowed(appId, ExtensionPermissions.UI_DIALOG)) {
                     listener.onPermissionRequired(ExtensionPermissions.UI_DIALOG)
                     replyError(replyProxy, callId, ExtensionToolError.PERMISSION_DENIED, "扩展未获得 ui.dialog 权限")
                     return

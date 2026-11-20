@@ -193,7 +193,7 @@ val dataSourceModule = module {
     single { ExtensionNetworkService() }
     single { ExtensionToolRuntime(context = get(), storage = get(), network = get()) }
     single { ExtensionInstaller(context = get(), db = get(), repository = get()) }
-    single { ExtensionCreator(context = get()) }
+    single { ExtensionCreator(context = get(), registry = get()) }
 
     single { DoubaoImportManager(context = get(), conversationRepo = get()) }
 

@@ -171,6 +171,10 @@ sealed interface Screen {
     @Serializable
     data class MiniApp(val appId: String) : Screen
 
+    /** Mini App 工作区预览页（草稿隔离预览，2026-11-20：数据不落库、权限静态判定）。 */
+    @Serializable
+    data class MiniAppPreview(val draftId: String) : Screen
+
     @Serializable
     data object SettingWakeWord : Screen
 

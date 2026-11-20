@@ -4,12 +4,16 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * 扩展导入导出（详设第十五章）。
+ * 扩展导入导出（详设第十五章 + 2026-11-20 补充需求第五章）。
  *
  * 导出 = 安装目录内容打包为 .evolia（ZIP）；**绝不包含**用户业务数据
  * （mini_app_data 在 Room 中，不在安装目录）与本地凭证——程序目录与用户
  * 数据严格分离的包规范天然保证这一点。
  * 导入统一走 ExtensionInstaller。
+ *
+ * 二次开发权限随包携带：导出时用户选择 allowModification 写入包内 manifest.json
+ * 的 development.allow_modification 字段；**磁盘安装目录不改写**（同一拓展可
+ * 以不同权限重复导出）。导入后该字段随包持久化，重新导入/重装不丢失。
  */
 object ExtensionImportExport {
 
@@ -17,19 +21,44 @@ object ExtensionImportExport {
     const val MIME_TYPE = "application/zip"
 
     /**
-     * 将已安装扩展打包为 .evolia 文件。
+     * 按导出选项改写 Manifest 的二次开发权限（纯函数，有单测）。
+     * 仅设置 development.allow_modification，其余字段原样保留。
      */
-    fun exportToZip(context: android.content.Context, appId: String, targetFile: java.io.File): Boolean {
+    fun manifestWithDevelopmentFlag(manifest: ExtensionManifest, allowModification: Boolean): ExtensionManifest {
+        return manifest.copy(development = ManifestDevelopment(allowModification = allowModification))
+    }
+
+    /**
+     * 将已安装扩展打包为 .evolia 文件。
+     *
+     * @param allowModification 二次开发权限（用户在导出弹窗中选择），写入包内 manifest
+     */
+    fun exportToZip(
+        context: android.content.Context,
+        appId: String,
+        targetFile: java.io.File,
+        allowModification: Boolean = true,
+    ): Boolean {
         val registry = org.koin.java.KoinJavaComponent.getKoin().get<ExtensionRegistry>()
         val installed = registry.getInstalled(appId) ?: return false
         val dir = java.io.File(context.filesDir, installed.installPath)
         if (!dir.isDirectory) return false
 
+        val exportManifest = manifestWithDevelopmentFlag(installed.manifest, allowModification)
+        val manifestContent = me.rerere.rikkahub.common.JsonInstantPretty.encodeToString(
+            ExtensionManifest.serializer(),
+            exportManifest,
+        )
+
         ZipOutputStream(targetFile.outputStream().buffered()).use { zip ->
             dir.walkTopDown().filter { it.isFile }.sortedBy { it.relativeTo(dir).invariantSeparatorsPath }.forEach { file ->
                 val entryName = file.relativeTo(dir).invariantSeparatorsPath
                 zip.putNextEntry(ZipEntry(entryName))
-                file.inputStream().use { it.copyTo(zip) }
+                if (entryName == "manifest.json") {
+                    zip.write(manifestContent.encodeToByteArray())
+                } else {
+                    file.inputStream().use { it.copyTo(zip) }
+                }
                 zip.closeEntry()
             }
         }
